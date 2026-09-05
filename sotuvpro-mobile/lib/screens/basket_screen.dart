@@ -529,8 +529,10 @@ class _BasketScreenState extends State<BasketScreen> {
                       controller: _clientPhoneController,
                       keyboardType: TextInputType.phone,
                       decoration: const InputDecoration(
-                        labelText: 'Mijoz Telefon Raqami (+998...)',
+                        labelText: 'Mijoz Telefon Raqami',
                         prefixIcon: Icon(Icons.phone_outlined, color: AppTheme.primaryEmerald),
+                        prefixText: '+998 ',
+                        prefixStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -970,6 +972,8 @@ class _BasketScreenState extends State<BasketScreen> {
                           decoration: const InputDecoration(
                             labelText: 'Telefon Nomeri',
                             prefixIcon: Icon(Icons.phone_outlined, size: 20),
+                            prefixText: '+998 ',
+                            prefixStyle: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                             contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           ),
                         ),

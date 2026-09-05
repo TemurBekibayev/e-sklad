@@ -424,13 +424,29 @@ class ApiService {
     return ApiResponse(statusCode: 200, data: resultList);
   }
 
+  String formatUzbekPhone(String phone) {
+    final clean = phone.trim();
+    if (clean.isEmpty) return '';
+    final digitsOnly = clean.replaceAll(RegExp(r'[^\d]'), '');
+    if (digitsOnly.length == 9) {
+      return '+998$digitsOnly';
+    } else if (digitsOnly.length == 12 && digitsOnly.startsWith('998')) {
+      return '+$digitsOnly';
+    } else if (clean.startsWith('+')) {
+      return clean;
+    } else if (digitsOnly.isNotEmpty) {
+      return '+$digitsOnly';
+    }
+    return clean;
+  }
+
   // 2.0 — SMS OTP Client Phone Verification
   Future<ApiResponse<Map<String, dynamic>>> sendSmsVerificationCode({
     required String phoneNumber,
     required String clientName,
   }) async {
     final url = Uri.parse('$baseUrl/debts/verify-phone/send-code/');
-    final cleanPhone = phoneNumber.trim();
+    final cleanPhone = formatUzbekPhone(phoneNumber);
     final payload = {
       'phone': cleanPhone,
       'phone_number': cleanPhone,
@@ -455,7 +471,7 @@ class ApiService {
     required String code,
   }) async {
     final url = Uri.parse('$baseUrl/debts/verify-phone/check-code/');
-    final cleanPhone = phoneNumber.trim();
+    final cleanPhone = formatUzbekPhone(phoneNumber);
     final cleanCode = code.trim();
     final payload = {
       'phone': cleanPhone,
@@ -525,6 +541,7 @@ class ApiService {
 
     // 4. Backend serverga POST /baskets/{basket_id}/finalize/ yuboramiz
     final url = Uri.parse('$baseUrl/baskets/$basketId/finalize/');
+    final cleanPhone = clientPhone != null ? formatUzbekPhone(clientPhone) : '';
     try {
       final payload = {
         'payment_method': mappedMethod,
@@ -532,7 +549,7 @@ class ApiService {
         'card_amount': cardAmount,
         'debt_amount': debtAmount,
         'client_name': transaction.clientName,
-        'client_phone': clientPhone ?? '',
+        'client_phone': cleanPhone,
         if (otpCode != null && otpCode.isNotEmpty) 'otp_code': otpCode,
         'due_date': (dueDate != null && dueDate.trim().isNotEmpty) ? dueDate.trim() : null,
         'items': itemsPayload,
