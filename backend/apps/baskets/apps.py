@@ -1,0 +1,6 @@
+from django.apps import AppConfig
+
+class BasketsConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.baskets'
+    verbose_name = 'Savatlar va Savdo Jarayoni'

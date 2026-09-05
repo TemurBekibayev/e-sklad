@@ -1,0 +1,118 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sotuvpro_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-sotuvpro_db}
+      POSTGRES_USER: ${DB_USER:-sotuvpro_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sotuvpro_secure_password_2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sotuvpro_user} -d ${DB_NAME:-sotuvpro_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: sotuvpro_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sotuvpro_web
+    restart: always
+    command: daphne -b 0.0.0.0 -p 8000 sotuvpro.asgi:application
+    volumes:
+      - ./backend:/app
+    ports:
+      - "4000:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  admin_frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+    container_name: sotuvpro_admin_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - web
+
+  manager_frontend:
+    build:
+      context: ./manager-panel
+      dockerfile: Dockerfile
+    container_name: sotuvpro_manager_frontend
+    restart: always
+    ports:
+      - "3001:80"
+    depends_on:
+      - web
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sotuvpro_celery_worker
+    restart: always
+    command: celery -A sotuvpro worker -l info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sotuvpro_celery_beat
+    restart: always
+    command: celery -A sotuvpro beat -l info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,35 +1,47 @@
-# Miscellaneous
-*.class
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Django
 *.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.buildlog/
-.history
-.svn/
-.idea/
-*.iml
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
 
-# Secrets & Environment variables
+# Environment secrets
 .env
-.env.*
-*.pem
-*.key
-secrets.json
-local.properties
+.env.local
+.env.*.local
 
-# Android build & local files
-**/ .gradle/
-**/build/
-**/app/build/
-**/android/app/debug/
-**/android/app/release/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Flutter & Dart specifics
-**/.dart_tool/
-**/.flutter-plugins
-**/.flutter-plugins-dependencies
-**/.packages
-**/.pub-cache/
-**/.pub/
+# Docker
+postgres_data/
+redis_data/
+
+# Frontend / Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
