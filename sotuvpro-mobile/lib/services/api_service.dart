@@ -430,8 +430,10 @@ class ApiService {
     required String clientName,
   }) async {
     final url = Uri.parse('$baseUrl/debts/verify-phone/send-code/');
+    final cleanPhone = phoneNumber.trim();
     final payload = {
-      'phone_number': phoneNumber.trim(),
+      'phone': cleanPhone,
+      'phone_number': cleanPhone,
       'client_name': clientName.trim(),
     };
     try {
@@ -453,9 +455,13 @@ class ApiService {
     required String code,
   }) async {
     final url = Uri.parse('$baseUrl/debts/verify-phone/check-code/');
+    final cleanPhone = phoneNumber.trim();
+    final cleanCode = code.trim();
     final payload = {
-      'phone_number': phoneNumber.trim(),
-      'code': code.trim(),
+      'phone': cleanPhone,
+      'phone_number': cleanPhone,
+      'code': cleanCode,
+      'otp_code': cleanCode,
     };
     try {
       final response = await http
@@ -481,6 +487,7 @@ class ApiService {
     required TransactionModel transaction,
     String? clientPhone,
     String? dueDate,
+    String? otpCode,
     List<BasketItem>? items,
   }) async {
     // 1. Avval mahalliy (SQLite) bazada savdoni yakunlaymiz (Offline-First)
@@ -526,6 +533,7 @@ class ApiService {
         'debt_amount': debtAmount,
         'client_name': transaction.clientName,
         'client_phone': clientPhone ?? '',
+        if (otpCode != null && otpCode.isNotEmpty) 'otp_code': otpCode,
         'due_date': (dueDate != null && dueDate.trim().isNotEmpty) ? dueDate.trim() : null,
         'items': itemsPayload,
       };

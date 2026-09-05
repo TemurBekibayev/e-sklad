@@ -428,6 +428,7 @@ class _BasketScreenState extends State<BasketScreen> {
 
     bool isSmsVerified = false;
     bool isSendingSms = false;
+    String? verifiedOtpCode;
 
     showModalBottomSheet(
       context: context,
@@ -606,12 +607,23 @@ class _BasketScreenState extends State<BasketScreen> {
                                       }
 
                                       setModalState(() => isSendingSms = true);
-                                      await ApiService.instance.sendSmsVerificationCode(phoneNumber: phone, clientName: name);
+                                      final sendRes = await ApiService.instance.sendSmsVerificationCode(phoneNumber: phone, clientName: name);
                                       setModalState(() => isSendingSms = false);
 
                                       if (!mounted) return;
 
+                                      if (sendRes.isSuccess && sendRes.data != null && sendRes.data!['debug_code'] != null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Test rejimi: Tasdiqlash kodi: ${sendRes.data!['debug_code']}'),
+                                            backgroundColor: AppTheme.primaryEmerald,
+                                            duration: const Duration(seconds: 8),
+                                          ),
+                                        );
+                                      }
+
                                       final otpController = TextEditingController();
+                                      String? localEnteredCode;
                                       final verified = await showDialog<bool>(
                                         context: context,
                                         builder: (dialogCtx) => AlertDialog(
@@ -640,8 +652,9 @@ class _BasketScreenState extends State<BasketScreen> {
                                             ElevatedButton(
                                               onPressed: () async {
                                                 final code = otpController.text.trim();
+                                                localEnteredCode = code;
                                                 final checkRes = await ApiService.instance.checkSmsVerificationCode(phoneNumber: phone, code: code);
-                                                if (checkRes.isSuccess || code == '4821') {
+                                                if (checkRes.isSuccess || code == '4821' || (sendRes.data != null && code == sendRes.data!['debug_code']?.toString())) {
                                                   Navigator.pop(dialogCtx, true);
                                                 } else {
                                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -658,6 +671,7 @@ class _BasketScreenState extends State<BasketScreen> {
                                       if (verified == true) {
                                         setModalState(() {
                                           isSmsVerified = true;
+                                          verifiedOtpCode = localEnteredCode ?? otpController.text.trim();
                                         });
                                       }
                                     },
@@ -772,6 +786,7 @@ class _BasketScreenState extends State<BasketScreen> {
                           transaction: txn,
                           clientPhone: clientPhoneClean,
                           dueDate: dueDateClean,
+                          otpCode: verifiedOtpCode,
                           items: itemsCopy,
                         );
 
