@@ -28,6 +28,13 @@ class CustomLoginView(TokenObtainPairView):
     throttle_scope = 'auth'
 
 
+class HealthCheckView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({'status': 'ok', 'timestamp': timezone.now().isoformat()})
+
+
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

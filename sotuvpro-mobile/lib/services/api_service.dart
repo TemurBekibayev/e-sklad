@@ -29,6 +29,17 @@ class ApiService {
   String? accessToken;
   String? refreshToken;
 
+  /// SharedPreferences dan saqlangan tokenlarni yuklash
+  Future<void> initTokens() async {
+    final tokens = await SecurityService.instance.getAuthTokens();
+    if (tokens['access'] != null) {
+      accessToken = tokens['access'];
+    }
+    if (tokens['refresh'] != null) {
+      refreshToken = tokens['refresh'];
+    }
+  }
+
   // 1.1 — POST /auth/login/
   Future<ApiResponse<Map<String, dynamic>>> login({
     required String loginInput,
@@ -75,6 +86,13 @@ class ApiService {
         SecurityService.instance.resetFailedAttempts(lockKey);
         accessToken = responseData['access'];
         refreshToken = responseData['refresh'];
+
+        if (accessToken != null && refreshToken != null) {
+          await SecurityService.instance.saveAuthTokens(
+            access: accessToken!,
+            refresh: refreshToken!,
+          );
+        }
 
         final userData = responseData['user'] as Map<String, dynamic>?;
         if (userData != null) {
@@ -134,6 +152,9 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         accessToken = data['access'];
+        if (accessToken != null) {
+          await SecurityService.instance.saveAuthTokens(access: accessToken!, refresh: refreshToken ?? token);
+        }
         return ApiResponse(
           statusCode: 200,
           data: {'access': accessToken!},
@@ -464,6 +485,10 @@ class ApiService {
   }) async {
     // 1. Avval mahalliy (SQLite) bazada savdoni yakunlaymiz (Offline-First)
     await DatabaseHelper.instance.completeSale(transaction);
+
+    if (accessToken == null) {
+      await initTokens();
+    }
 
     // 2. To'lov turini to'g'ri formatga keltirish
     String mappedMethod = 'cash';

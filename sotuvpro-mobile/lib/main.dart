@@ -5,6 +5,7 @@ import 'models/user.dart';
 import 'screens/auth_screen.dart';
 import 'screens/pin_lock_screen.dart';
 import 'services/security_service.dart';
+import 'services/api_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
@@ -22,6 +23,9 @@ void main() async {
 
   // Bazani ishga tushirish
   await DatabaseHelper.instance.database;
+
+  // Saqlangan JWT tokenlarni yuklash
+  await ApiService.instance.initTokens();
 
   // Saqlangan sessiyani tekshirish
   final userJson = await SecurityService.instance.getLoggedInUserJson();

@@ -33,9 +33,9 @@ class SyncService {
 
   Future<bool> checkConnectivityNow() async {
     try {
-      final url = Uri.parse('${ApiService.instance.baseUrl}/products/');
+      final url = Uri.parse('${ApiService.instance.baseUrl}/auth/health/');
       final res = await http.get(url).timeout(const Duration(seconds: 4));
-      final onlineNow = res.statusCode < 500;
+      final onlineNow = res.statusCode == 200;
       setOnlineStatus(onlineNow);
       return onlineNow;
     } catch (_) {

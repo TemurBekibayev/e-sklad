@@ -112,6 +112,22 @@ class SecurityService {
     await prefs.setString('logged_in_user_json', jsonEncode(userMap));
   }
 
+  /// JWT tokenlarini xotirada saqlash
+  Future<void> saveAuthTokens({required String access, required String refresh}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('jwt_access_token', access);
+    await prefs.setString('jwt_refresh_token', refresh);
+  }
+
+  /// Saqlangan JWT tokenlarini olish
+  Future<Map<String, String?>> getAuthTokens() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'access': prefs.getString('jwt_access_token'),
+      'refresh': prefs.getString('jwt_refresh_token'),
+    };
+  }
+
   /// Tizimga kirgan foydalanuvchini olish
   Future<Map<String, dynamic>?> getLoggedInUserJson() async {
     final prefs = await SharedPreferences.getInstance();
@@ -128,5 +144,7 @@ class SecurityService {
   Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('logged_in_user_json');
+    await prefs.remove('jwt_access_token');
+    await prefs.remove('jwt_refresh_token');
   }
 }
