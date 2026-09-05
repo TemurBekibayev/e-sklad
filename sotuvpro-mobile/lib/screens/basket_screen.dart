@@ -650,18 +650,18 @@ class _BasketScreenState extends State<BasketScreen> {
                                               child: const Text('Bekor qilish'),
                                             ),
                                             ElevatedButton(
-                                              onPressed: () async {
+                                              onPressed: () {
                                                 final code = otpController.text.trim();
-                                                localEnteredCode = code;
-                                                final checkRes = await ApiService.instance.checkSmsVerificationCode(phoneNumber: phone, code: code);
-                                                if (checkRes.isSuccess || code == '4821' || (sendRes.data != null && code == sendRes.data!['debug_code']?.toString())) {
-                                                  Navigator.pop(dialogCtx, true);
-                                                } else {
+                                                if (code.length != 4) {
                                                   ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(content: Text(checkRes.errorDetail ?? 'Kod noto\'g\'ri!')),
+                                                    const SnackBar(content: Text('Iltimos, 4 xonali kodni to\'liq kiriting!')),
                                                   );
+                                                  return;
                                                 }
+                                                localEnteredCode = code;
+                                                Navigator.pop(dialogCtx, true);
                                               },
+                                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryEmerald),
                                               child: const Text('Tasdiqlash'),
                                             ),
                                           ],
