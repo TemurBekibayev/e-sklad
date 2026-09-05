@@ -187,9 +187,8 @@ class BasketViewSet(viewsets.ModelViewSet):
                         prod.current_stock -= qty
                         prod.save(update_fields=['current_stock', 'updated_at'])
                         StockMovement.objects.create(
-                            tenant=user.tenant,
                             product=prod,
-                            type=MovementType.SALE,
+                            type=MovementType.CHIQIM,
                             sale_unit_amount=-qty,
                             performed_by=user,
                             reason=f"Savdo (Mobile/POS) #{basket.id}"
@@ -215,9 +214,8 @@ class BasketViewSet(viewsets.ModelViewSet):
                         prod.current_stock -= qty
                         prod.save(update_fields=['current_stock', 'updated_at'])
                         StockMovement.objects.create(
-                            tenant=user.tenant,
                             product=prod,
-                            type=MovementType.SALE,
+                            type=MovementType.CHIQIM,
                             sale_unit_amount=-qty,
                             performed_by=user,
                             reason=f"Savdo (Mobile/POS) #{basket.id}"

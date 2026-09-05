@@ -42,61 +42,54 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         user = None
 
-        # 1. PIN orqali kirish (Mobile App / Manager PIN)
-        if pin_val:
-            users_qs = User.objects.filter(is_active=True)
-            if tenant_id:
-                users_qs = users_qs.filter(tenant_id=tenant_id)
-            if login_val:
-                users_qs = users_qs.filter(models.Q(name__iexact=login_val) | models.Q(email__iexact=login_val) | models.Q(phone_number=login_val))
+        # 1. Agar login va parol/pin berilgan bo'lsa
+        user = None
 
-            found_user = None
-            for u in users_qs:
+        # Foydalanuvchini login/email/telefon orqali topish
+        users_qs = User.objects.filter(is_active=True)
+        if tenant_id:
+            users_qs = users_qs.filter(tenant_id=tenant_id)
+        if login_val:
+            users_qs = users_qs.filter(
+                models.Q(name__iexact=login_val) | 
+                models.Q(email__iexact=login_val) | 
+                models.Q(phone_number=login_val)
+            )
+
+        candidate_user = users_qs.first() if login_val else None
+
+        # A) Agar PIN kiritilgan bo'lsa (4-6 xonali raqam)
+        if pin_val and str(pin_val).isdigit() and len(str(pin_val)) <= 6:
+            for u in (users_qs if login_val else User.objects.filter(is_active=True)):
                 if u.check_pin(pin_val):
-                    found_user = u
+                    user = u
                     break
 
-            if found_user:
-                if found_user.is_locked():
-                    raise serializers.ValidationError({
-                        'detail': _('Hisob vaqtincha bloklangan (5 ta noto\'g\'ri PIN). 5 daqiqadan so\'ng urinib ko\'ring.')
-                    })
-                found_user.reset_failed_attempts()
-                user = found_user
-            else:
-                # Agar login_val bo'lsa, o'sha userning failed urinishini oshirish
-                if login_val:
-                    target_u = users_qs.first()
-                    if target_u:
-                        target_u.register_failed_attempt()
-                raise serializers.ValidationError({
-                    'detail': _('Noto\'g\'ri PIN kod yoki foydalanuvchi topilmadi.')
-                })
+        # B) Agar parol berilgan bo'lsa yoki PIN mos kelmagan bo'lsa
+        if not user and password_val:
+            if candidate_user and candidate_user.check_password(password_val):
+                user = candidate_user
+            elif login_val:
+                user = authenticate(username=login_val, password=password_val)
 
-        # 2. Email + Parol orqali kirish (Admin Panel / Manager Web)
-        elif login_val and password_val:
-            user = authenticate(username=login_val, password=password_val)
-            if not user:
-                # Email bo'yicha qidirib ko'rish
-                try:
-                    user_obj = User.objects.get(email__iexact=login_val)
-                    if user_obj.check_password(password_val):
-                        user = user_obj
-                except User.DoesNotExist:
-                    pass
+        # C) Agar PIN raqamli bo'lmasa, uni parol sifatida ham tekshirib ko'rish
+        if not user and pin_val and not password_val and candidate_user:
+            if candidate_user.check_password(pin_val):
+                user = candidate_user
 
-            if not user:
-                raise serializers.ValidationError({
-                    'detail': _('Email yoki parol noto\'g\'ri.')
-                })
-            if user.role == UserRole.WORKER:
-                raise serializers.ValidationError({
-                    'detail': _('Sotuvchi (worker) veb-panelga kira olmaydi. Faqat menejerlar va adminlar ruxsat etilgan.')
-                })
-        else:
+        if not user:
+            if candidate_user:
+                candidate_user.register_failed_attempt()
             raise serializers.ValidationError({
-                'detail': _('PIN kod yoki Email+Parol kiritilishi shart.')
+                'detail': _('Login, PIN kod yoki parol noto\'g\'ri.')
             })
+
+        if user.is_locked():
+            raise serializers.ValidationError({
+                'detail': _('Hisob vaqtincha bloklangan (5 ta noto\'g\'ri urinish). 5 daqiqadan so\'ng urinib ko\'ring.')
+            })
+
+        user.reset_failed_attempts()
 
         if not user.is_active:
             raise serializers.ValidationError({'detail': _('Foydalanuvchi hisobi faolsizlantirilgan.')})
