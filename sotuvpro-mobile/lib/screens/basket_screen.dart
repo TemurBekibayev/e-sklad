@@ -772,6 +772,7 @@ class _BasketScreenState extends State<BasketScreen> {
                           transaction: txn,
                           clientPhone: clientPhoneClean,
                           dueDate: dueDateClean,
+                          items: itemsCopy,
                         );
 
                         final finalStatus = apiRes.data?['status']?.toString() ?? txnStatus;

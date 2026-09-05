@@ -145,7 +145,8 @@ class BasketViewSet(viewsets.ModelViewSet):
         discount_amount = Decimal(str(vdata.get('discount_amount', 0) or 0))
         client_name = vdata.get('client_name') or basket.client_name or ''
         client_phone = vdata.get('client_phone') or basket.client_phone or ''
-        due_date = vdata.get('due_date')
+        due_date_raw = vdata.get('due_date')
+        due_date = due_date_raw.strip() if (due_date_raw and str(due_date_raw).strip()) else None
 
         is_debt = (payment_method == 'debt') or (payment_method == 'mixed' and debt_amount > 0)
         

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../data/database_helper.dart';
 import '../models/user.dart';
 import '../models/product.dart';
+import '../models/basket_item.dart';
 import '../models/transaction.dart';
 import 'security_service.dart';
 
@@ -459,21 +460,49 @@ class ApiService {
     required TransactionModel transaction,
     String? clientPhone,
     String? dueDate,
+    List<BasketItem>? items,
   }) async {
     // 1. Avval mahalliy (SQLite) bazada savdoni yakunlaymiz (Offline-First)
     await DatabaseHelper.instance.completeSale(transaction);
 
-    // 2. Keyin backend serverga POST /baskets/{basket_id}/finalize/ yuboramiz
+    // 2. To'lov turini to'g'ri formatga keltirish
+    String mappedMethod = 'cash';
+    final pLower = paymentMethod.trim().toLowerCase();
+    if (pLower == 'naqd' || pLower == 'cash') {
+      mappedMethod = 'cash';
+    } else if (pLower == 'karta' || pLower == 'card') {
+      mappedMethod = 'card';
+    } else if (pLower == 'qarz' || pLower == 'debt') {
+      mappedMethod = 'debt';
+    } else if (pLower == 'aralash' || pLower == 'mixed') {
+      mappedMethod = 'mixed';
+    }
+
+    // 3. Savatdagi tovarlar ro'yxatini shakllantirish
+    List<Map<String, dynamic>> itemsPayload = [];
+    if (items != null && items.isNotEmpty) {
+      itemsPayload = items.map((it) => {
+        'product_id': it.productId,
+        'name': it.productName,
+        'sale_unit': it.saleUnit,
+        'quantity': it.quantity,
+        'price': it.unitPrice,
+        'subtotal': it.totalPrice,
+      }).toList();
+    }
+
+    // 4. Backend serverga POST /baskets/{basket_id}/finalize/ yuboramiz
     final url = Uri.parse('$baseUrl/baskets/$basketId/finalize/');
     try {
       final payload = {
-        'payment_method': paymentMethod, // "debt", "mixed", "cash", "card"
+        'payment_method': mappedMethod,
         'cash_amount': cashAmount,
         'card_amount': cardAmount,
         'debt_amount': debtAmount,
         'client_name': transaction.clientName,
         'client_phone': clientPhone ?? '',
-        'due_date': dueDate ?? '',
+        'due_date': (dueDate != null && dueDate.trim().isNotEmpty) ? dueDate.trim() : null,
+        'items': itemsPayload,
       };
 
       final response = await http

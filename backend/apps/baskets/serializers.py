@@ -39,12 +39,29 @@ class CreateBasketItemSerializer(serializers.Serializer):
     quantity = serializers.DecimalField(max_digits=14, decimal_places=4, default=Decimal('1.0000'))
 
 class FinalizeSaleSerializer(serializers.Serializer):
-    payment_method = serializers.ChoiceField(choices=['cash', 'card', 'debt', 'mixed'], default='cash')
+    payment_method = serializers.CharField(required=False, default='cash')
     cash_amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal('0.00'))
     card_amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal('0.00'))
     debt_amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal('0.00'))
     discount_amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, default=Decimal('0.00'))
     client_name = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     client_phone = serializers.CharField(max_length=50, required=False, allow_blank=True, default='')
-    due_date = serializers.DateField(required=False, allow_null=True)
+    due_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, default='')
     items = serializers.ListField(child=serializers.DictField(), required=False)
+
+    def validate_payment_method(self, value):
+        val = str(value).strip().lower()
+        mapping = {
+            'naqd': 'cash',
+            'cash': 'cash',
+            'karta': 'card',
+            'card': 'card',
+            'qarz': 'debt',
+            'debt': 'debt',
+            'aralash': 'mixed',
+            'mixed': 'mixed',
+        }
+        if val in mapping:
+            return mapping[val]
+        raise serializers.ValidationError(f"'{value}' yaroqsiz to'lov turi. Ruxsat etilganlar: naqd, karta, qarz, aralash.")
+
