@@ -8,6 +8,7 @@ import '../models/transaction.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/printer_service.dart';
+import '../services/kassa_hub_service.dart';
 import '../theme/app_theme.dart';
 import 'scanner_screen.dart';
 
@@ -714,6 +715,79 @@ class _BasketScreenState extends State<BasketScreen> {
                   ],
 
                   const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final itemsCopy = List<BasketItem>.from(_items);
+                        final clientNameClean = _clientNameController.text.trim().isNotEmpty ? _clientNameController.text.trim() : "Mijoz";
+
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (ctx) => const AlertDialog(
+                            backgroundColor: AppTheme.cardSurface,
+                            content: Row(
+                              children: [
+                                CircularProgressIndicator(color: AppTheme.accentNeon),
+                                SizedBox(width: 16),
+                                Expanded(child: Text('Desktop Kassaga uzatilmoqda...', style: TextStyle(color: Colors.white))),
+                              ],
+                            ),
+                          ),
+                        );
+
+                        final res = await KassaHubService.instance.pushBasketToDesktopKassa(
+                          clientName: clientNameClean,
+                          sellerName: widget.currentUser.name,
+                          items: itemsCopy,
+                          totalAmount: _totalAmount,
+                        );
+
+                        if (mounted) {
+                          Navigator.pop(context); // Close loading dialog
+                        }
+
+                        if (res['success'] == true) {
+                          if (mounted) {
+                            Navigator.pop(context); // Close checkout modal
+                          }
+                          setState(() {
+                            _items = [];
+                          });
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(res['message'] ?? 'Savat Desktop Kassaga muvaffaqiyatli uzatildi!'),
+                                backgroundColor: AppTheme.primaryEmerald,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                            Navigator.pop(context, true);
+                          }
+                        } else {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(res['message'] ?? 'Kassaga uzatib bo\'lmadi. Sozlamalardan IP manzilni tekshiring.'),
+                                backgroundColor: AppTheme.dangerRed,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.desktop_windows, size: 20),
+                      label: const Text('KASSAGA UZATISH (WI-FI HUB)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: AppTheme.accentNeon,
+                        foregroundColor: Colors.black,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(

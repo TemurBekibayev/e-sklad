@@ -22,9 +22,9 @@ class ApiService {
   static final ApiService instance = ApiService._();
   ApiService._();
 
-  // Backend rasmiy Server URL (https://amuhr.uz/api/v1)
-  String baseUrl = 'https://amuhr.uz/api/v1';
-  String wsUrl = 'wss://amuhr.uz/ws/tenant/baskets';
+  // Backend GetPOS Server URL (https://getpos.uz/api/v1)
+  String baseUrl = 'https://getpos.uz/api/v1';
+  String wsUrl = 'wss://getpos.uz/ws/tenant/baskets';
 
   String? accessToken;
   String? refreshToken;
@@ -268,6 +268,82 @@ class ApiService {
         return ApiResponse(statusCode: response.statusCode, data: responseData);
       }
       return ApiResponse(statusCode: response.statusCode);
+    } catch (e) {
+      return ApiResponse(statusCode: 502, errorDetail: 'Server bilan aloqa uzildi.');
+    }
+  }
+
+  // 3.4.1 — PATCH /products/{id}/ (Pereotsenka — Qayta narxlash)
+  Future<ApiResponse<Map<String, dynamic>>> repriceProduct(String productId, double newSalePrice) async {
+    return updateProduct(productId, {'price_per_sale_unit': newSalePrice});
+  }
+
+  // 3.4.2 — POST /purchases/ (Skladga Kirim Qilish — Prixod Hujjati)
+  Future<ApiResponse<Map<String, dynamic>>> createPurchase(Map<String, dynamic> purchaseData) async {
+    final url = Uri.parse('$baseUrl/purchases/');
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: _headers,
+            body: jsonEncode(purchaseData),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final responseData = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (responseData is Map<String, dynamic>) {
+          return ApiResponse(statusCode: response.statusCode, data: responseData);
+        }
+        return ApiResponse(statusCode: response.statusCode, data: {'message': 'Kirim qilindi'});
+      }
+      final errorMsg = _parseErrorDetail(responseData is Map ? responseData['detail'] : null, response.statusCode);
+      return ApiResponse(statusCode: response.statusCode, errorDetail: errorMsg);
+    } catch (e) {
+      return ApiResponse(statusCode: 502, errorDetail: 'Server bilan aloqa o\'rnatilmadi (Oflayn rejim).');
+    }
+  }
+
+  // 3.4.3 — GET /clients/ (Mijozlar ro'yxati)
+  Future<ApiResponse<List<Map<String, dynamic>>>> getClients({String? search}) async {
+    final query = (search != null && search.isNotEmpty) ? '?search=${Uri.encodeComponent(search)}' : '';
+    final url = Uri.parse('$baseUrl/clients/$query');
+    try {
+      final response = await http.get(url, headers: _headers).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        List<dynamic> rawList = [];
+        if (decoded is List) {
+          rawList = decoded;
+        } else if (decoded is Map<String, dynamic> && decoded['results'] is List) {
+          rawList = decoded['results'] as List<dynamic>;
+        }
+        final resultList = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        return ApiResponse(statusCode: 200, data: resultList);
+      }
+    } catch (_) {}
+    return ApiResponse(statusCode: 200, data: []);
+  }
+
+  // 3.4.4 — POST /clients/ (Yangi mijoz yaratish)
+  Future<ApiResponse<Map<String, dynamic>>> createClient(String name, String phone) async {
+    final url = Uri.parse('$baseUrl/clients/');
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: _headers,
+            body: jsonEncode({
+              'name': name.trim(),
+              'phone': formatUzbekPhone(phone),
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      final decoded = jsonDecode(response.body);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return ApiResponse(statusCode: response.statusCode, data: decoded is Map<String, dynamic> ? decoded : {});
+      }
+      return ApiResponse(statusCode: response.statusCode, errorDetail: _parseErrorDetail(decoded is Map ? decoded['detail'] : null, response.statusCode));
     } catch (e) {
       return ApiResponse(statusCode: 502, errorDetail: 'Server bilan aloqa uzildi.');
     }

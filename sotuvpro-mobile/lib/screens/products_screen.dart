@@ -7,6 +7,7 @@ import '../services/api_service.dart';
 import '../services/printer_service.dart';
 import '../theme/app_theme.dart';
 import 'scanner_screen.dart';
+import 'purchase_screen.dart';
 
 class ProductsScreen extends StatefulWidget {
   final User currentUser;
@@ -53,6 +54,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           saleUnit: json['sale_unit']?.toString() ?? 'Dona',
           conversionRate: 1.0,
           price: double.tryParse(json['price_per_sale_unit']?.toString() ?? '0') ?? 0.0,
+          costPrice: double.tryParse(json['cost_price']?.toString() ?? '0') ?? 0.0,
           stockQuantity: double.tryParse(json['available_stock']?.toString() ?? json['current_stock']?.toString() ?? '0') ?? 0.0,
           barcode: json['barcode']?.toString() ?? '',
           qrCode: json['qr_code']?.toString() ?? '',
@@ -70,6 +72,65 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _filteredProducts = list;
       _isLoading = false;
     });
+  }
+
+  void _showRepriceDialog(Product product) {
+    final priceController = TextEditingController(text: product.price.toStringAsFixed(0));
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.cardSurface,
+        title: Text('${product.name} — Qayta Narxlash (Pereotsenka)', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Joriy sotish narxi: ${product.price.toStringAsFixed(0)} UZS / ${product.saleUnit}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceController,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Yangi Sotish Narxi (so\'m)',
+                prefixIcon: Icon(Icons.edit_note, color: AppTheme.primaryEmerald),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Bekor qilish', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newPrice = double.tryParse(priceController.text.trim()) ?? 0.0;
+              if (newPrice <= 0) return;
+              final res = await ApiService.instance.repriceProduct(product.id, newPrice);
+              if (res.isSuccess) {
+                await DatabaseHelper.instance.updateProductStock(product.id, product.stockQuantity, newPrice: newPrice);
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Mahsulot narxi muvaffaqiyatli yangilandi!'), backgroundColor: AppTheme.primaryEmerald),
+                  );
+                  _loadProducts();
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(res.errorDetail ?? 'Narxni o\'zgartirishda xatolik!'), backgroundColor: AppTheme.dangerRed),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryEmerald),
+            child: const Text('Narxni Saqlash'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _filterProducts() {
@@ -288,6 +349,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
         title: const Text('Mahsulotlar Katalogi (Ombor)'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.add_shopping_cart, color: AppTheme.accentNeon),
+            tooltip: 'Sklad Prixod (Yuk Kirimi)',
+            onPressed: () async {
+              final updated = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PurchaseScreen(currentUser: widget.currentUser),
+                ),
+              );
+              if (updated == true) _loadProducts();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.qr_code_scanner, color: AppTheme.primaryEmerald),
             tooltip: 'Skaner Orqali Tovar Qo\'shish',
             onPressed: _openAddProductScanner,
@@ -441,12 +515,22 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                     ),
                                   ],
                                 ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.print_outlined, color: AppTheme.textSecondary),
-                                  tooltip: 'Yorliq chop etish',
-                                  onPressed: () {
-                                    PrinterService.instance.printOrShareProductLabel(context, product: p);
-                                  },
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_note_outlined, color: AppTheme.accentNeon),
+                                      tooltip: 'Pereotsenka (Qayta narxlash)',
+                                      onPressed: () => _showRepriceDialog(p),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.print_outlined, color: AppTheme.textSecondary),
+                                      tooltip: 'Yorliq chop etish',
+                                      onPressed: () {
+                                        PrinterService.instance.printOrShareProductLabel(context, product: p);
+                                      },
+                                    ),
+                                  ],
                                 ),
                               ),
                             );

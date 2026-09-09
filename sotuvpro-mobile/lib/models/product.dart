@@ -5,7 +5,8 @@ class Product {
   final String purchaseUnit;
   final String saleUnit;
   final double conversionRate;
-  final double price;
+  final double price; // Sale price (sotish narxi)
+  final double costPrice; // Tan narxi / Kelish narxi (cost_price)
   final double stockQuantity;
   final String barcode;
   final String qrCode;
@@ -21,6 +22,7 @@ class Product {
     required this.saleUnit,
     required this.conversionRate,
     required this.price,
+    this.costPrice = 0.0,
     required this.stockQuantity,
     required this.barcode,
     required this.qrCode,
@@ -40,6 +42,7 @@ class Product {
       'saleUnit': saleUnit,
       'conversionRate': conversionRate,
       'price': price,
+      'costPrice': costPrice,
       'stockQuantity': stockQuantity,
       'barcode': barcode,
       'qrCode': qrCode,
@@ -58,6 +61,7 @@ class Product {
       saleUnit: map['saleUnit'] ?? 'Dona',
       conversionRate: (map['conversionRate'] as num?)?.toDouble() ?? 1.0,
       price: (map['price'] as num?)?.toDouble() ?? 0.0,
+      costPrice: (map['costPrice'] as num?)?.toDouble() ?? (map['cost_price'] as num?)?.toDouble() ?? 0.0,
       stockQuantity: (map['stockQuantity'] as num?)?.toDouble() ?? 0.0,
       barcode: map['barcode'] ?? '',
       qrCode: map['qrCode'] ?? '',

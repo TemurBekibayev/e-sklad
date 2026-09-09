@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/sync_service.dart';
 import '../services/security_service.dart';
+import '../services/kassa_hub_service.dart';
 import '../theme/app_theme.dart';
 import 'pin_setup_screen.dart';
 import 'auth_screen.dart';
@@ -17,11 +18,46 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _hasPin = false;
+  final TextEditingController _hubIpController = TextEditingController();
+  Map<String, dynamic>? _hubStatus;
+  bool _isCheckingHub = false;
 
   @override
   void initState() {
     super.initState();
     _checkPinStatus();
+    _loadHubIp();
+  }
+
+  Future<void> _loadHubIp() async {
+    final ip = await KassaHubService.instance.getSavedHubIp();
+    _hubIpController.text = ip;
+    _pingHub(ip);
+  }
+
+  Future<void> _pingHub([String? customIp]) async {
+    setState(() => _isCheckingHub = true);
+    final status = await KassaHubService.instance.checkHubConnection(customIp ?? _hubIpController.text.trim());
+    if (mounted) {
+      setState(() {
+        _hubStatus = status;
+        _isCheckingHub = false;
+      });
+    }
+  }
+
+  Future<void> _saveHubIp() async {
+    final ip = _hubIpController.text.trim();
+    await KassaHubService.instance.saveHubIp(ip);
+    await _pingHub(ip);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Desktop Kassa Hub IP manzili saqlandi!'),
+          backgroundColor: AppTheme.primaryEmerald,
+        ),
+      );
+    }
   }
 
   Future<void> _checkPinStatus() async {
@@ -204,6 +240,131 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
                 child: Text(_hasPin ? 'O\'zgartirish' : 'O\'rnatish'),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Desktop Kassa Hub Integratsiyasi (Port 8085)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Text(
+              'DO\'KONDAGI DESKTOP KASSA HUB (WI-FI PORT 8085)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textMuted,
+                letterSpacing: 1.0,
+              ),
+            ),
+          ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentNeon.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.desktop_windows_outlined, color: AppTheme.accentNeon),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Desktop Kassa Hub IP',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            Text(
+                              'Savatlarni Kassir kompyuteriga uzatish uchun',
+                              style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _hubIpController,
+                    decoration: InputDecoration(
+                      labelText: 'Kassa Hub IP manzili (Port: 8085)',
+                      hintText: 'http://192.168.1.105:8085',
+                      prefixIcon: const Icon(Icons.dns_outlined, color: AppTheme.accentNeon),
+                      suffixIcon: IconButton(
+                        icon: _isCheckingHub
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accentNeon))
+                            : const Icon(Icons.sync, color: AppTheme.accentNeon),
+                        tooltip: 'Aloqani tekshirish',
+                        onPressed: _saveHubIp,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (_hubStatus != null)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _hubStatus!['is_connected'] == true
+                            ? AppTheme.primaryEmerald.withOpacity(0.15)
+                            : AppTheme.dangerRed.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _hubStatus!['is_connected'] == true ? AppTheme.primaryEmerald : AppTheme.dangerRed,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _hubStatus!['is_connected'] == true ? Icons.check_circle_outline : Icons.error_outline,
+                            color: _hubStatus!['is_connected'] == true ? AppTheme.primaryEmerald : AppTheme.dangerRed,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _hubStatus!['is_connected'] == true
+                                      ? 'Ulandi: ${_hubStatus!['store_name']}'
+                                      : 'Kassa Hub topilmadi. IP manzilini va Wi-Fi aloqani tekshiring.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _hubStatus!['is_connected'] == true ? AppTheme.primaryEmerald : AppTheme.dangerRed,
+                                  ),
+                                ),
+                                if (_hubStatus!['is_connected'] == true)
+                                  Text(
+                                    'Faol smena: ${_hubStatus!['active_shift_user']}',
+                                    style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveHubIp,
+                      icon: const Icon(Icons.save, size: 18),
+                      label: const Text('Saqlash va Ping Tekshirish'),
+                      style: ElevatedButton.styleFrom(backgroundColor: AppTheme.accentNeon, foregroundColor: Colors.black),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

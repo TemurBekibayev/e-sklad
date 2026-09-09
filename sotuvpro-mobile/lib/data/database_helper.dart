@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -63,6 +63,11 @@ class DatabaseHelper {
         ''');
       } catch (_) {}
     }
+    if (oldVersion < 5) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN costPrice REAL NOT NULL DEFAULT 0.0');
+      } catch (_) {}
+    }
   }
 
   Future<void> _createDB(Database db, int version) async {
@@ -82,7 +87,6 @@ class DatabaseHelper {
       )
     ''');
 
-
     await db.execute('''
       CREATE TABLE products (
         id TEXT PRIMARY KEY,
@@ -92,6 +96,7 @@ class DatabaseHelper {
         saleUnit TEXT NOT NULL,
         conversionRate REAL NOT NULL,
         price REAL NOT NULL,
+        costPrice REAL NOT NULL DEFAULT 0.0,
         stockQuantity REAL NOT NULL,
         barcode TEXT NOT NULL,
         qrCode TEXT NOT NULL,
