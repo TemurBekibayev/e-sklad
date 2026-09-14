@@ -102,7 +102,7 @@ async function getConfig() {
   if (!cfg) {
     await run(`
       INSERT INTO backend_config (id, api_url, tenant_id, tenant_name, auth_token, sync_interval, is_external_active)
-      VALUES (1, 'https://amuhr.uz', '5322a772-e9db-402a-8d2b-6293edd03832', 'Test (Mangit)', '', 30, 1)
+      VALUES (1, 'https://getpos.uz', '5322a772-e9db-402a-8d2b-6293edd03832', 'Test', '', 30, 1)
     `);
     cfg = await get(`SELECT * FROM backend_config WHERE id = 1`);
   }
@@ -607,6 +607,81 @@ function stopPeriodicSync() {
   }
 }
 
+// Fetch active mobile baskets sent from mobile waiters / runners
+async function fetchActiveBaskets() {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const tenantId = cfg.tenant_id || '5322a772-e9db-402a-8d2b-6293edd03832';
+  const token = await ensureAuthToken();
+
+  const url = `${baseUrl}/api/baskets/?tenant_id=${tenantId}&status=active`;
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+  try {
+    const res = await makeRequest({ url, method: 'GET', headers, timeoutMs: 6000 });
+    if (res.status === 200 && res.data) {
+      const items = res.data.results || (Array.isArray(res.data) ? res.data : []);
+      return { success: true, count: items.length, baskets: items };
+    }
+    return { success: false, count: 0, baskets: [], error: `Status ${res.status}` };
+  } catch (err) {
+    return { success: false, count: 0, baskets: [], error: err.message };
+  }
+}
+
+// Complete mobile basket transaction via POST /api/transactions/
+async function completeBasketTransaction({ basketId, paymentMethod = 'cash', totalAmount, clientName = '', clientPhone = '' }) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const tenantId = cfg.tenant_id || '5322a772-e9db-402a-8d2b-6293edd03832';
+  const token = await ensureAuthToken();
+
+  const url = `${baseUrl}/api/transactions/`;
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+  const payload = {
+    tenant_id: tenantId,
+    basket_id: basketId,
+    payment_method: paymentMethod, // 'cash', 'card', 'debt', 'click', 'payme'
+    total_amount: Number(totalAmount),
+    client_name: clientName || '',
+    client_phone: clientPhone || '',
+  };
+
+  try {
+    const res = await makeRequest({ url, method: 'POST', headers, body: payload, timeoutMs: 8000 });
+    if (res.status === 200 || res.status === 201) {
+      return { success: true, transaction: res.data };
+    }
+    return { success: false, error: res.data?.error || `Server status ${res.status}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Patch mobile basket status (e.g. status: 'completed' or 'loaded')
+async function patchBasketStatus(basketId, status = 'completed', extra = {}) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+
+  const url = `${baseUrl}/api/baskets/${basketId}/`;
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+  try {
+    const res = await makeRequest({
+      url,
+      method: 'PATCH',
+      headers,
+      body: { status, ...extra },
+      timeoutMs: 6000,
+    });
+    return { success: res.status >= 200 && res.status < 300, data: res.data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -618,5 +693,8 @@ module.exports = {
   pushOrderSale,
   startPeriodicSync,
   stopPeriodicSync,
+  fetchActiveBaskets,
+  completeBasketTransaction,
+  patchBasketStatus,
   getLastSyncResult: () => lastSyncResult,
 };

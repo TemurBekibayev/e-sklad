@@ -6,6 +6,7 @@ import JetCafeItemCancelModal from '../components/JetCafeItemCancelModal';
 import JetCafeOrdersJournalModal from '../components/JetCafeOrdersJournalModal';
 import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
+import JetCafeMobileBasketsModal from '../components/JetCafeMobileBasketsModal';
 
 export default function JetCafePosView({
   tables = [],
@@ -56,6 +57,43 @@ export default function JetCafePosView({
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState(false);
+  const [mobileBaskets, setMobileBaskets] = useState([]);
+  const [isMobileBasketsModalOpen, setIsMobileBasketsModalOpen] = useState(false);
+
+  // Poll for active mobile baskets from getpos.uz
+  const loadMobileBaskets = async () => {
+    try {
+      const res = await fetch('/api/baskets');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.baskets)) {
+          setMobileBaskets(data.baskets);
+        }
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    loadMobileBaskets();
+    const interval = setInterval(loadMobileBaskets, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleLoadBasketToCart = (basket) => {
+    if (!basket || !basket.items || basket.items.length === 0) return;
+    const newItems = basket.items.map((it) => ({
+      product_id: it.product || it.id,
+      product_name: it.product_name,
+      quantity: parseFloat(it.quantity || 1),
+      price: parseFloat(it.unit_price || it.price || 0),
+      comment: `Mobil: ${basket.worker_name || 'Xodim'}`,
+      is_cancelled: false,
+    }));
+    setOrderItems((prev) => [...prev, ...newItems]);
+    if (basket.worker_name) {
+      setSelectedWaiter(basket.worker_name);
+    }
+  };
 
   // Payment form state
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'split'
@@ -392,6 +430,26 @@ export default function JetCafePosView({
             <span>✈️</span>
             <span>JetBot</span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </button>
+
+          {/* Mobil Savat Button (Backend v2.0 - Kassaga Uzatish) */}
+          <button
+            type="button"
+            onClick={() => setIsMobileBasketsModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold shadow-sm transition active:scale-95 border ${
+              mobileBaskets.length > 0
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 animate-pulse'
+                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+            }`}
+            title="Mobil ilovadan (ofitsiant/xodimlar) yuborilgan savatlarni chekka yuklash"
+          >
+            <span>📥</span>
+            <span>Mobil Savat</span>
+            {mobileBaskets.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-white text-emerald-800 text-[10px] font-black shadow">
+                {mobileBaskets.length}
+              </span>
+            )}
           </button>
 
           {/* Settings cascading menu matching step2_frame_82.jpg */}
@@ -1225,6 +1283,15 @@ export default function JetCafePosView({
       <JetCafeBackendModal
         isOpen={isBackendModalOpen}
         onClose={() => setIsBackendModalOpen(false)}
+      />
+
+      {/* 10. Mobil Savatlar Modal (Backend v2.0) */}
+      <JetCafeMobileBasketsModal
+        isOpen={isMobileBasketsModalOpen}
+        onClose={() => setIsMobileBasketsModalOpen(false)}
+        baskets={mobileBaskets}
+        onLoadBasketToCart={handleLoadBasketToCart}
+        onRefresh={loadMobileBaskets}
       />
 
     </div>

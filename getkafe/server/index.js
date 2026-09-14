@@ -42,6 +42,7 @@ wss.on('connection', (ws) => {
   // Yangi ulanuvchiga darhol hozirgi holatni yuborish
   (async () => {
     const pendingCount = await getPendingCount();
+    const basketsRes = await backendSync.fetchActiveBaskets().catch(() => ({ count: 0, baskets: [] }));
     ws.send(
       JSON.stringify({
         event: 'INIT_STATE',
@@ -49,6 +50,8 @@ wss.on('connection', (ws) => {
           isOnline: getInternetStatus(),
           pendingChecks: pendingCount,
           company: COMPANY_INFO,
+          mobileBasketsCount: basketsRes.count || 0,
+          mobileBaskets: basketsRes.baskets || [],
         },
       })
     );
@@ -1333,6 +1336,92 @@ app.get('/api/config/backend/tenants', async (req, res) => {
     res.status(500).json({ success: false, error: err.message, tenants: [] });
   }
 });
+
+// ==========================================
+// 12. MOBIL SAVATLAR (BASKETS / KASSAGA UZATISH)
+// ==========================================
+
+// 12.1. Faol mobil savatlarni olish (GET /api/baskets)
+app.get('/api/baskets', async (req, res) => {
+  try {
+    const result = await backendSync.fetchActiveBaskets();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, count: 0, baskets: [] });
+  }
+});
+
+// 12.2. Mobil savatni kassaga yuklash / qabul qilish
+app.post('/api/baskets/:id/load', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tableId } = req.body;
+    const result = await backendSync.fetchActiveBaskets();
+    const basket = result.baskets?.find((b) => b.id === id);
+    if (!basket) {
+      return res.status(404).json({ success: false, message: "Savat topilmadi yoki allaqachon qabul qilingan" });
+    }
+
+    // Optionally mark basket as processed on getpos.uz
+    await backendSync.patchBasketStatus(id, 'loaded', { client_name: basket.client_name || `Stol #${tableId || 1}` }).catch(() => {});
+
+    res.json({
+      success: true,
+      basket,
+      tableId,
+      message: "Mobil savat kassaga muvaffaqiyatli yuklandi",
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 12.3. Mobil savat to'lovini bevosita yakunlash (POST /api/transactions/)
+app.post('/api/baskets/:id/pay', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paymentMethod = 'cash', totalAmount, clientName, clientPhone } = req.body;
+    const payRes = await backendSync.completeBasketTransaction({
+      basketId: id,
+      paymentMethod,
+      totalAmount,
+      clientName,
+      clientPhone,
+    });
+
+    if (payRes.success) {
+      await backendSync.patchBasketStatus(id, 'completed').catch(() => {});
+
+      // Notify all screens about updated baskets
+      const updatedBaskets = await backendSync.fetchActiveBaskets();
+      broadcast('MOBILE_BASKETS_UPDATED', {
+        count: updatedBaskets.count,
+        baskets: updatedBaskets.baskets,
+      });
+
+      res.json({ success: true, message: "Mobil savat to'lovi qabul qilindi", transaction: payRes.transaction });
+    } else {
+      res.status(400).json({ success: false, message: payRes.error || "To'lovni yakunlashda xatolik" });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Background poller for live mobile baskets (every 5 seconds)
+let lastBasketCount = -1;
+setInterval(async () => {
+  try {
+    const res = await backendSync.fetchActiveBaskets();
+    if (res.success && (res.count !== lastBasketCount)) {
+      lastBasketCount = res.count;
+      broadcast('MOBILE_BASKETS_UPDATED', {
+        count: res.count,
+        baskets: res.baskets,
+      });
+    }
+  } catch (e) {}
+}, 5000);
 
 // Production: Serve React client
 const distPath = path.join(__dirname, '../client/dist');
