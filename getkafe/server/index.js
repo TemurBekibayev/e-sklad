@@ -247,21 +247,31 @@ app.get('/api/auth/users', async (req, res) => {
 });
 
 // 2.2. Avtorizatsiya (POST /api/auth/login - Login+Parol yoki PIN-kod orqali)
-app.post('/api/auth/login', async (req, res) => {
+app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
   try {
-    const { login, username, phone, email, password, pin, userId } = req.body;
-    const loginVal = (login || username || phone || email || '').trim();
+    let { login, username, phone, email, password, pin, userId } = req.body;
+    let loginVal = (login || username || phone || email || '').trim();
     const passVal = (password || pin || '').trim();
 
     if (!passVal) {
       return res.status(400).json({ success: false, message: "Parol yoki PIN-kod kiritilishi shart" });
     }
 
+    // Auto-resolve user login/email/name from userId if not explicitly provided
+    if (!loginVal && userId) {
+      try {
+        const uRow = await get(`SELECT name, login, email FROM users WHERE user_code = ? OR id = ?`, [userId, userId]);
+        if (uRow) {
+          loginVal = uRow.login || uRow.email || uRow.name || '';
+        }
+      } catch (_) {}
+    }
+
     const cfg = await backendSync.getConfig();
 
     // 1. Live authentication against getpos.uz
     try {
-      const liveRes = await backendSync.loginLiveUser(userId || loginVal, passVal, cfg.api_url);
+      const liveRes = await backendSync.loginLiveUser(userId || loginVal, passVal, cfg.api_url, loginVal);
       if (liveRes.success) {
         const liveUser = liveRes.user;
         const mappedRole = (liveUser.role === 'manager' || liveUser.role === 'admin') ? 'admin' : (liveUser.role === 'worker' || liveUser.role === 'waiter' ? 'waiter' : liveUser.role);
@@ -361,7 +371,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // 3. Stollar holati (GET /api/tables?tenantId={TENANT_ID})
-app.get('/api/tables', async (req, res) => {
+app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
   try {
     const rows = await all(`
       SELECT t.*, 
@@ -374,21 +384,48 @@ app.get('/api/tables', async (req, res) => {
       ORDER BY t.number ASC
     `);
 
-    const formattedTables = rows.map((t) => ({
-      id: t.id,
-      number: t.number,
-      name: t.name || `Stol ${t.number}`,
-      hall: t.hall || (t.number <= 5 ? 'Основной' : t.number <= 10 ? 'ZAL 1' : t.number <= 15 ? 'ZAL 2' : 'ZAL 3'),
-      capacity: t.capacity || 4,
-      status: t.status || 'free',
-      activeOrderId: t.order_id || null,
-      activeWaiterName: t.waiter_name || null,
-      totalAmount: t.total_amount || 0,
-      total_amount: t.total_amount || 0,
-      order_id: t.order_id,
-      waiter_name: t.waiter_name,
-      current_order_id: t.current_order_id,
-      order_created_at: t.order_created_at,
+    const formattedTables = await Promise.all(rows.map(async (t) => {
+      let items = [];
+      let activeOrder = null;
+      if (t.current_order_id) {
+        activeOrder = await get(`SELECT * FROM orders WHERE id = ?`, [t.current_order_id]);
+      }
+      if (!activeOrder && t.id) {
+        activeOrder = await get(
+          `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
+          [t.id]
+        );
+      }
+      if (activeOrder) {
+        items = await all(
+          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) ORDER BY id ASC`,
+          [activeOrder.id]
+        );
+      }
+      const orderTotal = activeOrder ? Number(activeOrder.total_amount || 0) : Number(t.total_amount || 0);
+
+      return {
+        id: t.id,
+        number: t.number,
+        name: t.name || `STOL - ${t.number}`,
+        hall: t.hall || 'Asosiy Zal',
+        capacity: t.capacity || 4,
+        status: t.status || (activeOrder ? activeOrder.status : 'free'),
+        activeOrderId: activeOrder?.id || t.order_id || null,
+        activeWaiterName: activeOrder?.waiter_name || t.waiter_name || null,
+        totalAmount: orderTotal,
+        total_amount: orderTotal,
+        order_id: activeOrder?.id || t.order_id || null,
+        orderId: activeOrder?.id || t.order_id || null,
+        waiter_name: activeOrder?.waiter_name || t.waiter_name || null,
+        waiterName: activeOrder?.waiter_name || t.waiter_name || null,
+        current_order_id: activeOrder?.id || t.current_order_id || null,
+        order_created_at: activeOrder?.created_at || t.order_created_at || null,
+        items_count: items.length,
+        items: items,
+        order_items: items,
+        products: items,
+      };
     }));
 
     // Agar tenantId so'ralgan bo'lsa (Backend / Mobile spetsifikatsiyasi bo'yicha to'g'ridan-to'g'ri massiv qaytariladi)
@@ -396,14 +433,289 @@ app.get('/api/tables', async (req, res) => {
       return res.json(formattedTables);
     }
 
-    res.json({ success: true, tables: formattedTables });
+    res.json({
+      success: true,
+      tables: formattedTables,
+      data: formattedTables,
+      results: formattedTables,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 4. Menyu va Taomlar (GET /api/menu?tenantId={TENANT_ID})
-app.get('/api/menu', async (req, res) => {
+// 3.01. Bitta stol ma'lumotini olish (GET /api/tables/:id)
+app.get(['/api/tables/:id', '/tables/:id'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [id, id]);
+    if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
+
+    let order = null;
+    let items = [];
+    if (table.current_order_id) {
+      order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
+      if (order) {
+        items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]);
+      }
+    }
+
+    const formatted = {
+      ...table,
+      order,
+      items,
+      order_items: items,
+      products: items,
+      total_amount: order?.total_amount || 0,
+    };
+
+    res.json({
+      success: true,
+      table: formatted,
+      data: formatted,
+      order,
+      items,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.1. Yangi stol qo'shish (POST /api/tables)
+app.post(['/api/tables', '/tables'], async (req, res) => {
+  try {
+    let { number, name, hall, capacity } = req.body;
+
+    if (!number) {
+      const maxNumRow = await get(`SELECT MAX(number) as max_num FROM tables`);
+      number = (maxNumRow?.max_num || 0) + 1;
+    } else {
+      number = Number(number);
+    }
+
+    const existing = await get(`SELECT id FROM tables WHERE number = ?`, [number]);
+    if (existing) {
+      return res.status(400).json({ success: false, message: `${number}-raqamli stol allaqachon mavjud!` });
+    }
+
+    const tableName = (name && name.trim()) || `STOL - ${number}`;
+    const tableHall = (hall && hall.trim()) || 'Asosiy Zal';
+    const tableCapacity = Number(capacity) || 4;
+
+    const result = await run(
+      `INSERT INTO tables (number, name, hall, capacity, status) VALUES (?, ?, ?, ?, 'free')`,
+      [number, tableName, tableHall, tableCapacity]
+    );
+
+    const newTable = await get(`SELECT * FROM tables WHERE id = ?`, [result.lastID]);
+    const formatted = {
+      id: newTable.id,
+      number: newTable.number,
+      name: newTable.name,
+      hall: newTable.hall,
+      capacity: newTable.capacity,
+      status: 'free',
+      total_amount: 0,
+    };
+
+    broadcast('TABLE_ADDED', formatted);
+    broadcast('TABLES_UPDATED', formatted);
+
+    res.json({ success: true, table: formatted, message: `${tableName} muvaffaqiyatli qo'shildi!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.2. Stolni tahrirlash (PUT /api/tables/:id)
+app.put(['/api/tables/:id', '/tables/:id'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { number, name, hall, capacity } = req.body;
+
+    const table = await get(`SELECT * FROM tables WHERE id = ?`, [id]);
+    if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
+
+    if (number && Number(number) !== table.number) {
+      const conflict = await get(`SELECT id FROM tables WHERE number = ? AND id != ?`, [Number(number), id]);
+      if (conflict) {
+        return res.status(400).json({ success: false, message: `${number}-raqamli stol allaqachon mavjud!` });
+      }
+    }
+
+    const newNumber = number ? Number(number) : table.number;
+    const newName = (name && name.trim()) || table.name;
+    const newHall = (hall && hall.trim()) || table.hall || 'Asosiy Zal';
+    const newCapacity = capacity !== undefined ? Number(capacity) : table.capacity;
+
+    await run(
+      `UPDATE tables SET number = ?, name = ?, hall = ?, capacity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [newNumber, newName, newHall, newCapacity, id]
+    );
+
+    const updated = await get(`
+      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+      FROM tables t
+      LEFT JOIN orders o ON t.current_order_id = o.id
+      WHERE t.id = ?
+    `, [id]);
+
+    broadcast('TABLE_UPDATED', updated);
+    broadcast('TABLES_UPDATED', updated);
+
+    res.json({ success: true, table: updated, message: `${newName} ma'lumotlari yangilandi!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.3. Stolni o'chirish (DELETE /api/tables/:id)
+app.delete(['/api/tables/:id', '/tables/:id'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const table = await get(`SELECT * FROM tables WHERE id = ?`, [id]);
+    if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
+
+    if (table.status === 'busy' || table.current_order_id) {
+      return res.status(400).json({
+        success: false,
+        message: `Band (${table.name}) stolni o'chirib bo'lmaydi! Avval hisobni yoping yoki buyurtmani bekor qiling.`
+      });
+    }
+
+    await run(`DELETE FROM tables WHERE id = ?`, [id]);
+    broadcast('TABLE_DELETED', { id: Number(id) });
+    broadcast('TABLES_UPDATED', { id: Number(id) });
+
+    res.json({ success: true, message: `${table.name} muvaffaqiyatli o'chirildi!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.4. Xonalar / Zallar ro'yxati (GET /api/halls)
+app.get(['/api/halls', '/halls'], async (req, res) => {
+  try {
+    const halls = await all(`
+      SELECT h.*, COUNT(t.id) as table_count
+      FROM halls h
+      LEFT JOIN tables t ON t.hall = h.name
+      GROUP BY h.id
+      ORDER BY h.order_index ASC, h.id ASC
+    `);
+    res.json({ success: true, halls });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.5. Yangi xona / zal qo'shish (POST /api/halls)
+app.post(['/api/halls', '/halls'], async (req, res) => {
+  try {
+    const { name, order_index } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Zal nomi kiritilishi shart!' });
+    }
+
+    const hallName = name.trim();
+    const existing = await get(`SELECT id FROM halls WHERE LOWER(name) = LOWER(?)`, [hallName]);
+    if (existing) {
+      return res.status(400).json({ success: false, message: `"${hallName}" nomli zal allaqachon mavjud!` });
+    }
+
+    const maxOrder = await get(`SELECT MAX(order_index) as max_ord FROM halls`);
+    const nextOrder = order_index !== undefined ? Number(order_index) : (maxOrder?.max_ord || 0) + 1;
+
+    const result = await run(
+      `INSERT INTO halls (name, order_index) VALUES (?, ?)`,
+      [hallName, nextOrder]
+    );
+
+    const newHall = await get(`SELECT *, 0 as table_count FROM halls WHERE id = ?`, [result.lastID]);
+    broadcast('HALL_ADDED', newHall);
+    broadcast('HALLS_UPDATED', newHall);
+
+    res.json({ success: true, hall: newHall, message: `"${hallName}" zali muvaffaqiyatli yaratildi!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.6. Xona / zalni tahrirlash (PUT /api/halls/:id)
+app.put(['/api/halls/:id', '/halls/:id'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, order_index } = req.body;
+
+    const oldHall = await get(`SELECT * FROM halls WHERE id = ?`, [id]);
+    if (!oldHall) return res.status(404).json({ success: false, message: 'Zal topilmadi' });
+
+    const newName = (name && name.trim()) || oldHall.name;
+    const newOrder = order_index !== undefined ? Number(order_index) : oldHall.order_index;
+
+    // Check conflict
+    const conflict = await get(`SELECT id FROM halls WHERE LOWER(name) = LOWER(?) AND id != ?`, [newName, id]);
+    if (conflict) {
+      return res.status(400).json({ success: false, message: `"${newName}" nomli zal allaqachon mavjud!` });
+    }
+
+    await run(`UPDATE halls SET name = ?, order_index = ? WHERE id = ?`, [newName, newOrder, id]);
+
+    // If hall name changed, update corresponding tables
+    if (oldHall.name !== newName) {
+      await run(`UPDATE tables SET hall = ? WHERE hall = ?`, [newName, oldHall.name]);
+    }
+
+    const updatedHall = await get(`
+      SELECT h.*, COUNT(t.id) as table_count
+      FROM halls h
+      LEFT JOIN tables t ON t.hall = h.name
+      WHERE h.id = ?
+      GROUP BY h.id
+    `, [id]);
+
+    broadcast('HALL_UPDATED', updatedHall);
+    broadcast('HALLS_UPDATED', updatedHall);
+    broadcast('TABLES_UPDATED', {});
+
+    res.json({ success: true, hall: updatedHall, message: `Zal nomi "${newName}" ga yangilandi!` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3.7. Xona / zalni o'chirish (DELETE /api/halls/:id)
+app.delete(['/api/halls/:id', '/halls/:id'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const hall = await get(`SELECT * FROM halls WHERE id = ?`, [id]);
+    if (!hall) return res.status(404).json({ success: false, message: 'Zal topilmadi' });
+
+    // Check if any busy table in this hall
+    const busyTable = await get(`SELECT id, name FROM tables WHERE hall = ? AND (status = 'busy' OR current_order_id IS NOT NULL)`, [hall.name]);
+    if (busyTable) {
+      return res.status(400).json({
+        success: false,
+        message: `Ushbu zalda band stol (${busyTable.name}) mavjud! Avval buyurtmani yoping.`
+      });
+    }
+
+    // Move any tables in this hall to default 'Asosiy Zal'
+    await run(`UPDATE tables SET hall = 'Asosiy Zal' WHERE hall = ?`, [hall.name]);
+    await run(`DELETE FROM halls WHERE id = ?`, [id]);
+
+    broadcast('HALL_DELETED', { id: Number(id) });
+    broadcast('HALLS_UPDATED', { id: Number(id) });
+    broadcast('TABLES_UPDATED', {});
+
+    res.json({ success: true, message: `"${hall.name}" zali o'chirildi. Undagi stollar "Asosiy Zal"ga o'tkazildi.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. Menyu va Taomlar / Mahsulotlar (GET /api/menu, GET /api/products)
+app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) => {
   try {
     const rawCategories = await all(`SELECT * FROM categories ORDER BY order_index ASC`);
     const rawProducts = await all(`SELECT * FROM products WHERE is_available = 1 ORDER BY category_id, name`);
@@ -920,44 +1232,221 @@ app.get('/api/inventory/movements', async (req, res) => {
   }
 });
 
-// 5. Stol bo'yicha joriy faol buyurtmani olish
-app.get('/api/orders/table/:tableId', async (req, res) => {
+// 5. Stol bo'yicha joriy faol buyurtmani olish (Barcha variantlar: /table/:id, /tables/:id/order, ?tableId=)
+app.get([
+  '/api/orders/table/:tableId',
+  '/orders/table/:tableId',
+  '/api/tables/:tableId/order',
+  '/api/tables/:tableId/orders',
+  '/tables/:tableId/order',
+  '/tables/:tableId/orders'
+], async (req, res) => {
   try {
     const { tableId } = req.params;
-    const table = await get(`SELECT * FROM tables WHERE id = ?`, [tableId]);
-    if (!table || !table.current_order_id) {
-      return res.json({ success: true, order: null, items: [] });
+    const table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableId, tableId]);
+    if (!table) {
+      return res.status(404).json({ success: false, message: 'Stol topilmadi', order: null, items: [], data: null });
     }
 
-    const order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
-    const items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]);
-    res.json({ success: true, order, items, table });
+    let order = null;
+    let items = [];
+
+    if (table.current_order_id) {
+      order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
+    }
+    if (!order) {
+      order = await get(`SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'bill_requested') ORDER BY created_at DESC LIMIT 1`, [table.id]);
+    }
+
+    if (order) {
+      items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]);
+    }
+
+    const fullOrder = order ? {
+      ...order,
+      order_id: order.id,
+      orderId: order.id,
+      table_id: table.id,
+      tableId: table.id,
+      table_number: table.number,
+      tableNumber: table.number,
+      table_name: table.name,
+      tableName: table.name,
+      hall: table.hall,
+      total_amount: order.total_amount,
+      totalAmount: order.total_amount,
+      items: items,
+      order_items: items,
+      products: items,
+    } : null;
+
+    res.json({
+      success: true,
+      order: fullOrder,
+      items: items,
+      order_items: items,
+      products: items,
+      table: {
+        ...table,
+        order_id: order ? order.id : null,
+        total_amount: order ? order.total_amount : 0,
+        items: items,
+      },
+      data: fullOrder ? {
+        ...fullOrder,
+        order: fullOrder,
+        items: items,
+        table: table,
+      } : {
+        order: null,
+        items: [],
+        table: table,
+      },
+      results: items,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message, order: null, items: [] });
+  }
+});
+
+// 5.1. Barcha buyurtmalar ro'yxati yoki ?tableId bo'yicha olish (GET /api/orders)
+app.get(['/api/orders', '/orders', '/api/orders/active', '/orders/active'], async (req, res) => {
+  try {
+    const tableParam = req.query.tableId || req.query.table_id || req.query.table;
+    if (tableParam) {
+      const table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableParam, tableParam]);
+      if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi', items: [] });
+      let order = table.current_order_id ? await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]) : null;
+      if (!order) {
+        order = await get(`SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'bill_requested') ORDER BY created_at DESC LIMIT 1`, [table.id]);
+      }
+      const items = order ? await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]) : [];
+      const fullOrder = order ? { ...order, items, order_items: items } : null;
+      return res.json({
+        success: true,
+        order: fullOrder,
+        items,
+        table,
+        data: fullOrder,
+      });
+    }
+
+    // Barcha ochiq buyurtmalar ro'yxati
+    const orders = await all(`
+      SELECT o.*, t.number as table_number, t.name as table_name, t.hall
+      FROM orders o
+      LEFT JOIN tables t ON o.table_id = t.id
+      WHERE o.status IN ('open', 'bill_requested')
+      ORDER BY o.created_at DESC
+    `);
+
+    const ordersWithItems = await Promise.all(orders.map(async (o) => {
+      const items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [o.id]);
+      return {
+        ...o,
+        items,
+        order_items: items,
+      };
+    }));
+
+    res.json({
+      success: true,
+      orders: ordersWithItems,
+      data: ordersWithItems,
+      results: ordersWithItems,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 6. Yangi buyurtma berish yoki ochiq stolga qo'shish (Ofitsiant yoki Kassir)
-app.post('/api/orders', async (req, res) => {
+// 5.2. ID bo'yicha bitta buyurtmani olish (GET /api/orders/:id)
+app.get(['/api/orders/:id', '/orders/:id'], async (req, res) => {
   try {
-    const { tableId, waiterId, waiterName, items } = req.body;
-    if (!tableId || !items || !items.length) {
-      return res.status(400).json({ success: false, message: "Ma'lumotlar to'liq emas" });
+    const { id } = req.params;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
+    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+    const items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [order.id]);
+
+    const fullOrder = {
+      ...order,
+      order_id: order.id,
+      orderId: order.id,
+      table_number: table?.number,
+      table_name: table?.name,
+      hall: table?.hall,
+      items,
+      order_items: items,
+    };
+
+    res.json({
+      success: true,
+      order: fullOrder,
+      items,
+      table,
+      data: fullOrder,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. Yangi buyurtma berish yoki ochiq stolga qo'shish (Ofitsiant / Mobil ilova)
+app.post([
+  '/api/orders', 
+  '/orders', 
+  '/api/orders/items', 
+  '/orders/items', 
+  '/api/orders/:id/items', 
+  '/orders/:id/items',
+  '/api/tables/:tableId/orders'
+], async (req, res) => {
+  try {
+    const body = req.body || {};
+    const tableIdParam = req.params.tableId || body.tableId || body.table_id || body.table || body.tableNumber;
+    let rawItems = body.items || body.products || body.dishes || body.order_items;
+
+    // Single item payload support: { product_id: 1, quantity: 2 }
+    if (!rawItems && (body.product_id || body.productId || body.id)) {
+      rawItems = [body];
+    }
+    if (!Array.isArray(rawItems)) {
+      rawItems = rawItems ? [rawItems] : [];
     }
 
-    const table = await get(`SELECT * FROM tables WHERE id = ?`, [tableId]);
+    if (!tableIdParam && !body.orderId && !body.order_id && !req.params.id) {
+      return res.status(400).json({ success: false, message: "tableId yoki orderId talab qilinadi" });
+    }
+
+    let table = null;
+    if (tableIdParam) {
+      table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableIdParam, tableIdParam]);
+    }
+
+    let targetOrderId = req.params.id || body.orderId || body.order_id || table?.current_order_id;
+    if (!table && targetOrderId) {
+      const ordRow = await get(`SELECT * FROM orders WHERE id = ?`, [targetOrderId]);
+      if (ordRow) {
+        table = await get(`SELECT * FROM tables WHERE id = ?`, [ordRow.table_id]);
+      }
+    }
+
     if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
 
-    let orderId = table.current_order_id;
     let isNewOrder = false;
 
-    // Agar stol bo'sh bo'lsa, yangi buyurtma yaratiladi
-    if (!orderId) {
-      orderId = 'ord_' + uuidv4().substring(0, 8);
+    // Agar stol bo'sh bo'lsa yoki order topilmasa, yangi buyurtma yaratiladi
+    if (!targetOrderId) {
+      targetOrderId = 'ord_' + uuidv4().substring(0, 8);
       isNewOrder = true;
+      const waiterId = body.waiterId || body.waiter_id || body.userId || body.user_id || 1;
+      const waiterName = (body.waiterName || body.waiter_name || body.userName || body.user_name || 'Ofitsiant').trim();
+
       await run(
         `INSERT INTO orders (id, table_id, waiter_id, waiter_name, status, total_amount) VALUES (?, ?, ?, ?, 'open', 0)`,
-        [orderId, tableId, waiterId || 1, waiterName || 'Ofitsiant']
+        [targetOrderId, table.id, waiterId, waiterName]
       );
     }
 
@@ -965,94 +1454,122 @@ app.post('/api/orders', async (req, res) => {
     let addedTotal = 0;
     const addedItemsForKitchen = [];
 
-    for (const item of items) {
-      const pId = item.product_id || item.productId;
-      const pName = item.product_name || item.productName || item.name;
-      const itemTotal = (item.price || 0) * (item.quantity || 1);
+    for (const item of rawItems) {
+      const pId = item.product_id || item.productId || item.id;
+      const pName = item.product_name || item.productName || item.name || 'Taom';
+      const itemPrice = Number(item.price || item.unit_price || item.cost || 0);
+      const itemQty = Number(item.quantity || item.qty || item.count || 1);
+      const itemComment = item.comment || item.note || item.izoh || '';
+
+      const itemTotal = itemPrice * itemQty;
       addedTotal += itemTotal;
+
+      const itemWaiterId = item.waiter_id || item.waiterId || body.waiterId || body.waiter_id || body.userId || body.user_id || req.user?.id || 1;
+      const itemWaiterName = (item.waiter_name || item.waiterName || body.waiterName || body.waiter_name || body.userName || body.user_name || req.user?.name || 'Ofitsiant').trim();
+
       await run(
-        `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status) 
-         VALUES (?, ?, ?, ?, ?, ?, 'sent')`,
-        [orderId, pId, pName, item.quantity || 1, item.price || 0, item.comment || '']
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status, waiter_id, waiter_name) 
+         VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?)`,
+        [targetOrderId, pId || 1, pName, itemQty, itemPrice, itemComment, itemWaiterId, itemWaiterName]
       );
+
       addedItemsForKitchen.push({
         product_name: pName,
-        quantity: item.quantity || 1,
-        comment: item.comment || '',
+        quantity: itemQty,
+        comment: itemComment,
       });
 
       // Sklad qoldig'ini avtomatik kamaytirish
-      try {
-        const prodRow = await get(`SELECT id, name, stock_quantity, price, cost_price FROM products WHERE id = ?`, [pId]);
-        if (prodRow) {
-          const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 100);
-          const reqQty = Number(item.quantity || 1);
-          const newSt = Math.max(0, prevSt - reqQty);
-          await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
-          await run(
-            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
-             VALUES (?, 'out_sale', ?, ?, ?, ?, ?, ?, ?)`,
-            [
-              prodRow.id,
-              reqQty,
-              prevSt,
-              newSt,
-              prodRow.price,
-              prodRow.price * reqQty,
-              `Savdo: ${table.number}-stol (Buyurtma ${orderId})`,
-              waiterName || 'Ofitsiant'
-            ]
-          );
-          const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
-          broadcast('INVENTORY_UPDATED', { product: updP });
-          broadcast('PRODUCT_UPDATED', updP);
+      if (pId) {
+        try {
+          const prodRow = await get(`SELECT id, name, stock_quantity, price FROM products WHERE id = ?`, [pId]);
+          if (prodRow) {
+            const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 100);
+            const newSt = Math.max(0, prevSt - itemQty);
+            await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
+            await run(
+              `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+               VALUES (?, 'out_sale', ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                prodRow.id,
+                itemQty,
+                prevSt,
+                newSt,
+                prodRow.price,
+                prodRow.price * itemQty,
+                `Savdo: ${table.name || table.number}-stol (Buyurtma ${targetOrderId})`,
+                body.waiterName || body.waiter_name || 'Ofitsiant'
+              ]
+            );
+            const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
+            broadcast('INVENTORY_UPDATED', { product: updP });
+            broadcast('PRODUCT_UPDATED', updP);
+          }
+        } catch (stockErr) {
+          console.warn('[Stock] Auto-deduct error:', stockErr.message);
         }
-      } catch (stockErr) {
-        console.warn('[Stock] Auto-deduct error:', stockErr.message);
       }
     }
 
     // Buyurtma umumiy summasini hisoblash
-    const sumResult = await get(`SELECT SUM(price * quantity) as total FROM order_items WHERE order_id = ?`, [orderId]);
-    const totalAmount = sumResult ? sumResult.total : 0;
+    const sumResult = await get(`SELECT SUM(price * quantity) as total FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL)`, [targetOrderId]);
+    const totalAmount = sumResult ? (sumResult.total || 0) : 0;
 
-    await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [totalAmount, orderId]);
+    await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [totalAmount, targetOrderId]);
 
     // Stol holatini 'busy' (Qizil - band) ga o'tkazish
     await run(
       `UPDATE tables SET status = 'busy', current_order_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [orderId, tableId]
+      [targetOrderId, table.id]
     );
 
-    // 3.3-band: Oshxona printeriga darhol "Begunok" chekini chiqarish (Narxlarsiz!)
-    const ticket = await printToKitchen({
-      orderId,
-      tableNumber: table.number,
-      waiterName: waiterName || 'Ofitsiant',
-      items: addedItemsForKitchen,
-    });
+    // Oshxona printeriga "Begunok" chekini chiqarish
+    let ticket = null;
+    if (addedItemsForKitchen.length > 0) {
+      ticket = await printToKitchen({
+        orderId: targetOrderId,
+        tableNumber: table.number,
+        waiterName: body.waiterName || body.waiter_name || 'Ofitsiant',
+        items: addedItemsForKitchen,
+      });
+    }
 
-    // Barcha mijozlarga real-time tarqatish
+    const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [targetOrderId]);
     const updatedTable = await get(`
       SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
       FROM tables t
       LEFT JOIN orders o ON t.current_order_id = o.id
       WHERE t.id = ?
-    `, [tableId]);
+    `, [table.id]);
 
     broadcast('TABLE_UPDATED', updatedTable);
-    broadcast('KITCHEN_NEW_TICKET', ticket);
+    if (ticket) broadcast('KITCHEN_NEW_TICKET', ticket);
+
+    const fullOrder = {
+      id: targetOrderId,
+      order_id: targetOrderId,
+      orderId: targetOrderId,
+      table_id: table.id,
+      tableId: table.id,
+      tableNumber: table.number,
+      totalAmount,
+      total_amount: totalAmount,
+      status: 'open',
+      items: updatedItems,
+      order_items: updatedItems,
+    };
 
     res.json({
       success: true,
-      orderId,
+      orderId: targetOrderId,
+      order_id: targetOrderId,
       totalAmount,
-      order: {
-        id: orderId,
-        tableNumber: table.number,
-        totalAmount,
-        status: 'open',
-      },
+      total_amount: totalAmount,
+      order: fullOrder,
+      items: updatedItems,
+      order_items: updatedItems,
+      table: updatedTable,
+      data: fullOrder,
       kitchenTicket: ticket,
     });
   } catch (err) {
@@ -1149,6 +1666,37 @@ app.post('/api/orders/:id/cancel-item', async (req, res) => {
 
     await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [newTotal, orderId]);
 
+    // Ombordagi mahsulot qoldig'ini qaytarish (avto-vozvrat sklad)
+    if (item.product_id) {
+      try {
+        const prodRow = await get(`SELECT id, name, stock_quantity, price FROM products WHERE id = ?`, [item.product_id]);
+        if (prodRow) {
+          const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 0);
+          const newSt = prevSt + qtyToCancel;
+          await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
+          await run(
+            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+             VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              prodRow.id,
+              qtyToCancel,
+              prevSt,
+              newSt,
+              prodRow.price,
+              prodRow.price * qtyToCancel,
+              `Qaytarildi: ${table?.name || (table?.number ? table.number + '-stol' : '')} (Buyurtma ${orderId}) - ${reason || 'Mijoz qaytardi'}`,
+              order.waiter_name || 'Kassa'
+            ]
+          );
+          const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
+          broadcast('INVENTORY_UPDATED', { product: updP });
+          broadcast('PRODUCT_UPDATED', updP);
+        }
+      } catch (stockErr) {
+        console.warn('[Stock] Return replenish error:', stockErr.message);
+      }
+    }
+
     // Oshxona/Bar uchun "Bekor qilish cheki" (Бегунок отмены) chiqarish
     const cancelTicket = await printKitchenCancellationTicket({
       orderId,
@@ -1160,16 +1708,31 @@ app.post('/api/orders/:id/cancel-item', async (req, res) => {
     });
 
     const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [orderId]);
-    const updatedTable = await get(`
+    const updatedTableRaw = await get(`
       SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
       FROM tables t
       LEFT JOIN orders o ON t.current_order_id = o.id
       WHERE t.id = ?
     `, [order.table_id]);
 
+    const activeItems = updatedItems.filter(it => !it.is_cancelled && it.quantity > 0);
+    const updatedTable = {
+      ...(updatedTableRaw || table),
+      total_amount: newTotal,
+      totalAmount: newTotal,
+      items: updatedItems,
+      order_items: updatedItems,
+      products: updatedItems,
+      items_count: activeItems.length,
+      activeOrderId: orderId,
+      order_id: orderId,
+      orderId: orderId,
+    };
+
     broadcast('TABLE_UPDATED', updatedTable);
+    broadcast('TABLES_UPDATED', updatedTable);
     broadcast('KITCHEN_CANCEL_TICKET', cancelTicket);
-    broadcast('ORDER_UPDATED', { orderId, totalAmount: newTotal, items: updatedItems });
+    broadcast('ORDER_UPDATED', { orderId, tableId: order.table_id, totalAmount: newTotal, items: updatedItems });
 
     telegram.notifyItemCancelled({
       tableTitle: table?.name || `${table?.number || 1}-stol`,
@@ -1189,6 +1752,119 @@ app.post('/api/orders/:id/cancel-item', async (req, res) => {
     });
   } catch (err) {
     console.error('Item cancellation error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7.1.1. Buyurtmadagi bitta taomni tahrirlash (Soni, Narxi, Izohi - Masalan 2 tadan 1 taga tushirish)
+app.put(['/api/orders/:orderId/items/:itemId', '/api/order-items/:itemId'], async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { quantity, price, comment, waiter_name } = req.body;
+
+    const item = await get(`SELECT * FROM order_items WHERE id = ?`, [itemId]);
+    if (!item) return res.status(404).json({ success: false, message: 'Taom topilmadi' });
+
+    const targetOrderId = orderId || item.order_id;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [targetOrderId]);
+    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+
+    const oldQty = Number(item.quantity) || 1;
+    const newQty = Number(quantity) > 0 ? Number(quantity) : 1;
+    const newPrice = price !== undefined && price !== null ? Number(price) : item.price;
+    const newComment = comment !== undefined ? String(comment).trim() : (item.comment || '');
+    const newWaiter = waiter_name || item.waiter_name || order.waiter_name || 'Ofitsiant';
+
+    const diffQty = newQty - oldQty; // e.g. 1 - 2 = -1 (kamaydi, 1 ta skladga qaytadi)
+
+    // Ombordagi mahsulot qoldig'ini to'g'rilash (Stock Adjustment)
+    if (item.product_id && diffQty !== 0) {
+      try {
+        const prodRow = await get(`SELECT id, name, stock_quantity, price FROM products WHERE id = ?`, [item.product_id]);
+        if (prodRow) {
+          const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 0);
+          // diffQty < 0 bo'lsa omborga qaytariladi (+), diffQty > 0 bo'lsa ombordan olinadi (-)
+          const newSt = Math.max(0, prevSt - diffQty);
+          await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
+          await run(
+            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              prodRow.id,
+              diffQty < 0 ? 'in' : 'out_sale',
+              Math.abs(diffQty),
+              prevSt,
+              newSt,
+              newPrice,
+              newPrice * Math.abs(diffQty),
+              `Tahrirlandi (${diffQty < 0 ? 'Kamaytirildi' : 'Oshirildi'}): ${table?.name || (table?.number ? table.number + '-stol' : '')} (Buyurtma ${targetOrderId})`,
+              newWaiter
+            ]
+          );
+          const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
+          broadcast('INVENTORY_UPDATED', { product: updP });
+          broadcast('PRODUCT_UPDATED', updP);
+        }
+      } catch (stockErr) {
+        console.warn('[Stock] Item edit stock adjust error:', stockErr.message);
+      }
+    }
+
+    // Taom qatorini yangilash
+    await run(
+      `UPDATE order_items 
+       SET quantity = ?, price = ?, comment = ?, waiter_name = ?
+       WHERE id = ?`,
+      [newQty, newPrice, newComment, newWaiter, item.id]
+    );
+
+    // Buyurtma umumiy summasini qayta hisoblash
+    const sumResult = await get(
+      `SELECT SUM(price * quantity) as total FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL)`,
+      [targetOrderId]
+    );
+    const totalAmount = sumResult ? (sumResult.total || 0) : 0;
+    await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [totalAmount, targetOrderId]);
+
+    const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [targetOrderId]);
+    const updatedTableRaw = await get(`
+      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+      FROM tables t
+      LEFT JOIN orders o ON t.current_order_id = o.id
+      WHERE t.id = ?
+    `, [order.table_id]);
+
+    const activeItems = updatedItems.filter(it => !it.is_cancelled && it.quantity > 0);
+    const updatedTable = {
+      ...(updatedTableRaw || table),
+      total_amount: totalAmount,
+      totalAmount: totalAmount,
+      items: updatedItems,
+      order_items: updatedItems,
+      products: updatedItems,
+      items_count: activeItems.length,
+      activeOrderId: targetOrderId,
+      order_id: targetOrderId,
+      orderId: targetOrderId,
+      status: 'busy',
+    };
+
+    broadcast('TABLE_UPDATED', updatedTable);
+    broadcast('TABLES_UPDATED', updatedTable);
+    broadcast('ORDER_UPDATED', { orderId: targetOrderId, tableId: order.table_id, totalAmount, items: updatedItems });
+
+    res.json({
+      success: true,
+      orderId: targetOrderId,
+      totalAmount,
+      items: updatedItems,
+      order_items: updatedItems,
+      table: updatedTable,
+    });
+  } catch (err) {
+    console.error('Order item edit error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

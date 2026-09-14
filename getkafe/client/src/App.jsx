@@ -4,6 +4,7 @@ import PinModal from './components/PinModal';
 import ReceiptModal from './components/ReceiptModal';
 import AddDishModal from './components/AddDishModal';
 import StaffManagementModal from './components/StaffManagementModal';
+import TableHallManagementModal from './components/TableHallManagementModal';
 import JetCafePosView from './pages/JetCafePosView';
 import CashierView from './pages/CashierView';
 import WaiterView from './pages/WaiterView';
@@ -14,10 +15,11 @@ import InventoryView from './pages/InventoryView';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
-  // Always enforce PIN modal on app launch - zero passwordless bypass!
+  // Always enforce PIN modal on app launch
   const [currentUser, setCurrentUser] = useState(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(true);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [isTableManageModalOpen, setIsTableManageModalOpen] = useState(false);
 
   // Clear any legacy mock sessions on mount
   useEffect(() => {
@@ -31,6 +33,7 @@ export default function App() {
 
   // Core POS states
   const [tables, setTables] = useState([]);
+  const [halls, setHalls] = useState([]);
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [kitchenTickets, setKitchenTickets] = useState([]);
@@ -59,7 +62,6 @@ export default function App() {
       gain.connect(audioCtx.destination);
 
       if (type === 'kitchen') {
-        // High double-ping bell for new orders
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
         osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15); // A5
@@ -68,7 +70,6 @@ export default function App() {
         osc.start();
         osc.stop(audioCtx.currentTime + 0.6);
       } else if (type === 'bill') {
-        // Warning chime when customer requests bill
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(440, audioCtx.currentTime);
         osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.12);
@@ -82,12 +83,33 @@ export default function App() {
     }
   };
 
+  const loadTables = async () => {
+    try {
+      const res = await fetch('/api/tables').then((r) => r.json());
+      if (res.success && Array.isArray(res.tables)) {
+        setTables(res.tables);
+      } else if (Array.isArray(res)) {
+        setTables(res);
+      }
+    } catch (e) {}
+  };
+
+  const loadHalls = async () => {
+    try {
+      const res = await fetch('/api/halls').then((r) => r.json());
+      if (res.success && Array.isArray(res.halls)) {
+        setHalls(res.halls);
+      }
+    } catch (e) {}
+  };
+
   // Initial data loading
   const loadInitialData = async () => {
     try {
-      const [resStatus, resTables, resMenu, resTickets, resUsers] = await Promise.all([
+      const [resStatus, resTables, resHalls, resMenu, resTickets, resUsers] = await Promise.all([
         fetch('/api/status').then((r) => r.json()),
         fetch('/api/tables').then((r) => r.json()),
+        fetch('/api/halls').then((r) => r.json()).catch(() => ({ success: false, halls: [] })),
         fetch('/api/menu').then((r) => r.json()),
         fetch('/api/kitchen/tickets').then((r) => r.json()),
         fetch('/api/auth/users').then((r) => r.json()).catch(() => []),
@@ -103,6 +125,10 @@ export default function App() {
       }
       if (resTables.success) setTables(resTables.tables);
       else if (Array.isArray(resTables)) setTables(resTables);
+
+      if (resHalls.success && Array.isArray(resHalls.halls)) {
+        setHalls(resHalls.halls);
+      }
 
       if (resMenu.success) {
         setCategories(resMenu.categories || []);
@@ -144,18 +170,33 @@ export default function App() {
               pendingChecks: data.pendingChecks,
               company: data.company,
             }));
-          } else if (ev === 'TABLE_UPDATED') {
-            setTables((prev) =>
-              prev.map((t) => (t.id === data.id ? { ...t, ...data } : t))
-            );
-            setSelectedTable((curr) => (curr && curr.id === data.id ? { ...curr, ...data } : curr));
+          } else if (ev === 'TABLE_UPDATED' || ev === 'ORDER_UPDATED' || ev === 'TABLE_ORDER_UPDATED') {
+            loadTables();
+            if (data && data.id) {
+              setTables((prev) =>
+                prev.map((t) => (t.id === data.id ? { ...t, ...data } : t))
+              );
+              setSelectedTable((curr) => (curr && curr.id === data.id ? { ...curr, ...data } : curr));
+            }
+            if (selectedTable) {
+              fetch(`/api/orders/table/${selectedTable.id}`)
+                .then((r) => r.json())
+                .then((res) => {
+                  if (res.success) setActiveOrder(res);
+                })
+                .catch(() => {});
+            }
+          } else if (ev === 'TABLE_ADDED' || ev === 'TABLE_DELETED' || ev === 'TABLES_UPDATED') {
+            loadTables();
+          } else if (ev === 'HALL_ADDED' || ev === 'HALL_UPDATED' || ev === 'HALL_DELETED' || ev === 'HALLS_UPDATED') {
+            loadHalls();
+            loadTables();
           } else if (ev === 'KITCHEN_NEW_TICKET') {
             setKitchenTickets((prev) => [data, ...prev]);
             playSoundAlert('kitchen');
           } else if (ev === 'BILL_REQUESTED') {
             playSoundAlert('bill');
           } else if (ev === 'PAYMENT_COMPLETED') {
-            // If cashier screen, show the fiscal receipt modal
             setCurrentReceipt(data.receipt);
           } else if (ev === 'SYNC_STATUS_CHANGED') {
             setSyncState((prev) => ({
@@ -388,6 +429,7 @@ export default function App() {
         onFlushSync={handleFlushSync}
         onOpenAddDish={() => setIsAddDishModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
+        onOpenTableManageModal={() => setIsTableManageModalOpen(true)}
       />
 
       {/* Main Role Content Views */}
@@ -395,6 +437,7 @@ export default function App() {
         {currentTab === 'cashier' && (
           <JetCafePosView
             tables={tables}
+            halls={halls}
             categories={categories}
             products={products}
             currentUser={currentUser}
@@ -411,12 +454,14 @@ export default function App() {
             onDeleteProduct={handleDeleteProduct}
             onSaveCategory={handleSaveCategory}
             onDeleteCategory={handleDeleteCategory}
+            onOpenManageTables={() => setIsTableManageModalOpen(true)}
           />
         )}
 
         {currentTab === 'waiter' && (
           <WaiterView
             tables={tables}
+            halls={halls}
             categories={categories}
             products={products}
             currentUser={currentUser}
@@ -424,6 +469,8 @@ export default function App() {
             onRequestBill={handleRequestBill}
             onOpenAddDish={() => setIsAddDishModalOpen(true)}
             onAddNewDish={(prod) => setProducts((prev) => [prod, ...prev])}
+            onRefreshTables={loadTables}
+            onRefreshHalls={loadHalls}
           />
         )}
 
@@ -459,6 +506,16 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Tables & Halls Management Modal */}
+      <TableHallManagementModal
+        isOpen={isTableManageModalOpen}
+        onClose={() => setIsTableManageModalOpen(false)}
+        tables={tables}
+        halls={halls}
+        onTablesUpdated={loadTables}
+        onHallsUpdated={loadHalls}
+      />
 
       {/* Staff & Waiters Management Modal */}
       <StaffManagementModal

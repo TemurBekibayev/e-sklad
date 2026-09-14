@@ -49,15 +49,26 @@ async function initDB() {
     )
   `);
 
+  // 1.5. Halls (Zallar / Xonalar)
+  await run(`
+    CREATE TABLE IF NOT EXISTS halls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      order_index INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // 2. Tables (Stollar)
   await run(`
     CREATE TABLE IF NOT EXISTS tables (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       number INTEGER NOT NULL UNIQUE,
       name TEXT NOT NULL,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'free', -- 'free' (yashil), 'busy' (qizil), 'bill_requested' (sariq)
       current_order_id TEXT,
+      hall TEXT DEFAULT 'Asosiy Zal',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -306,9 +317,24 @@ async function seedInitialData() {
     }
   }
 
+  // Check halls
+  const defaultHalls = [
+    { name: 'Asosiy Zal', order: 1 },
+    { name: 'Zal 1', order: 2 },
+    { name: 'Zal 2', order: 3 },
+    { name: '2-Qavat Zal', order: 4 },
+    { name: 'VIP Xona', order: 5 },
+  ];
+  for (const h of defaultHalls) {
+    const exHall = await get(`SELECT id FROM halls WHERE name = ?`, [h.name]);
+    if (!exHall) {
+      await run(`INSERT OR IGNORE INTO halls (name, order_index) VALUES (?, ?)`, [h.name, h.order]);
+    }
+  }
+
   // Check tables (1 to 20 matching UI photo)
   try {
-    await run(`ALTER TABLE tables ADD COLUMN hall TEXT DEFAULT 'Основной'`);
+    await run(`ALTER TABLE tables ADD COLUMN hall TEXT DEFAULT 'Asosiy Zal'`);
   } catch (e) {}
   try {
     await run(`ALTER TABLE order_items ADD COLUMN is_cancelled INTEGER DEFAULT 0`);
@@ -316,13 +342,28 @@ async function seedInitialData() {
   try {
     await run(`ALTER TABLE order_items ADD COLUMN cancel_reason TEXT DEFAULT ''`);
   } catch (e) {}
+  try {
+    await run(`ALTER TABLE order_items ADD COLUMN waiter_id TEXT`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE order_items ADD COLUMN waiter_name TEXT DEFAULT ''`);
+  } catch (e) {}
 
-  for (let i = 1; i <= 20; i++) {
-    const hall = i <= 5 ? 'Основной' : i <= 10 ? 'ZAL 1' : i <= 15 ? 'ZAL 2' : 'ZAL 3';
-    await run(`INSERT OR IGNORE INTO tables (id, number, name, capacity, status, hall) VALUES (?, ?, ?, 4, 'free', ?)`, [
-      i, i, `STOL - ${i}`, hall
-    ]);
-    await run(`UPDATE tables SET name = ?, hall = ? WHERE id = ?`, [`STOL - ${i}`, hall, i]);
+  // Update legacy Russian hall names to Uzbek
+  await run(`UPDATE tables SET hall = 'Asosiy Zal' WHERE hall = 'Основной' OR hall IS NULL OR hall = ''`);
+  await run(`UPDATE tables SET hall = 'Zal 1' WHERE hall = 'ZAL 1'`);
+  await run(`UPDATE tables SET hall = 'Zal 2' WHERE hall = 'ZAL 2'`);
+  await run(`UPDATE tables SET hall = '2-Qavat Zal' WHERE hall = 'ZAL 3'`);
+
+  // Seed default 20 tables if table count is 0
+  const tableCount = await get(`SELECT COUNT(*) as count FROM tables`);
+  if (tableCount.count === 0) {
+    for (let i = 1; i <= 20; i++) {
+      const hall = i <= 5 ? 'Asosiy Zal' : i <= 10 ? 'Zal 1' : i <= 15 ? 'Zal 2' : '2-Qavat Zal';
+      await run(`INSERT OR IGNORE INTO tables (id, number, name, capacity, status, hall) VALUES (?, ?, ?, 4, 'free', ?)`, [
+        i, i, `STOL - ${i}`, hall
+      ]);
+    }
   }
 
   // Check categories (matching JetCafe video categories)

@@ -86,7 +86,9 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pin: enteredPin,
+          password: enteredPin,
           userId: userToLogin?.id || undefined,
+          login: userToLogin?.login || userToLogin?.email || userToLogin?.name || undefined,
           tenantId: currentStore?.id || undefined,
         }),
       });

@@ -13,7 +13,8 @@ import {
   UtensilsCrossed,
   PlusCircle,
   Package,
-  Users
+  Users,
+  Building2
 } from 'lucide-react';
 
 export default function Header({ 
@@ -25,7 +26,8 @@ export default function Header({
   onToggleInternet, 
   onFlushSync,
   onOpenAddDish,
-  onOpenStaffModal
+  onOpenStaffModal,
+  onOpenTableManageModal
 }) {
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
@@ -126,8 +128,18 @@ export default function Header({
         </button>
       </nav>
 
-      {/* Sync Panel & User Status (TZ 3.1) */}
-      <div className="flex items-center space-x-3">
+      {/* Sync Panel & User Status */}
+      <div className="flex items-center space-x-2.5">
+        {/* Stollar / Zallar Boshqaruvi Button */}
+        <button
+          onClick={onOpenTableManageModal}
+          title="Stollar va Zallar (Xonalar) ni boshqarish"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs shadow border border-slate-700 active:scale-95 transition-all"
+        >
+          <Building2 className="w-4 h-4 text-orange-400" />
+          <span className="hidden md:inline">🏢 Stollar / Zallar</span>
+        </button>
+
         {/* Xodimlar / Ofitsiantlar Button */}
         <button
           onClick={onOpenStaffModal}
@@ -199,25 +211,27 @@ export default function Header({
           </button>
         )}
 
-        {/* Current User & Logout */}
-        {currentUser ? (
-          <div className="flex items-center space-x-2 bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-700/80">
-            <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-amber-400 text-xs font-bold">
-              {currentUser.name.charAt(0)}
+        {/* Active user status & Logout */}
+        <div className="flex items-center bg-slate-900/90 pl-3 pr-1.5 py-1 rounded-xl border border-slate-700/80 space-x-2">
+          <div className="flex items-center space-x-1.5">
+            <User className="w-4 h-4 text-emerald-400" />
+            <div className="text-left">
+              <span className="text-xs font-bold text-white block leading-tight">
+                {currentUser?.name || 'Menejer'}
+              </span>
+              <span className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider block">
+                {currentUser?.role || 'Kassir'}
+              </span>
             </div>
-            <div className="text-left hidden md:block">
-              <div className="text-xs font-bold text-slate-200 leading-none">{currentUser.name}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider">{currentUser.role}</div>
-            </div>
-            <button
-              onClick={onLogout}
-              title="Chiqish"
-              className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
-        ) : null}
+          <button
+            onClick={onLogout}
+            title="Smenani yakunlash / Chiqish"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </header>
   );

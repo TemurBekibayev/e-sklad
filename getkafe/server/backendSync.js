@@ -329,20 +329,20 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
       tenantName: returnedTenantName,
     };
 
-    // Save/update user locally in SQLite with PIN
+    // Save/update user locally in SQLite with PIN / password
     const mappedRole = (userData.role === 'manager' || userData.role === 'admin') ? 'admin' : 'waiter';
     const existing = await get(`SELECT id FROM users WHERE user_code = ?`, [userData.id]);
     if (existing) {
       await run(`
         UPDATE users 
-        SET pin = ?, is_shift_open = 1, tenant_id = ?, role = ?, name = ? 
+        SET pin = ?, password = ?, is_shift_open = 1, tenant_id = ?, role = ?, name = ? 
         WHERE id = ?
-      `, [String(pin).trim(), returnedTenantId, mappedRole, userData.name, existing.id]);
+      `, [String(passOrPin).trim(), String(passOrPin).trim(), returnedTenantId, mappedRole, userData.name, existing.id]);
     } else {
       await run(`
-        INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id)
-        VALUES (?, ?, ?, 1, 'active', ?, ?)
-      `, [userData.name, mappedRole, String(pin).trim(), userData.id, returnedTenantId]);
+        INSERT INTO users (name, role, pin, password, is_shift_open, status, user_code, tenant_id)
+        VALUES (?, ?, ?, ?, 1, 'active', ?, ?)
+      `, [userData.name, mappedRole, String(passOrPin).trim(), String(passOrPin).trim(), userData.id, returnedTenantId]);
     }
 
     return {

@@ -7,9 +7,11 @@ import JetCafeOrdersJournalModal from '../components/JetCafeOrdersJournalModal';
 import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
 import JetCafeMobileBasketsModal from '../components/JetCafeMobileBasketsModal';
+import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
 
 export default function JetCafePosView({
   tables = [],
+  halls = [],
   categories = [],
   products = [],
   currentUser = null,
@@ -26,6 +28,7 @@ export default function JetCafePosView({
   onDeleteProduct,
   onSaveCategory,
   onDeleteCategory,
+  onOpenManageTables,
 }) {
   // Active table state
   const currentTable = selectedTable || tables[0] || { id: 1, number: 1, name: 'STOL - 1', status: 'free' };
@@ -53,6 +56,7 @@ export default function JetCafePosView({
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [isOrderItemEditModalOpen, setIsOrderItemEditModalOpen] = useState(false);
   const [isOrdersJournalOpen, setIsOrdersJournalOpen] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
@@ -118,6 +122,8 @@ export default function JetCafePosView({
           quantity: it.quantity,
           price: it.price,
           comment: it.comment || '',
+          waiter_id: it.waiter_id,
+          waiter_name: it.waiter_name,
           is_cancelled: Boolean(it.is_cancelled),
           cancel_reason: it.cancel_reason || '',
         }))
@@ -161,6 +167,8 @@ export default function JetCafePosView({
               quantity: it.quantity,
               price: it.price,
               comment: it.comment || '',
+              waiter_id: it.waiter_id,
+              waiter_name: it.waiter_name,
               is_cancelled: Boolean(it.is_cancelled),
               cancel_reason: it.cancel_reason || '',
             }))
@@ -180,6 +188,8 @@ export default function JetCafePosView({
                 quantity: -cancelQty,
                 price: item.price,
                 comment: '',
+                waiter_id: item.waiter_id,
+                waiter_name: item.waiter_name,
                 is_cancelled: true,
                 cancel_reason: reason,
               });
@@ -191,6 +201,69 @@ export default function JetCafePosView({
     } catch (err) {
       console.error('Cancel item error:', err);
     }
+  };
+
+  // Handler for editing an item in the active order (Soni, Narxi, Izohi)
+  const handleSaveOrderItem = async (updatedItem) => {
+    try {
+      const ordId = currentTable.current_order_id || currentTable.order_id;
+      if (ordId && updatedItem.id) {
+        // Active saved order -> call API to update and sync stock
+        const res = await fetch(`/api/orders/${ordId}/items/${updatedItem.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            quantity: updatedItem.quantity,
+            price: updatedItem.price,
+            comment: updatedItem.comment,
+            waiter_name: updatedItem.waiter_name,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.items) {
+          setOrderItems(
+            data.items.map((it) => ({
+              id: it.id,
+              product_id: it.product_id,
+              product_name: it.product_name,
+              quantity: it.quantity,
+              price: it.price,
+              comment: it.comment || '',
+              waiter_id: it.waiter_id,
+              waiter_name: it.waiter_name,
+              is_cancelled: Boolean(it.is_cancelled),
+              cancel_reason: it.cancel_reason || '',
+            }))
+          );
+        }
+      } else {
+        // Local cart before submit
+        setOrderItems((prev) => {
+          const copy = [...prev];
+          if (selectedItemIndex !== null && copy[selectedItemIndex]) {
+            copy[selectedItemIndex] = {
+              ...copy[selectedItemIndex],
+              quantity: updatedItem.quantity,
+              price: updatedItem.price,
+              comment: updatedItem.comment,
+            };
+          }
+          return copy;
+        });
+      }
+    } catch (err) {
+      console.error('Save order item error:', err);
+    }
+  };
+
+  const handleDeleteOrderItem = async (itemToDelete) => {
+    if (!itemToDelete) return;
+    handleConfirmCancel({
+      itemId: itemToDelete.id,
+      productId: itemToDelete.product_id,
+      cancelQty: itemToDelete.quantity,
+      reason: "Mijoz bekor qildi",
+    });
   };
 
   const serviceFeePercent = 10; // JetCafe 10% service fee as seen in video
@@ -618,6 +691,11 @@ export default function JetCafePosView({
                         setSelectedItemIndex(index);
                         setNumpadBuffer('');
                       }}
+                      onDoubleClick={() => {
+                        setSelectedItemIndex(index);
+                        setIsOrderItemEditModalOpen(true);
+                      }}
+                      title="Tahrirlash (soni/narxi) uchun ikki marta bosing"
                       className={`grid grid-cols-12 py-1.5 px-2 cursor-pointer transition items-center ${
                         isSelected
                           ? 'bg-[#1e56a0] text-white font-semibold shadow-inner'
@@ -629,18 +707,27 @@ export default function JetCafePosView({
                       <span className={`col-span-1 text-center text-[10px] ${isSelected ? 'text-white font-bold' : 'text-slate-400'}`}>
                         {index + 1}
                       </span>
-                      <span className={`col-span-6 uppercase truncate pr-1 ${item.is_cancelled && item.quantity > 0 ? 'line-through text-slate-400 opacity-60' : ''}`}>
-                        {item.product_name}
-                        {item.is_cancelled && item.quantity > 0 && (
-                          <span className="ml-1 px-1 rounded bg-rose-100 text-rose-700 text-[9px] font-bold no-underline inline-block">
-                            ОТМЕНЕН
-                          </span>
-                        )}
-                        {item.quantity < 0 && (
-                          <span className="ml-1 px-1 rounded bg-amber-100 text-amber-800 text-[9px] font-bold no-underline inline-block">
-                            ВОЗВРАТ
-                          </span>
-                        )}
+                      <span className={`col-span-6 pr-1 ${item.is_cancelled && item.quantity > 0 ? 'line-through text-slate-400 opacity-60' : ''}`}>
+                        <div className="uppercase font-bold truncate">{item.product_name}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {item.waiter_name && (
+                            <span className={`px-1 py-0.2 rounded text-[9px] font-semibold flex items-center gap-0.5 ${
+                              isSelected ? 'bg-blue-800 text-blue-100' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              👤 {item.waiter_name}
+                            </span>
+                          )}
+                          {item.is_cancelled && item.quantity > 0 && (
+                            <span className="px-1 rounded bg-rose-100 text-rose-700 text-[9px] font-bold no-underline inline-block">
+                              ОТМЕНЕН
+                            </span>
+                          )}
+                          {item.quantity < 0 && (
+                            <span className="px-1 rounded bg-amber-100 text-amber-800 text-[9px] font-bold no-underline inline-block">
+                              ВОЗВРАТ
+                            </span>
+                          )}
+                        </div>
                         {item.comment && (
                           <span className={`block text-[10px] font-normal italic ${isSelected ? 'text-yellow-200' : 'text-amber-600'}`}>
                             • {item.comment}
@@ -691,7 +778,7 @@ export default function JetCafePosView({
                     setCommentText(orderItems[selectedItemIndex].comment || '');
                     setIsCommentModalOpen(true);
                   } else {
-                    alert('Выберите блюдо из списка для добавления комментария!');
+                    alert('Izoh qo\'shish uchun ro\'yxatdan taomni tanlang!');
                   }
                 }}
                 className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-bold text-slate-700 shadow-sm active:translate-y-[1px]"
@@ -707,7 +794,7 @@ export default function JetCafePosView({
                   if (selectedItemIndex !== null && orderItems[selectedItemIndex]) {
                     setIsCancelModalOpen(true);
                   } else {
-                    alert('Выберите блюдо из списка для отмены / возврата!');
+                    alert('Qaytarish / Bekor qilish uchun ro\'yxatdan taomni tanlang!');
                   }
                 }}
                 className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex items-center justify-center text-sm font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
@@ -746,20 +833,15 @@ export default function JetCafePosView({
                 type="button"
                 onClick={() => {
                   if (selectedItemIndex !== null && orderItems[selectedItemIndex]) {
-                    const prod = products.find(
-                      (p) => p.id === orderItems[selectedItemIndex].product_id || p.name === orderItems[selectedItemIndex].product_name
-                    );
-                    if (prod) {
-                      setEditingDish(prod);
-                      setIsDishModalOpen(true);
-                    }
+                    setIsOrderItemEditModalOpen(true);
                   } else {
-                    alert('Выберите блюдо из списка для редактирования!');
+                    alert('Tahrirlash uchun ro\'yxatdan taomni tanlang!');
                   }
                 }}
-                className="h-11 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex items-center justify-center text-sm font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
+                className="h-11 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-xs font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
+                title="Tanlangan taom soni yoki narxini tahrirlash"
               >
-                ✏
+                <span className="text-base">✏️</span>
               </button>
             </div>
 
@@ -1054,11 +1136,13 @@ export default function JetCafePosView({
         isOpen={isTableModalOpen}
         onClose={() => setIsTableModalOpen(false)}
         tables={tables}
+        halls={halls}
         currentTableId={currentTable?.id}
         onSelectTable={(tbl) => {
           onSelectTable(tbl);
           setIsTableModalOpen(false);
         }}
+        onOpenManageTables={onOpenManageTables}
       />
 
       {/* 2. Dish Add/Edit Modal */}
@@ -1254,6 +1338,15 @@ export default function JetCafePosView({
           </div>
         </div>
       )}
+
+      {/* 5.5. Order Item Edit Modal (Soni, Narxi, Izoh tahrirlash) */}
+      <JetCafeOrderItemEditModal
+        isOpen={isOrderItemEditModalOpen}
+        onClose={() => setIsOrderItemEditModalOpen(false)}
+        item={selectedItemIndex !== null ? orderItems[selectedItemIndex] : null}
+        onSaveItem={handleSaveOrderItem}
+        onDeleteItem={handleDeleteOrderItem}
+      />
 
       {/* 6. Item Cancellation Modal matching Video 2 (frame 6) */}
       <JetCafeItemCancelModal
