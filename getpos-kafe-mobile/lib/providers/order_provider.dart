@@ -3,7 +3,6 @@ import '../models/hall_table.dart';
 import '../models/product.dart';
 import '../models/order.dart';
 import '../core/network/api_service.dart';
-import '../core/utils/mock_data.dart';
 import 'tables_provider.dart';
 
 class OrderProvider extends ChangeNotifier {

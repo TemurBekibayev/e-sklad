@@ -8,6 +8,8 @@ class Formatters {
     return '$formatted so\'m';
   }
 
+  static String currency(double amount) => formatCurrency(amount);
+
   static String formatTime(DateTime dateTime) {
     return DateFormat('HH:mm').format(dateTime);
   }
