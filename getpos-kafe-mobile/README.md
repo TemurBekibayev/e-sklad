@@ -271,7 +271,34 @@ Masalan: Mijoz 1.5L Cola buyurtma qilgan edi, lekin ichmadi va qaytib berdi. Kas
 
 ---
 
-### 6.4. "Hisob so'raldi" (Bill Request / Pre-chek) yuborish
+### 6.4. Taom soni yoki narxini tahrirlash (Edit Item Quantity / Price)
+Masalan: Mijoz adashib 2 ta emas 1 ta taom xohlagan bo'lsa, soni 1 taga tushiriladi va ortiqcha 1 ta taom omborga qaytariladi:
+
+* **Metod:** `PUT`
+* **URL:** `/api/orders/:orderId/items/:itemId` (yoki `/api/order-items/:itemId`)
+* **Request Body:**
+```json
+{
+  "quantity": 1,
+  "price": 38000,
+  "comment": "Piyozsiz",
+  "waiter_name": "Akbar"
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "success": true,
+  "orderId": "ord_92db73a5",
+  "totalAmount": 38000,
+  "items": [ ... ],
+  "table": { ... }
+}
+```
+
+---
+
+### 6.5. "Hisob so'raldi" (Bill Request / Pre-chek) yuborish
 * **Metod:** `POST`
 * **URL:** `/api/orders/:orderId/bill-request`
 
