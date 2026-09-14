@@ -36,7 +36,7 @@ export default function JetCafePosView({
   const [numpadBuffer, setNumpadBuffer] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
-  const [selectedWaiter, setSelectedWaiter] = useState(currentUser?.name || 'Ali (Xodim)');
+  const [selectedWaiter, setSelectedWaiter] = useState(currentUser?.name || 'Xodim');
 
   useEffect(() => {
     if (currentUser?.name) {
@@ -828,11 +828,7 @@ export default function JetCafePosView({
                     </option>
                   ))
                 ) : (
-                  <>
-                    <option value="Ali (Xodim)">Ali (Xodim) (Ofitsiant)</option>
-                    <option value="John">John (Boshqaruvchi)</option>
-                    <option value="Bobur Aliyev (Oshpaz/KDS)">Bobur Aliyev (Oshpaz/KDS)</option>
-                  </>
+                  <option value={currentUser?.name || 'Xodim'}>{currentUser?.name || 'Xodim'}</option>
                 )}
               </select>
             </div>

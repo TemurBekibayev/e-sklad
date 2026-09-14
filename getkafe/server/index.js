@@ -152,18 +152,77 @@ app.post('/api/sync/flush', async (req, res) => {
   }
 });
 
+// 2.0. Filiallar / Do'konlar ro'yxati (GET /api/tenants va GET /api/config/backend/tenants)
+app.get(['/api/tenants', '/api/tenants/', '/api/config/backend/tenants'], async (req, res) => {
+  try {
+    const live = await backendSync.fetchLiveTenants();
+    if (live.success && live.tenants && live.tenants.length > 0) {
+      return res.json({ success: true, count: live.tenants.length, results: live.tenants, tenants: live.tenants });
+    }
+    // Fallback known active tenants
+    const fallbackTenants = [
+      { id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7', name: 'Test Kafe', address: "Mang'it", status: 'active', usersCount: 1 },
+      { id: '5322a772-e9db-402a-8d2b-6293edd03832', name: 'Test', address: 'Mangit', status: 'active', usersCount: 2 },
+      { id: '57341e59-3c24-409f-af62-9aaec212b689', name: 'Rustam Telefon', address: "Mang'it", status: 'active', usersCount: 4 },
+      { id: '82c1ecfb-7a39-4aa8-b597-3c8745a661b1', name: 'Toshkent Elektron', address: 'Chilonzor tumani, Toshkent shahri', status: 'active', usersCount: 2 },
+    ];
+    res.json({ success: true, count: fallbackTenants.length, results: fallbackTenants, tenants: fallbackTenants });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Faol filialni o'zgartirish (POST /api/config/backend/tenant)
+app.post('/api/config/backend/tenant', async (req, res) => {
+  try {
+    const { tenantId, tenantName } = req.body;
+    if (!tenantId) return res.status(400).json({ success: false, message: 'tenantId talab qilinadi' });
+    const updated = await backendSync.updateConfig({ tenant_id: tenantId, tenant_name: tenantName });
+    res.json({ success: true, tenant_id: updated.tenant_id, tenant_name: updated.tenant_name });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 2.1. Xodimlar ro'yxati (GET /api/auth/users?tenantId={TENANT_ID})
 app.get('/api/auth/users', async (req, res) => {
   try {
     const cfg = await backendSync.getConfig();
-    const users = await all(`SELECT id, user_code, name, role, status FROM users WHERE status = 'active' OR status IS NULL`);
+    const tenantId = req.query.tenantId || cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+
+    // 1. Fetch live staff from getpos.uz
+    try {
+      const staffRes = await backendSync.fetchStaffForTenant(tenantId);
+      if (staffRes.users && staffRes.users.length > 0) {
+        const formatted = staffRes.users.map((u) => {
+          const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
+          return {
+            id: u.id || u.user_code,
+            name: u.name,
+            role: mappedRole,
+            status: u.status || 'active',
+            tenantId: tenantId,
+            tenantName: u.tenantName || cfg.tenant_name,
+          };
+        });
+        return res.json(formatted);
+      }
+    } catch (e) {
+      console.warn('[Users] Live fetchStaffForTenant error:', e.message);
+    }
+
+    // 2. Fallback to SQLite users filtered by tenant_id
+    const users = await all(
+      `SELECT id, user_code, name, role, status, tenant_id FROM users WHERE (tenant_id = ? OR tenant_id IS NULL) AND (status = 'active' OR status IS NULL)`,
+      [tenantId]
+    );
     const formatted = users.map((u) => ({
       id: u.user_code || `usr_${u.id}`,
       rawId: u.id,
       name: u.name,
       role: u.role,
       status: u.status || 'active',
-      tenantId: cfg.tenant_id,
+      tenantId: u.tenant_id || cfg.tenant_id,
       tenantName: cfg.tenant_name,
     }));
     res.json(formatted);
@@ -180,49 +239,55 @@ app.post('/api/auth/login', async (req, res) => {
 
     const cfg = await backendSync.getConfig();
 
-    // 1. Live authentication against amuhr.uz
-    if (cfg.is_external_active || cfg.api_url?.includes('amuhr.uz')) {
-      try {
-        const liveRes = await backendSync.loginLiveUser(userId, pin.trim(), cfg.api_url);
-        if (liveRes.success) {
-          const liveUser = liveRes.user;
-          const mappedRole = liveUser.role === 'manager' ? 'admin' : (liveUser.role === 'worker' ? 'waiter' : liveUser.role);
-          let localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
-          if (!localUser) {
-            await run(`
-              INSERT INTO users (name, role, pin, is_shift_open, status, user_code)
-              VALUES (?, ?, ?, 1, 'active', ?)
-            `, [liveUser.name, mappedRole, pin.trim(), liveUser.id]);
-            localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
-          } else {
-            await run(`UPDATE users SET is_shift_open = 1, pin = ?, role = ? WHERE id = ?`, [pin.trim(), mappedRole, localUser.id]);
-          }
+    // 1. Live authentication against getpos.uz
+    try {
+      const liveRes = await backendSync.loginLiveUser(userId, pin.trim(), cfg.api_url);
+      if (liveRes.success) {
+        const liveUser = liveRes.user;
+        const mappedRole = (liveUser.role === 'manager' || liveUser.role === 'admin') ? 'admin' : (liveUser.role === 'worker' || liveUser.role === 'waiter' ? 'waiter' : liveUser.role);
+        let localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
+        if (!localUser) {
+          await run(`
+            INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id)
+            VALUES (?, ?, ?, 1, 'active', ?, ?)
+          `, [liveUser.name, mappedRole, pin.trim(), liveUser.id, liveUser.tenantId || cfg.tenant_id]);
+          localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
+        } else {
+          await run(`UPDATE users SET is_shift_open = 1, pin = ?, role = ?, tenant_id = ? WHERE id = ?`, [
+            pin.trim(), mappedRole, liveUser.tenantId || cfg.tenant_id, localUser.id
+          ]);
+        }
 
-          return res.json({
-            success: true,
+        // Trigger immediate background sync for products
+        backendSync.syncFromBackend().catch((e) => console.warn('[Auth] Background sync warning:', e.message));
+
+        return res.json({
+          success: true,
+          id: liveUser.id,
+          name: liveUser.name,
+          role: mappedRole,
+          tenantId: liveUser.tenantId || cfg.tenant_id,
+          tenantName: liveUser.tenantName || cfg.tenant_name,
+          token: liveRes.token,
+          user: {
             id: liveUser.id,
+            rawId: localUser?.id,
             name: liveUser.name,
             role: mappedRole,
             tenantId: liveUser.tenantId || cfg.tenant_id,
             tenantName: liveUser.tenantName || cfg.tenant_name,
-            token: liveRes.token,
-            user: {
-              id: liveUser.id,
-              rawId: localUser?.id,
-              name: liveUser.name,
-              role: mappedRole,
-              tenantId: liveUser.tenantId || cfg.tenant_id,
-              tenantName: liveUser.tenantName || cfg.tenant_name,
-              is_shift_open: 1,
-            },
-          });
-        }
-      } catch (e) {
-        console.warn('[Auth] Live login attempt error, falling back to local SQLite:', e.message);
+            is_shift_open: 1,
+          },
+        });
+      } else if (liveRes.message && !liveRes.message.includes("Serverga ulanib bo'lmadi")) {
+        // Explicit wrong PIN from getpos.uz
+        return res.status(401).json({ success: false, message: liveRes.message || "Noto'g'ri PIN-kod!" });
       }
+    } catch (e) {
+      console.warn('[Auth] Live login attempt error, falling back to local SQLite:', e.message);
     }
 
-    // 2. Local fallback login (offline mode)
+    // 2. Local fallback login (offline mode ONLY for verified synced users)
     let user = null;
     if (userId) {
       user = await get(`SELECT * FROM users WHERE (user_code = ? OR id = ?) AND pin = ?`, [userId, userId, pin.trim()]);
@@ -238,8 +303,8 @@ app.post('/api/auth/login', async (req, res) => {
     // Smena ochish
     await run(`UPDATE users SET is_shift_open = 1 WHERE id = ?`, [user.id]);
 
-    const tenantId = cfg.tenant_id || '5322a772-e9db-402a-8d2b-6293edd03832';
-    const tenantName = cfg.tenant_name || 'Test (Mangit)';
+    const tenantId = user.tenant_id || cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+    const tenantName = cfg.tenant_name || 'Test Kafe';
     const idStr = user.user_code || `usr_${user.id}`;
 
     res.json({

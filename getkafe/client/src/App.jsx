@@ -12,31 +12,17 @@ import MxikSettings from './pages/MxikSettings';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'menu', 'mxik'
-  const [currentUser, setCurrentUser] = useState(() => {
+  // Always enforce PIN modal on app launch - zero passwordless bypass!
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(true);
+
+  // Clear any legacy mock sessions on mount
+  useEffect(() => {
     try {
-      localStorage.removeItem('kafepos_user'); // Purge any legacy fake session
-      const saved = sessionStorage.getItem('kafepos_user');
-      if (saved) {
-        const u = JSON.parse(saved);
-        if (u && !u.name?.includes('Aziz') && !u.name?.includes('Sardor') && u.id !== 'usr_admin') {
-          return u;
-        }
-      }
+      localStorage.removeItem('kafepos_user');
+      sessionStorage.removeItem('kafepos_user');
     } catch (e) {}
-    return null;
-  });
-  const [isPinModalOpen, setIsPinModalOpen] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem('kafepos_user');
-      if (saved) {
-        const u = JSON.parse(saved);
-        if (u && !u.name?.includes('Aziz') && !u.name?.includes('Sardor') && u.id !== 'usr_admin') {
-          return false;
-        }
-      }
-    } catch (e) {}
-    return true;
-  });
+  }, []);
   const [isAddDishModalOpen, setIsAddDishModalOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState([]);
 

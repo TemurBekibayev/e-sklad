@@ -239,26 +239,49 @@ async function seedInitialData() {
   try {
     await run(`ALTER TABLE users ADD COLUMN user_code TEXT`);
   } catch (e) {}
+  try {
+    await run(`ALTER TABLE users ADD COLUMN tenant_id TEXT`);
+  } catch (e) {}
 
-  // Purge legacy mock/fake users completely
-  await run(`DELETE FROM users WHERE name LIKE '%Aziz%' OR name LIKE '%Sardor%' OR name LIKE '%Malika%' OR name LIKE '%Administrator%' OR user_code IN ('usr_7381b2d1', 'usr_9481a8c3', 'usr_2222a8c3', 'usr_admin')`);
+  // Purge legacy mock/fake users completely (Never invent fake users!)
+  await run(`
+    DELETE FROM users 
+    WHERE user_code IS NULL 
+       OR user_code NOT IN (
+         'b58d74f3-3541-4341-acf8-ff00c13964c7',
+         '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7',
+         '60612290-8399-4949-83f8-9f8216fab884',
+         'e6010bbc-f81a-4b86-bc19-f059e1100fba',
+         '4215e424-99fb-4a6d-a555-51388ab7c06f',
+         '42798f70-c266-403c-8f85-28dbbf1373c0',
+         '89e6dcab-71b3-4f51-aeaf-2fcc5883cdf5',
+         '5fce8412-80bf-4ac7-8e28-f39be76d0160',
+         '12b090f1-4de6-4536-b30d-030f383da7de'
+       )
+       OR name LIKE '%Aziz%' 
+       OR name LIKE '%Malika%' 
+       OR name LIKE '%Bobur Aliyev%' 
+       OR name LIKE '%Kassir (GetPOS)%'
+  `);
 
-  // Seed / ensure real live users from amuhr.uz (Tenant: Test)
+  // Real users from getpos.uz backend
   const realUsers = [
-    { name: 'John (Boshqaruvchi)', role: 'admin', pin: '1111', code: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7' },
-    { name: 'Ali (Xodim)', role: 'waiter', pin: '2222', code: '60612290-8399-4949-83f8-9f8216fab884' },
-    { name: 'Bobur Aliyev (Oshpaz/KDS)', role: 'cook', pin: '3333', code: 'usr_cook' },
+    { name: 'Kafee', role: 'admin', pin: '3333', code: 'b58d74f3-3541-4341-acf8-ff00c13964c7', tenant_id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7' },
+    { name: 'John', role: 'admin', pin: '1111', code: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', tenant_id: '5322a772-e9db-402a-8d2b-6293edd03832' },
+    { name: 'Ali (Xodim)', role: 'waiter', pin: '2222', code: '60612290-8399-4949-83f8-9f8216fab884', tenant_id: '5322a772-e9db-402a-8d2b-6293edd03832' },
+    { name: 'Rustam', role: 'admin', pin: '1111', code: 'e6010bbc-f81a-4b86-bc19-f059e1100fba', tenant_id: '57341e59-3c24-409f-af62-9aaec212b689' },
+    { name: 'Sardor Karimov', role: 'waiter', pin: '1234', code: '4215e424-99fb-4a6d-a555-51388ab7c06f', tenant_id: '57341e59-3c24-409f-af62-9aaec212b689' },
   ];
 
   for (const ru of realUsers) {
-    const existing = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [ru.code, ru.name]);
+    const existing = await get(`SELECT id FROM users WHERE user_code = ?`, [ru.code]);
     if (!existing) {
-      await run(`INSERT INTO users (name, role, pin, is_shift_open, status, user_code) VALUES (?, ?, ?, 1, 'active', ?)`, [
-        ru.name, ru.role, ru.pin, ru.code
+      await run(`INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id) VALUES (?, ?, ?, 1, 'active', ?, ?)`, [
+        ru.name, ru.role, ru.pin, ru.code, ru.tenant_id
       ]);
     } else {
-      await run(`UPDATE users SET name = ?, role = ?, user_code = ?, pin = ?, status = 'active', is_shift_open = 1 WHERE id = ?`, [
-        ru.name, ru.role, ru.code, ru.pin, existing.id
+      await run(`UPDATE users SET name = ?, role = ?, user_code = ?, pin = ?, status = 'active', is_shift_open = 1, tenant_id = ? WHERE id = ?`, [
+        ru.name, ru.role, ru.code, ru.pin, ru.tenant_id, existing.id
       ]);
     }
   }
@@ -445,19 +468,19 @@ async function seedInitialData() {
     `);
   }
 
-  // Backend API Seed (Default to real production amuhr.uz)
-  const bConfig = await get(`SELECT id, is_external_active, api_url FROM backend_config WHERE id = 1`);
+  // Backend API Seed (Default to real production getpos.uz and Test Kafe)
+  const bConfig = await get(`SELECT id, is_external_active, api_url, tenant_id FROM backend_config WHERE id = 1`);
   if (!bConfig) {
     await run(`
       INSERT INTO backend_config (id, api_url, tenant_id, tenant_name, auth_token, sync_interval, is_external_active)
-      VALUES (1, 'https://amuhr.uz', '5322a772-e9db-402a-8d2b-6293edd03832', 'Test (Mangit)', '', 30, 1)
+      VALUES (1, 'https://getpos.uz', '90e04abf-246d-4683-91eb-1ac34d7b2ee7', 'Test Kafe', '', 30, 1)
     `);
-  } else if (!bConfig.is_external_active || (bConfig.api_url && bConfig.api_url.includes('localhost'))) {
+  } else if (!bConfig.is_external_active || bConfig.tenant_id === '5322a772-e9db-402a-8d2b-6293edd03832' || (bConfig.api_url && !bConfig.api_url.includes('getpos.uz'))) {
     await run(`
       UPDATE backend_config
-      SET api_url = 'https://amuhr.uz',
-          tenant_id = '5322a772-e9db-402a-8d2b-6293edd03832',
-          tenant_name = 'Test (Mangit)',
+      SET api_url = 'https://getpos.uz',
+          tenant_id = '90e04abf-246d-4683-91eb-1ac34d7b2ee7',
+          tenant_name = 'Test Kafe',
           is_external_active = 1
       WHERE id = 1
     `);
