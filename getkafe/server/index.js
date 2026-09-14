@@ -25,6 +25,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Mobile API v2.0 compatibility: rewrite /api/v1/... to /api/...
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/v1/')) {
+    req.url = req.url.replace('/api/v1/', '/api/');
+  }
+  next();
+});
+
+// Health check endpoints (Matching v2.0 specs)
+app.get(['/health', '/api/health'], (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
