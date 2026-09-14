@@ -22,34 +22,38 @@ class OrderProvider extends ChangeNotifier {
   double get subtotal => _currentOrder?.subtotal ?? 0.0;
   double get grandTotal => _currentOrder?.grandTotal ?? 0.0;
 
-  void openTableOrder(RestaurantTable table, String waiterName, String waiterId) {
+  Future<void> openTableOrder(RestaurantTable table, String waiterName, String waiterId) async {
     _currentTable = table;
 
-    if (table.items.isNotEmpty) {
-      _currentOrder = RestaurantOrder(
-        id: table.activeOrderId ?? 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
-        tableId: table.id,
-        tableName: table.number,
-        waiterId: waiterId,
-        waiterName: table.activeWaiterName ?? waiterName,
-        guestCount: table.guestCount ?? (table.seats > 2 ? 2 : 1),
-        items: List.from(table.items),
-        serviceFeePercent: 10.0,
-      );
-    } else if (table.activeOrderId != null) {
-      _currentOrder = MockData.getInitialOrderForTable(table);
-    } else {
-      _currentOrder = RestaurantOrder(
-        id: 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
-        tableId: table.id,
-        tableName: table.number,
-        waiterId: waiterId,
-        waiterName: waiterName,
-        guestCount: table.seats > 2 ? 2 : 1,
-        serviceFeePercent: 10.0,
-      );
-    }
+    _currentOrder = RestaurantOrder(
+      id: table.activeOrderId ?? 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
+      tableId: table.id,
+      tableName: table.number,
+      waiterId: waiterId,
+      waiterName: table.activeWaiterName ?? waiterName,
+      guestCount: table.guestCount ?? (table.seats > 2 ? 2 : 1),
+      items: List.from(table.items),
+      serviceFeePercent: 10.0,
+    );
     notifyListeners();
+
+    // Live server buyurtmasini darhol tortib olish
+    await refreshCurrentOrder();
+  }
+
+  Future<void> refreshCurrentOrder() async {
+    if (_currentTable == null) return;
+    try {
+      final liveOrder = await _apiService.getTableOrder(_currentTable!.id);
+      if (liveOrder != null) {
+        final draftItems = _currentOrder?.items.where((i) => i.status == OrderItemStatus.draft).toList() ?? [];
+        _currentOrder = liveOrder;
+        if (draftItems.isNotEmpty) {
+          _currentOrder!.items.addAll(draftItems);
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   void updateGuestCount(int count) {
