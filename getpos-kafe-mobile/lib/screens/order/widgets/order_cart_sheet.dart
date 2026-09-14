@@ -138,6 +138,7 @@ class OrderCartSheet extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final item = items[index];
                         final isDraft = item.status == OrderItemStatus.draft;
+                        final isCancelled = item.isCancelled;
 
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,15 +147,19 @@ class OrderCartSheet extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isDraft ? AppColors.primaryLight : AppColors.tableFreeLight,
+                                color: isCancelled
+                                    ? Colors.red.shade50
+                                    : (isDraft ? AppColors.primaryLight : AppColors.tableFreeLight),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                '${item.course}-kurs',
+                                isCancelled ? 'Bekor' : '${item.course}-kurs',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: isDraft ? AppColors.primaryDark : AppColors.tableFree,
+                                  color: isCancelled
+                                      ? Colors.red
+                                      : (isDraft ? AppColors.primaryDark : AppColors.tableFree),
                                 ),
                               ),
                             ),
@@ -167,12 +172,31 @@ class OrderCartSheet extends StatelessWidget {
                                 children: [
                                   Text(
                                     item.productName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
+                                      decoration: isCancelled ? TextDecoration.lineThrough : null,
+                                      color: isCancelled ? AppColors.textMuted : AppColors.textPrimary,
                                     ),
                                   ),
+                                  if (item.waiterName != null && item.waiterName!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.person_outline, size: 12, color: Colors.blue.shade700),
+                                          const SizedBox(width: 2),
+                                          Text(
+                                            item.waiterName!,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.blue.shade700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   if (item.selectedModifiers.isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 2),
@@ -196,13 +220,26 @@ class OrderCartSheet extends StatelessWidget {
                                         ),
                                       ),
                                     ),
+                                  if (isCancelled && item.cancelReason != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 2),
+                                      child: Text(
+                                        'Sabab: ${item.cancelReason}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontStyle: FontStyle.italic,
+                                          color: Colors.red.shade700,
+                                        ),
+                                      ),
+                                    ),
                                   const SizedBox(height: 4),
                                   Text(
                                     '${Formatters.formatCurrency(item.unitPrice)} × ${item.quantity} = ${Formatters.formatCurrency(item.totalPrice)}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w500,
-                                      color: AppColors.textSecondary,
+                                      decoration: isCancelled ? TextDecoration.lineThrough : null,
+                                      color: isCancelled ? AppColors.textMuted : AppColors.textSecondary,
                                     ),
                                   ),
                                 ],
@@ -239,27 +276,55 @@ class OrderCartSheet extends StatelessWidget {
                                   ),
                                 ],
                               )
-                            else
+                            else if (isCancelled)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: AppColors.tableFreeLight,
+                                  color: Colors.red.shade50,
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.check, size: 14, color: AppColors.tableFree),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${item.quantity} dona',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.tableFree,
-                                      ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  'Bekor',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.red.shade700,
+                                  ),
                                 ),
+                              )
+                            else
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.tableFreeLight,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.check, size: 14, color: AppColors.tableFree),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${item.quantity} dona',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.tableFree,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: Icon(Icons.cancel_outlined, size: 18, color: Colors.red.shade400),
+                                    tooltip: 'Taomni bekor qilish',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _showCancelItemDialog(context, item, orderProv, tablesProv),
+                                  ),
+                                ],
                               ),
                           ],
                         );
@@ -418,6 +483,167 @@ class OrderCartSheet extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCancelItemDialog(
+    BuildContext context,
+    OrderItem item,
+    OrderProvider orderProv,
+    TablesProvider tablesProv,
+  ) {
+    int cancelQty = 1;
+    String selectedReason = 'Mijoz rad etdi';
+    final customReasonCtrl = TextEditingController();
+    final reasons = [
+      'Mijoz rad etdi',
+      'Noto\'g\'ri kiritilgan',
+      'Oshxona tayyorlay olmaydi',
+      'Taom kech qoldi',
+      'Boshqa sabab',
+    ];
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.red),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Taomni bekor qilish',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.productName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Jami buyurtma qilingan: ${item.quantity} dona',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+
+                // Qaytarish miqdori
+                if (item.quantity > 1) ...[
+                  const Text(
+                    'Bekor qilish miqdori:',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: cancelQty > 1
+                            ? () => setDialogState(() => cancelQty--)
+                            : null,
+                        icon: const Icon(Icons.remove_circle_outline),
+                      ),
+                      Text(
+                        '$cancelQty dona',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        onPressed: cancelQty < item.quantity
+                            ? () => setDialogState(() => cancelQty++)
+                            : null,
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // Bekor qilish sababi
+                const Text(
+                  'Sababini tanlang:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedReason,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: reasons
+                      .map((r) => DropdownMenuItem(value: r, child: Text(r, style: const TextStyle(fontSize: 13))))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() => selectedReason = val);
+                    }
+                  },
+                ),
+                if (selectedReason == 'Boshqa sabab') ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: customReasonCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Sababni yozing...',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Bekor qilish yo\'q'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final reason = selectedReason == 'Boshqa sabab' && customReasonCtrl.text.trim().isNotEmpty
+                    ? customReasonCtrl.text.trim()
+                    : selectedReason;
+
+                Navigator.pop(dialogCtx);
+
+                final success = await orderProv.cancelOrderItem(
+                  item: item,
+                  cancelQty: cancelQty,
+                  reason: reason,
+                  tablesProvider: tablesProv,
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Taom bekor qilindi (kassa va oshxonaga yetkazildi)'
+                            : 'Bekor qilishda xatolik yuz berdi',
+                      ),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Tasdiqlash', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),

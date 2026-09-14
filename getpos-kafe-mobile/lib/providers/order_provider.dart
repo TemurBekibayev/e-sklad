@@ -25,7 +25,18 @@ class OrderProvider extends ChangeNotifier {
   void openTableOrder(RestaurantTable table, String waiterName, String waiterId) {
     _currentTable = table;
 
-    if (table.activeOrderId != null) {
+    if (table.items.isNotEmpty) {
+      _currentOrder = RestaurantOrder(
+        id: table.activeOrderId ?? 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
+        tableId: table.id,
+        tableName: table.number,
+        waiterId: waiterId,
+        waiterName: table.activeWaiterName ?? waiterName,
+        guestCount: table.guestCount ?? (table.seats > 2 ? 2 : 1),
+        items: List.from(table.items),
+        serviceFeePercent: 10.0,
+      );
+    } else if (table.activeOrderId != null) {
       _currentOrder = MockData.getInitialOrderForTable(table);
     } else {
       _currentOrder = RestaurantOrder(
@@ -160,6 +171,50 @@ class OrderProvider extends ChangeNotifier {
       if (success) {
         tablesProvider.setTableBillRequested(_currentTable!.id);
         _currentTable!.status = TableStatus.billRequested;
+      }
+      return success;
+    } finally {
+      _isSending = false;
+      notifyListeners();
+    }
+  }
+
+  // Buyurtmadagi taomni bekor qilish / qaytarish (POST /api/orders/{id}/cancel-item)
+  Future<bool> cancelOrderItem({
+    required OrderItem item,
+    required int cancelQty,
+    required String reason,
+    required TablesProvider tablesProvider,
+  }) async {
+    if (_currentOrder == null) return false;
+    _isSending = true;
+    notifyListeners();
+
+    try {
+      final success = await _apiService.cancelOrderItem(
+        orderId: _currentOrder!.id,
+        itemId: item.id,
+        cancelQty: cancelQty,
+        reason: reason,
+      );
+
+      if (success) {
+        if (item.quantity <= cancelQty) {
+          item.isCancelled = true;
+          item.cancelReason = reason;
+        } else {
+          item.quantity -= cancelQty;
+        }
+
+        if (_currentTable != null) {
+          tablesProvider.updateTableAfterOrder(
+            tableId: _currentTable!.id,
+            totalAmount: _currentOrder!.grandTotal,
+            guestCount: _currentOrder!.guestCount,
+            waiterName: _currentOrder!.waiterName,
+            status: _currentTable!.status,
+          );
+        }
       }
       return success;
     } finally {

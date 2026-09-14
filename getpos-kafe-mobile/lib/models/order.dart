@@ -29,6 +29,10 @@ class OrderItem {
   String? comment;
   OrderItemStatus status;
   int course; // 1-kurs, 2-kurs
+  String? waiterId;
+  String? waiterName;
+  bool isCancelled;
+  String? cancelReason;
 
   OrderItem({
     required this.id,
@@ -41,26 +45,39 @@ class OrderItem {
     this.comment,
     this.status = OrderItemStatus.draft,
     this.course = 1,
+    this.waiterId,
+    this.waiterName,
+    this.isCancelled = false,
+    this.cancelReason,
   });
 
   double get itemPrice => unitPrice + modifiersExtraPrice;
   double get totalPrice => itemPrice * quantity;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
+    final priceVal = json['price'] ?? json['unit_price'] ?? 0.0;
+    final isCanc = json['is_cancelled'] == 1 || json['is_cancelled'] == true || json['status'] == 'cancelled';
+
     return OrderItem(
       id: json['id']?.toString() ?? '',
-      productId: json['product_id']?.toString() ?? '',
-      productName: json['product_name'] ?? '',
-      unitPrice: (json['unit_price'] as num?)?.toDouble() ?? 0.0,
-      quantity: json['quantity'] ?? 1,
+      productId: json['product_id']?.toString() ?? json['productId']?.toString() ?? '',
+      productName: json['product_name'] ?? json['productName'] ?? json['name'] ?? '',
+      unitPrice: (priceVal as num).toDouble(),
+      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       selectedModifiers: (json['selected_modifiers'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       modifiersExtraPrice: (json['modifiers_extra_price'] as num?)?.toDouble() ?? 0.0,
       comment: json['comment'],
-      status: OrderItemStatus.values.firstWhere(
-        (e) => e.name == json['status'],
-        orElse: () => OrderItemStatus.draft,
-      ),
+      status: isCanc
+          ? OrderItemStatus.cancelled
+          : OrderItemStatus.values.firstWhere(
+              (e) => e.name == json['status'],
+              orElse: () => OrderItemStatus.sent,
+            ),
       course: json['course'] ?? 1,
+      waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString(),
+      waiterName: json['waiter_name'] ?? json['waiterName'],
+      isCancelled: isCanc,
+      cancelReason: json['cancel_reason'] ?? json['cancelReason'] ?? json['reason'],
     );
   }
 
@@ -68,13 +85,16 @@ class OrderItem {
     'id': id,
     'product_id': productId,
     'product_name': productName,
-    'unit_price': unitPrice,
+    'price': itemPrice,
     'quantity': quantity,
     'selected_modifiers': selectedModifiers,
-    'modifiers_extra_price': modifiersExtraPrice,
     'comment': comment,
     'status': status.name,
     'course': course,
+    'waiter_id': waiterId,
+    'waiter_name': waiterName,
+    'is_cancelled': isCancelled ? 1 : 0,
+    'cancel_reason': cancelReason,
   };
 
   OrderItem copyWith({
@@ -88,6 +108,9 @@ class OrderItem {
     String? comment,
     OrderItemStatus? status,
     int? course,
+    String? waiterId,
+    String? waiterName,
+    bool? isCancelled,
   }) {
     return OrderItem(
       id: id ?? this.id,
@@ -100,6 +123,9 @@ class OrderItem {
       comment: comment ?? this.comment,
       status: status ?? this.status,
       course: course ?? this.course,
+      waiterId: waiterId ?? this.waiterId,
+      waiterName: waiterName ?? this.waiterName,
+      isCancelled: isCancelled ?? this.isCancelled,
     );
   }
 }
@@ -124,38 +150,39 @@ class RestaurantOrder {
     required this.waiterName,
     this.guestCount = 2,
     List<OrderItem>? items,
-    this.serviceFeePercent = 10.0, // Masalan 10% servis haqi
+    this.serviceFeePercent = 10.0,
     this.discountPercent = 0.0,
     DateTime? createdAt,
   })  : items = items ?? [],
         createdAt = createdAt ?? DateTime.now();
 
   double get subtotal => items
-      .where((i) => i.status != OrderItemStatus.cancelled)
+      .where((i) => !i.isCancelled && i.status != OrderItemStatus.cancelled)
       .fold(0.0, (sum, item) => sum + item.totalPrice);
 
   double get serviceAmount => subtotal * (serviceFeePercent / 100);
   double get discountAmount => subtotal * (discountPercent / 100);
   double get grandTotal => subtotal + serviceAmount - discountAmount;
 
-  // Oshxonaga yuborilmagan yangi taomlar soni
   int get draftItemsCount => items.where((i) => i.status == OrderItemStatus.draft).length;
 
   factory RestaurantOrder.fromJson(Map<String, dynamic> json) {
     return RestaurantOrder(
-      id: json['id']?.toString() ?? '',
-      tableId: json['table_id']?.toString() ?? '',
-      tableName: json['table_name'] ?? '',
-      waiterId: json['waiter_id']?.toString() ?? '',
-      waiterName: json['waiter_name'] ?? '',
-      guestCount: json['guest_count'] ?? 1,
+      id: json['id']?.toString() ?? json['order_id']?.toString() ?? '',
+      tableId: json['table_id']?.toString() ?? json['tableId']?.toString() ?? '',
+      tableName: json['table_name'] ?? json['tableName'] ?? 'Stol',
+      waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString() ?? '',
+      waiterName: json['waiter_name'] ?? json['waiterName'] ?? 'Ofitsiant',
+      guestCount: json['guest_count'] ?? json['guestCount'] ?? 1,
       items: (json['items'] as List<dynamic>?)
               ?.map((item) => OrderItem.fromJson(item))
               .toList() ??
           [],
       serviceFeePercent: (json['service_fee_percent'] as num?)?.toDouble() ?? 10.0,
       discountPercent: (json['discount_percent'] as num?)?.toDouble() ?? 0.0,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : DateTime.now(),
+      createdAt: json['order_created_at'] != null || json['created_at'] != null
+          ? DateTime.tryParse(json['order_created_at'] ?? json['created_at']) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 

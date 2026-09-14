@@ -6,6 +6,9 @@ class ApiConstants {
   // Auth: POST /api/auth/login { "login": "...", "password": "..." }
   static const String login = '/auth/login';
 
+  // Halls / Rooms: GET /api/halls
+  static const String halls = '/halls';
+
   // Tables: GET /api/tables
   static const String tables = '/tables';
 
@@ -14,7 +17,9 @@ class ApiConstants {
 
   // Orders: POST /api/orders
   static const String orders = '/orders';
+  static String tableOrder(String tableId) => '/orders/table/$tableId';
   static String orderBillRequest(String orderId) => '/orders/$orderId/bill-request';
+  static String cancelOrderItem(String orderId) => '/orders/$orderId/cancel-item';
 
   // WebSocket
   static String wsUrl(String baseUrl) {
