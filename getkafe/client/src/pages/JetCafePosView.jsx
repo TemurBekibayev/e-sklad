@@ -12,6 +12,7 @@ export default function JetCafePosView({
   categories = [],
   products = [],
   currentUser = null,
+  staffUsers = [],
   syncState = null,
   selectedTable = null,
   activeOrder = null,
@@ -34,7 +35,13 @@ export default function JetCafePosView({
   const [numpadBuffer, setNumpadBuffer] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
-  const [selectedWaiter, setSelectedWaiter] = useState(currentUser?.name || 'Sardor Rahimov (Ofitsiant)');
+  const [selectedWaiter, setSelectedWaiter] = useState(currentUser?.name || 'Ali (Xodim)');
+
+  useEffect(() => {
+    if (currentUser?.name) {
+      setSelectedWaiter(currentUser.name);
+    }
+  }, [currentUser]);
 
   // Modals state
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
@@ -754,13 +761,21 @@ export default function JetCafePosView({
               <select
                 value={selectedWaiter}
                 onChange={(e) => setSelectedWaiter(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs bg-white border border-[#b8c2d1] rounded focus:outline-none shadow-inner"
+                className="flex-1 px-2 py-1 text-xs bg-white border border-[#b8c2d1] rounded focus:outline-none shadow-inner font-medium text-slate-800"
               >
-                <option value="Sardor Rahimov (Ofitsiant)">Sardor Rahimov (Ofitsiant)</option>
-                <option value="Malika Karimova (Ofitsiant)">Malika Karimova (Ofitsiant)</option>
-                <option value="Madina Karimova (Kassir)">Madina Karimova (Kassir)</option>
-                <option value="Bobur Aliyev (Oshpaz/KDS)">Bobur Aliyev (Oshpaz/KDS)</option>
-                <option value="Boshqaruvchi Aziz (Admin)">Boshqaruvchi Aziz (Admin)</option>
+                {staffUsers && staffUsers.length > 0 ? (
+                  staffUsers.map((u) => (
+                    <option key={u.id} value={u.name}>
+                      {u.name} ({u.role === 'admin' || u.role === 'manager' ? 'Boshqaruvchi' : u.role === 'waiter' || u.role === 'worker' ? 'Ofitsiant' : u.role === 'cook' ? 'Oshpaz' : 'Kassir'})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Ali (Xodim)">Ali (Xodim) (Ofitsiant)</option>
+                    <option value="John">John (Boshqaruvchi)</option>
+                    <option value="Bobur Aliyev (Oshpaz/KDS)">Bobur Aliyev (Oshpaz/KDS)</option>
+                  </>
+                )}
               </select>
             </div>
 

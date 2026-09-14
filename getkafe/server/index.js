@@ -140,13 +140,12 @@ app.post('/api/sync/flush', async (req, res) => {
 app.get('/api/auth/users', async (req, res) => {
   try {
     const cfg = await backendSync.getConfig();
-    const users = await all(`SELECT id, user_code, name, role, status, pin FROM users WHERE status = 'active' OR status IS NULL`);
+    const users = await all(`SELECT id, user_code, name, role, status FROM users WHERE status = 'active' OR status IS NULL`);
     const formatted = users.map((u) => ({
       id: u.user_code || `usr_${u.id}`,
       rawId: u.id,
       name: u.name,
       role: u.role,
-      pin: u.pin,
       status: u.status || 'active',
       tenantId: cfg.tenant_id,
       tenantName: cfg.tenant_name,
@@ -165,47 +164,49 @@ app.post('/api/auth/login', async (req, res) => {
 
     const cfg = await backendSync.getConfig();
 
-    // 1. If external backend is active and userId is provided, attempt live login against amuhr.uz
-    if (cfg.is_external_active && userId) {
+    // 1. Live authentication against amuhr.uz
+    if (cfg.is_external_active || cfg.api_url?.includes('amuhr.uz')) {
       try {
         const liveRes = await backendSync.loginLiveUser(userId, pin.trim(), cfg.api_url);
         if (liveRes.success) {
-          let localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [userId]);
+          const liveUser = liveRes.user;
+          const mappedRole = liveUser.role === 'manager' ? 'admin' : (liveUser.role === 'worker' ? 'waiter' : liveUser.role);
+          let localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
           if (!localUser) {
             await run(`
               INSERT INTO users (name, role, pin, is_shift_open, status, user_code)
               VALUES (?, ?, ?, 1, 'active', ?)
-            `, [liveRes.user.name, liveRes.user.role === 'manager' ? 'admin' : 'waiter', pin.trim(), userId]);
-            localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [userId]);
+            `, [liveUser.name, mappedRole, pin.trim(), liveUser.id]);
+            localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
           } else {
-            await run(`UPDATE users SET is_shift_open = 1 WHERE id = ?`, [localUser.id]);
+            await run(`UPDATE users SET is_shift_open = 1, pin = ?, role = ? WHERE id = ?`, [pin.trim(), mappedRole, localUser.id]);
           }
 
           return res.json({
             success: true,
-            id: userId,
-            name: liveRes.user.name,
-            role: localUser?.role || liveRes.user.role,
-            tenantId: liveRes.user.tenantId || cfg.tenant_id,
-            tenantName: liveRes.user.tenantName || cfg.tenant_name,
+            id: liveUser.id,
+            name: liveUser.name,
+            role: mappedRole,
+            tenantId: liveUser.tenantId || cfg.tenant_id,
+            tenantName: liveUser.tenantName || cfg.tenant_name,
             token: liveRes.token,
             user: {
-              id: userId,
+              id: liveUser.id,
               rawId: localUser?.id,
-              name: liveRes.user.name,
-              role: localUser?.role || liveRes.user.role,
-              tenantId: liveRes.user.tenantId || cfg.tenant_id,
-              tenantName: liveRes.user.tenantName || cfg.tenant_name,
+              name: liveUser.name,
+              role: mappedRole,
+              tenantId: liveUser.tenantId || cfg.tenant_id,
+              tenantName: liveUser.tenantName || cfg.tenant_name,
               is_shift_open: 1,
             },
           });
         }
       } catch (e) {
-        console.warn('[Auth] Live login attempt failed, falling back to local SQLite:', e.message);
+        console.warn('[Auth] Live login attempt error, falling back to local SQLite:', e.message);
       }
     }
 
-    // 2. Local fallback login
+    // 2. Local fallback login (offline mode)
     let user = null;
     if (userId) {
       user = await get(`SELECT * FROM users WHERE (user_code = ? OR id = ?) AND pin = ?`, [userId, userId, pin.trim()]);

@@ -12,14 +12,33 @@ import MxikSettings from './pages/MxikSettings';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'menu', 'mxik'
-  const [currentUser, setCurrentUser] = useState({
-    id: 'usr_admin',
-    name: 'Boshqaruvchi Aziz (Admin)',
-    role: 'admin',
-    pin: '0000',
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      localStorage.removeItem('kafepos_user'); // Purge any legacy fake session
+      const saved = sessionStorage.getItem('kafepos_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u && !u.name?.includes('Aziz') && !u.name?.includes('Sardor') && u.id !== 'usr_admin') {
+          return u;
+        }
+      }
+    } catch (e) {}
+    return null;
   });
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('kafepos_user');
+      if (saved) {
+        const u = JSON.parse(saved);
+        if (u && !u.name?.includes('Aziz') && !u.name?.includes('Sardor') && u.id !== 'usr_admin') {
+          return false;
+        }
+      }
+    } catch (e) {}
+    return true;
+  });
   const [isAddDishModalOpen, setIsAddDishModalOpen] = useState(false);
+  const [staffUsers, setStaffUsers] = useState([]);
 
   // Core POS states
   const [tables, setTables] = useState([]);
@@ -77,11 +96,12 @@ export default function App() {
   // Initial data loading
   const loadInitialData = async () => {
     try {
-      const [resStatus, resTables, resMenu, resTickets] = await Promise.all([
+      const [resStatus, resTables, resMenu, resTickets, resUsers] = await Promise.all([
         fetch('/api/status').then((r) => r.json()),
         fetch('/api/tables').then((r) => r.json()),
         fetch('/api/menu').then((r) => r.json()),
         fetch('/api/kitchen/tickets').then((r) => r.json()),
+        fetch('/api/auth/users').then((r) => r.json()).catch(() => []),
       ]);
 
       if (resStatus.success) {
@@ -105,6 +125,8 @@ export default function App() {
 
       if (resTickets.success) setKitchenTickets(resTickets.tickets);
       else if (Array.isArray(resTickets)) setKitchenTickets(resTickets);
+
+      if (Array.isArray(resUsers)) setStaffUsers(resUsers);
     } catch (err) {
       console.error('Error loading POS data:', err);
     }
@@ -330,6 +352,23 @@ export default function App() {
     return data;
   };
 
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    setIsPinModalOpen(false);
+    try {
+      sessionStorage.setItem('kafepos_user', JSON.stringify(user));
+    } catch (e) {}
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setIsPinModalOpen(true);
+    try {
+      sessionStorage.removeItem('kafepos_user');
+      localStorage.removeItem('kafepos_user');
+    } catch (e) {}
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       {/* Top Header */}
@@ -337,10 +376,7 @@ export default function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         currentUser={currentUser}
-        onLogout={() => {
-          setCurrentUser(null);
-          setIsPinModalOpen(true);
-        }}
+        onLogout={handleLogout}
         syncState={syncState}
         onToggleInternet={handleToggleInternet}
         onFlushSync={handleFlushSync}
@@ -355,16 +391,14 @@ export default function App() {
             categories={categories}
             products={products}
             currentUser={currentUser}
+            staffUsers={staffUsers}
             syncState={syncState}
             selectedTable={selectedTable}
             activeOrder={activeOrder}
             onSelectTable={(tbl) => setSelectedTable(tbl)}
             onSubmitOrder={handleSubmitOrder}
             onCompletePayment={handleCompletePayment}
-            onLogout={() => {
-              setCurrentUser(null);
-              setIsPinModalOpen(true);
-            }}
+            onLogout={handleLogout}
             onOpenSettings={() => setCurrentTab('mxik')}
             onSaveProduct={handleSaveProduct}
             onDeleteProduct={handleDeleteProduct}
@@ -425,10 +459,7 @@ export default function App() {
       {/* PIN Login Modal */}
       {isPinModalOpen && (
         <PinModal
-          onLogin={(user) => {
-            setCurrentUser(user);
-            setIsPinModalOpen(false);
-          }}
+          onLogin={handleLogin}
         />
       )}
 

@@ -167,7 +167,7 @@ export default function WaiterView({
               Stolni Tanlang
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Ofitsiant: <strong className="text-[#ea580c]">{currentUser?.name || 'Sardor'}</strong>
+              Ofitsiant: <strong className="text-[#ea580c]">{currentUser?.name || 'Ali (Xodim)'}</strong>
             </p>
           </div>
           <div className="flex items-center gap-3">

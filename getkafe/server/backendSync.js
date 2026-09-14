@@ -18,20 +18,14 @@ let lastSyncResult = {
 
 // Known default credentials for auto-authentication on amuhr.uz
 const KNOWN_TENANT_MANAGERS = {
-  '5322a772-e9db-402a-8d2b-6293edd03832': { userId: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', pin: '2222', name: 'John' },
+  '5322a772-e9db-402a-8d2b-6293edd03832': { userId: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', pin: '1111', name: 'John' },
   '57341e59-3c24-409f-af62-9aaec212b689': { userId: 'e6010bbc-f81a-4b86-bc19-f059e1100fba', pin: '1111', name: 'Rustam' },
-  '82c1ecfb-7a39-4aa8-b597-3c8745a661b1': { userId: '5fce8412-80bf-4ac7-8e28-f39be76d0160', pin: '1111', name: 'Sardor Aliyev' },
 };
 
 const KNOWN_USER_PINS = {
-  '60612290-8399-4949-83f8-9f8216fab884': '1111', // Ali (Xodim)
-  '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7': '2222', // John
+  '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7': '1111', // John (Manager / Admin)
+  '60612290-8399-4949-83f8-9f8216fab884': '2222', // Ali (Xodim / Waiter)
   'e6010bbc-f81a-4b86-bc19-f059e1100fba': '1111', // Rustam
-  '42798f70-c266-403c-8f85-28dbbf1373c0': '1111', // Sardor Karimov
-  '4215e424-99fb-4a6d-a555-51388ab7c06f': '1111', // Sardor Karimov
-  '89e6dcab-71b3-4f51-aeaf-2fcc5883cdf5': '1111', // Doston uuuu
-  '5fce8412-80bf-4ac7-8e28-f39be76d0160': '1111', // Sardor Aliyev
-  '12b090f1-4de6-4536-b30d-030f383da7de': '1111', // Bekzod Rahimov
 };
 
 // Generic HTTP/HTTPS request helper supporting redirects & timeouts
@@ -187,10 +181,12 @@ async function loginLiveUser(userId, pin, customUrl = null) {
   const url = `${baseUrl}/api/auth/login`;
 
   try {
+    const payload = { pin: String(pin).trim() };
+    if (userId) payload.userId = userId;
     const res = await makeRequest({
       url,
       method: 'POST',
-      body: { userId, pin },
+      body: payload,
     });
 
     if (res.status === 200 && res.data) {

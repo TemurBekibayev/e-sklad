@@ -240,23 +240,25 @@ async function seedInitialData() {
     await run(`ALTER TABLE users ADD COLUMN user_code TEXT`);
   } catch (e) {}
 
+  // Purge legacy mock/fake users completely
+  await run(`DELETE FROM users WHERE name LIKE '%Aziz%' OR name LIKE '%Sardor%' OR name LIKE '%Malika%' OR name LIKE '%Administrator%' OR user_code IN ('usr_7381b2d1', 'usr_9481a8c3', 'usr_2222a8c3', 'usr_admin')`);
+
   // Seed / ensure real live users from amuhr.uz (Tenant: Test)
   const realUsers = [
-    { name: 'Ali (Xodim)', role: 'waiter', pin: '1111', code: '60612290-8399-4949-83f8-9f8216fab884' },
-    { name: 'John (Boshqaruvchi)', role: 'admin', pin: '2222', code: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7' },
-    { name: 'Kassir (GetPOS)', role: 'cashier', pin: '1234', code: 'usr_cashier_default' },
+    { name: 'John (Boshqaruvchi)', role: 'admin', pin: '1111', code: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7' },
+    { name: 'Ali (Xodim)', role: 'waiter', pin: '2222', code: '60612290-8399-4949-83f8-9f8216fab884' },
     { name: 'Bobur Aliyev (Oshpaz/KDS)', role: 'cook', pin: '3333', code: 'usr_cook' },
   ];
 
   for (const ru of realUsers) {
-    const existing = await get(`SELECT id FROM users WHERE user_code = ? OR (name = ? AND role = ?)`, [ru.code, ru.name, ru.role]);
+    const existing = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [ru.code, ru.name]);
     if (!existing) {
       await run(`INSERT INTO users (name, role, pin, is_shift_open, status, user_code) VALUES (?, ?, ?, 1, 'active', ?)`, [
         ru.name, ru.role, ru.pin, ru.code
       ]);
     } else {
-      await run(`UPDATE users SET user_code = ?, pin = ?, status = 'active', is_shift_open = 1 WHERE id = ?`, [
-        ru.code, ru.pin, existing.id
+      await run(`UPDATE users SET name = ?, role = ?, user_code = ?, pin = ?, status = 'active', is_shift_open = 1 WHERE id = ?`, [
+        ru.name, ru.role, ru.code, ru.pin, existing.id
       ]);
     }
   }

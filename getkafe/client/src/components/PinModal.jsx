@@ -34,8 +34,12 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
 
   const handleNumber = (num) => {
     if (pin.length < 6) {
-      setPin((prev) => prev + num);
+      const nextPin = pin + num;
+      setPin(nextPin);
       setError('');
+      if (nextPin.length === 4) {
+        handleSubmit(nextPin, selectedUser);
+      }
     }
   };
 
@@ -69,7 +73,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
       if (data.success) {
         onLogin(data.user);
       } else {
-        setError(data.message || 'PIN-kod xato!');
+        setError(data.message || "Noto'g'ri PIN-kod!");
         setPin('');
       }
     } catch (err) {
@@ -79,18 +83,39 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
     }
   };
 
-  const selectUserAndLogin = (u) => {
+  const handleSelectUser = (u) => {
     setSelectedUser(u);
-    if (u.pin) {
-      setPin(u.pin);
-      handleSubmit(u.pin, u);
-    } else {
-      setPin('');
-    }
+    setPin('');
+    setError('');
+  };
+
+  // Physical keyboard listener (NumPad and top numbers)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key >= '0' && e.key <= '9') {
+        handleNumber(e.key);
+      } else if (e.key === 'Backspace') {
+        handleDelete();
+      } else if (e.key === 'Enter') {
+        if (pin.length > 0) handleSubmit(pin, selectedUser);
+      } else if (e.key === 'Escape') {
+        handleClear();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pin, selectedUser]);
+
+  const getRoleLabel = (role) => {
+    if (role === 'admin' || role === 'manager') return 'Boshqaruvchi';
+    if (role === 'waiter' || role === 'worker') return 'Ofitsiant';
+    if (role === 'cook') return 'Oshpaz';
+    if (role === 'cashier') return 'Kassir';
+    return role;
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center">
         <div className="w-16 h-16 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-amber-500/10">
           <Lock className="w-8 h-8" />
@@ -104,19 +129,19 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         <h2 className="text-2xl font-bold text-white mb-1">GetPOS Kafe Avtorizatsiya</h2>
         <p className="text-sm text-slate-400 mb-4">
           {selectedUser ? (
-            <span className="text-amber-400 font-semibold">{selectedUser.name} ({selectedUser.role})</span>
+            <span className="text-amber-400 font-semibold">{selectedUser.name} ({getRoleLabel(selectedUser.role)})</span>
           ) : (
-            'Davom etish uchun xodimni tanlang yoki shaxsiy PIN-kodingizni kiriting'
+            'PIN-kodingizni kiriting yoki xodimni tanlang'
           )}
         </p>
 
         {/* Real Staff Selector Chips */}
         {users.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1.5 mb-5 max-h-24 overflow-y-auto p-1 bg-slate-950/50 rounded-2xl border border-slate-800/80">
+          <div className="flex flex-wrap justify-center gap-1.5 mb-5 max-h-28 overflow-y-auto p-1.5 bg-slate-950/50 rounded-2xl border border-slate-800/80">
             {users.map((u) => {
               const isSelected = selectedUser?.id === u.id;
               const roleColor =
-                u.role === 'admin'
+                u.role === 'admin' || u.role === 'manager'
                   ? 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10'
                   : u.role === 'cashier'
                   ? 'text-blue-400 border-blue-500/30 bg-blue-500/10'
@@ -128,14 +153,14 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
                 <button
                   key={u.id}
                   type="button"
-                  onClick={() => selectUserAndLogin(u)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${roleColor} ${
-                    isSelected ? 'ring-2 ring-amber-400 font-bold scale-105 shadow-md' : 'hover:bg-slate-800 opacity-90 hover:opacity-100'
+                  onClick={() => handleSelectUser(u)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-1.5 ${roleColor} ${
+                    isSelected ? 'ring-2 ring-amber-400 font-bold scale-105 shadow-md bg-slate-800' : 'hover:bg-slate-800/80 opacity-85 hover:opacity-100'
                   }`}
                 >
-                  <User className="w-3 h-3" />
+                  <User className="w-3.5 h-3.5" />
                   <span>{u.name}</span>
-                  {u.pin && <span className="opacity-60 text-[10px]">({u.pin})</span>}
+                  <span className="text-[10px] opacity-60">({getRoleLabel(u.role)})</span>
                 </button>
               );
             })}
