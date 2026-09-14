@@ -172,7 +172,7 @@ Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va
 
 ---
 
-## 🛒 6. Buyurtmalar (Orders)
+## 🛒 6. Buyurtmalar (Orders) & Ko'p Ofitsiantlik (Multi-Waiter)
 
 ### 6.1. Stolga buyurtma kiritish yoki taom qo'shish
 * **Metod:** `POST`
@@ -181,18 +181,26 @@ Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va
 ```json
 {
   "tableId": 3,
-  "waiterName": "Akbar",
+  "waiterId": 102,
+  "waiterName": "Sardor",
   "items": [
     {
       "product_id": 1,
       "product_name": "Mastava",
       "quantity": 2,
       "price": 32000,
-      "comment": "Issiq"
+      "comment": "Issiq",
+      "waiter_id": 102,
+      "waiter_name": "Sardor"
     }
   ]
 }
 ```
+
+> 💡 **Multi-Waiter imkoniyati:**
+> Agar stolga birinchi bo'lib **Akbar** buyurtma olgan bo'lsa va keyinroq **Sardor** kelib qo'shimcha taom kiritgan bo'lsa, tizim har bir taom qatorida qaysi ofitsiant kiritganini (`waiter_id` va `waiter_name`) saqlaydi va kassada ham, hisobotda ham alohida ko'rsatadi!
+
+---
 
 ### 6.2. Stol bo'yicha faol buyurtma va taomlarni ko'rish
 * **Metod:** `GET`
@@ -208,7 +216,7 @@ Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va
     "table_name": "STOL - 3",
     "waiter_name": "Akbar",
     "status": "open",
-    "total_amount": 208000,
+    "total_amount": 96000,
     "items": [
       {
         "id": 1,
@@ -216,31 +224,54 @@ Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va
         "product_name": "Mastava",
         "quantity": 2,
         "price": 32000,
-        "comment": "Issiq"
+        "comment": "Issiq",
+        "waiter_name": "Akbar",
+        "is_cancelled": 0
+      },
+      {
+        "id": 2,
+        "product_id": 3,
+        "product_name": "Cola 1.5L",
+        "quantity": 1,
+        "price": 18000,
+        "waiter_name": "Sardor",
+        "is_cancelled": 0
       }
     ]
   },
-  "items": [
-    {
-      "id": 1,
-      "product_id": 1,
-      "product_name": "Mastava",
-      "quantity": 2,
-      "price": 32000,
-      "comment": "Issiq"
-    }
-  ],
-  "table": {
-    "id": 3,
-    "number": 3,
-    "name": "STOL - 3",
-    "status": "busy",
-    "total_amount": 208000
-  }
+  "items": [ ... ],
+  "table": { ... }
 }
 ```
 
-### 6.3. "Hisob so'raldi" (Bill Request / Pre-chek) yuborish
+---
+
+### 6.3. Taomni bekor qilish yoki qaytarish (Item Return / Cancellation)
+Masalan: Mijoz 1.5L Cola buyurtma qilgan edi, lekin ichmadi va qaytib berdi. Kassir yoki ofitsiant uni bekor qiladi, stol hisobidan puli chegiriladi va ombordagi qoldiq (sklad) avtomatik qayta tiklanadi.
+
+* **Metod:** `POST`
+* **URL:** `/api/orders/:orderId/cancel-item`
+* **Request Body:**
+```json
+{
+  "itemId": 2,
+  "cancelQty": 1,
+  "reason": "Mijoz ichmadi, qaytarildi"
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "success": true,
+  "orderId": "ord_92db73a5",
+  "totalAmount": 64000,
+  "items": [ ... ]
+}
+```
+
+---
+
+### 6.4. "Hisob so'raldi" (Bill Request / Pre-chek) yuborish
 * **Metod:** `POST`
 * **URL:** `/api/orders/:orderId/bill-request`
 
@@ -251,5 +282,8 @@ Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va
 * **Ulanish:** `ws://192.168.1.5:4000/ws`
 * **Hodisalar:**
   - `TABLE_UPDATED`: Stol holati o'zgarganda (ochilganda, to'langanda, buyurtma qo'shilganda)
+  - `ORDER_UPDATED`: Buyurtma summasi yoki taomlari o'zgarganda / qaytarilganda
   - `KITCHEN_NEW_TICKET`: Yangi buyurtma oshxonaga yuborilganda
+  - `KITCHEN_CANCEL_TICKET`: Taom bekor qilinganda oshxona xabardor qilinganda
   - `BILL_REQUESTED`: Mijoz hisob so'raganda
+  - `INVENTORY_UPDATED`: Ombordagi mahsulot qoldig'i o'zgarganda
