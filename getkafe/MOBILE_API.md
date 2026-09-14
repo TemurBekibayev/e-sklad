@@ -1,133 +1,166 @@
-# GetPOS Mobile — Yangilangan To'liq API Qo'llanmasi (v2.0)
+# 📱 GetPOS Kafe & Savdo — Mobil Dasturchi Uchun API Qo‘llanmasi (v2.0)
 
-> **Ushbu qo'llanma:** Mobil ilova (Flutter / React Native / Kotlin / Swift) yaratayotgan dasturchi uchun mo'ljallangan. GetPOS ekotizimida ofitsiantlar, do'kon xodimlari va kuryerlar ushbu API orqali markaziy bulut serveri (`https://getpos.uz`) va lokal kassa bilan to'liq ishlaydi.
+> **Ushbu hujjat:** Flutter, React Native, Kotlin (Android) yoki Swift (iOS) orqali GetPOS ekotizimiga mobil ilova (Ofitsiant, Savdo agenti, Kuryer, Mijoz savati) yaratayotgan dasturchilar uchun to'liq texnik qo'llanma hisoblanadi.
 
 ---
 
-## Asosiy Server Manzillari (Base URLs)
+## 🌐 1. Server Manzillari va Arxitektura
 
-| Parametr | Qiymat / URL | Izoh |
+| Parametr | Qiymat / URL | Vazifasi |
 | :--- | :--- | :--- |
-| **Asosiy Server API** | `https://getpos.uz` | Markaziy bulut backend |
-| **WebSocket URL** | `wss://getpos.uz/ws/baskets/{tenantId}/` | Savatlar va buyurtmalar jonli oqimi |
-| **Lokal Kassa API** | `http://<KASSA_IP>:4000/api` | Kafedagi lokal Wi-Fi kassa serveri |
-| **Lokal WebSocket** | `ws://<KASSA_IP>:4000/ws` | Mahalliy stollar va begunok printer oqimi |
+| **Markaziy Server (Cloud API)** | `https://getpos.uz/api/v1` | Do'konlar, xodimlar, tovarlar va savatlar serveri |
+| **Muqobil Server URL** | `https://getpos.uz/api` | Eski versiyalar bilan to'liq mos keluvchi yo'nalish |
+| **Realtime WebSocket** | `wss://getpos.uz/ws/baskets/{tenantId}/` | Savatlar, buyurtmalar va to'lovlar jonli oqimi |
+| **Lokal Wi-Fi Kassa API** | `http://<KASSA_IP>:4000/api/v1` | Kafedagi lokal kassa serveri (Oflayn va Oshxona printeri) |
+| **Format** | `JSON` (`application/json`) | Barcha so'rov va javoblar JSON formatida |
 
-> 📌 **Eslatma:** Server API marshrutlari ham `/api/...`, ham `/api/v1/...` formatida to'liq ishlaydi.
+### ⚠️ Eng Muhim Qoidalar:
+1. **Har bir so'rovda do'kon ID'si (`tenantId` yoki `tenant_id`) yuborilishi shart.** Tizim `camelCase` va `snake_case` formatlarining ikkalasini ham qabul qiladi.
+2. **Avtorizatsiyadan so'ng barcha so'rovlar sarlavhasida JWT token yuboriladi:**
+   ```http
+   Authorization: Bearer <access_token>
+   Content-Type: application/json
+   ```
 
 ---
 
-## ⚙️ 1. Server Ulanishi va Do'kon Tanlash (Config)
+## 🏢 2. Haqiqiy Do'konlar va Sinov Foydalanuvchilari (Test Credentials)
 
-### 1.1. Server holatini tekshirish (Health Check)
+Backend dasturchi tomonidan yaratilgan haqiqiy do'konlar va ularning faol xodimlari:
+
+### 1) Test Kafe (Asosiy Kafe filiali):
+* **`tenantId`:** `90e04abf-246d-4683-91eb-1ac34d7b2ee7`
+* **Do'kon nomi:** `Test Kafe` (Manzil: Mang'it)
+* **Xodim:** `Kafee` (Boshqaruvchi / `manager`)
+* **PIN-kod:** **`3333`**
+
+### 2) Test (Sinov va Savdo filiali):
+* **`tenantId`:** `5322a772-e9db-402a-8d2b-6293edd03832`
+* **Xodim 1:** `John` (Boshqaruvchi / `manager`) — PIN: **`1111`**
+* **Xodim 2:** `Ali (Xodim)` (Ofitsiant / `worker`) — PIN: **`2222`**
+
+### 3) Rustam Telefon:
+* **`tenantId`:** `57341e59-3c24-409f-af62-9aaec212b689`
+* **Xodim 1:** `Rustam` (Boshqaruvchi) — PIN: **`1111`**
+* **Xodim 2:** `Sardor Karimov` (Xodim) — PIN: **`1234`**
+
+---
+
+## 🔐 3. Avtorizatsiya va Xodimlar (Auth API)
+
+### 3.1. Server holatini tekshirish (Health Check)
 * **Metod:** `GET`
-* **URL:** `/health` yoki `/api/health`
+* **URL:** `/health` yoki `/api/health` yoki `/api/v1/health`
 * **Javob (200 OK):**
 ```json
 {
   "status": "ok",
-  "timestamp": "2026-09-10T11:57:05.697851+00:00"
+  "timestamp": "2026-09-14T14:30:00.000Z"
 }
 ```
 
-### 1.2. Do'konlar ro'yxatini olish (Tenants)
-Foydalanuvchi qaysi filialda ishlayotganini tanlashi uchun chiqariladi.
+### 3.2. Do'konlar / Filiallar ro'yxatini olish (Tenants)
+Mobil ilova ochilganda xodim o'z filialini tanlashi uchun chiqariladi.
 * **Metod:** `GET`
-* **URL:** `/api/tenants/`
+* **URL:** `/api/v1/tenants/`
 * **Javob (200 OK):**
 ```json
 {
-  "count": 1,
+  "count": 4,
   "results": [
+    {
+      "id": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+      "name": "Test Kafe",
+      "address": "Mang'it",
+      "status": "active",
+      "users_count": 1,
+      "products_count": 0
+    },
     {
       "id": "5322a772-e9db-402a-8d2b-6293edd03832",
       "name": "Test",
-      "address": "Toshkent sh.",
-      "status": "active"
+      "address": "Mangit",
+      "status": "active",
+      "users_count": 2,
+      "products_count": 2
     }
   ]
 }
 ```
 
----
-
-## 🔐 2. Avtorizatsiya va Xodimlar (Auth & Login)
-
-### 2.1. Do'kon xodimlari ro'yxatini olish
-Kirish ekranida xodimni tanlash uchun avatar ko'rinishida chiqariladi.
+### 3.3. Filial xodimlari ro'yxatini olish
+Tanlangan filialga tegishli xodimlar ro'yxatini ekranga chiqarish (Avatar / Chip ko'rinishida).
 * **Metod:** `GET`
-* **URL:** `/api/auth/users?tenantId={tenantId}`
+* **URL:** `/api/v1/auth/users?tenantId={tenantId}`
 * **Javob (200 OK):**
 ```json
 [
   {
-    "id": "60612290-8399-4949-83f8-9f8216fab884",
-    "name": "Ali (Xodim)",
-    "role": "worker",
-    "phone": "+998901234567",
-    "status": "active",
-    "is_active": true,
-    "can_sell_on_debt": true,
-    "max_debt_limit": 2000000
-  },
-  {
-    "id": "447a1ad6-e23f-4dde-b4a2-d9256c7af5a7",
-    "name": "John",
+    "id": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+    "name": "Kafee",
     "role": "manager",
-    "phone": "+998880542304",
     "status": "active",
-    "is_active": true
+    "phone": "+998881111111",
+    "email": "kafee@gmail.com",
+    "can_sell_on_debt": false,
+    "max_debt_limit": 1500000.0
   }
 ]
 ```
 
-### 2.2. Xodim PIN-kodi orqali kirish (Login)
-Har bir xodim o'zining shaxsiy PIN-kodi bilan kiradi:
-* **John (Boshqaruvchi / Admin):** PIN: `1111`
-* **Ali (Xodim / Ofitsiant):** PIN: `2222`
-
+### 3.4. Xodim PIN-kod orqali kirish (Login)
+Xodim o'z PIN-kodini kiritadi. Server JWT token qaytaradi.
 * **Metod:** `POST`
-* **URL:** `/api/auth/login`
+* **URL:** `/api/v1/auth/login`
 * **Body (JSON):**
 ```json
 {
-  "userId": "60612290-8399-4949-83f8-9f8216fab884",
-  "pin": "2222"
+  "userId": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+  "pin": "3333"
 }
 ```
-* **Javob (200 OK):**
+*(Eslatma: agar `userId` yuborilmasa ham faqat `{ "pin": "3333" }` bilan ham tizim xodimni aniqlay oladi).*
+
+* **Muvaffaqiyatli javob (200 OK):**
 ```json
 {
+  "success": true,
   "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "userId": "60612290-8399-4949-83f8-9f8216fab884",
-  "name": "Ali (Xodim)",
-  "role": "worker",
-  "tenantId": "5322a772-e9db-402a-8d2b-6293edd03832",
-  "tenantName": "Test",
+  "id": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+  "name": "Kafee",
+  "role": "manager",
+  "tenantId": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+  "tenantName": "Test Kafe",
   "user": {
-    "id": "60612290-8399-4949-83f8-9f8216fab884",
-    "name": "Ali (Xodim)",
-    "role": "worker",
-    "can_sell_on_debt": true,
-    "max_debt_limit": 2000000
+    "id": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+    "name": "Kafee",
+    "role": "manager",
+    "tenant_id": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+    "tenant_name": "Test Kafe"
   }
 }
 ```
-> 🔑 **Muhim:** Keyingi barcha so'rovlarda Headerda jo'natiladi:  
-> `Authorization: Bearer {access}`
+* **Xato javob (401 Unauthorized):**
+```json
+{
+  "success": false,
+  "message": ["Login, PIN kod yoki parol noto'g'ri."]
+}
+```
 
 ---
 
-## 📦 3. Mahsulotlar va Sklad (Products)
+## 📦 4. Mahsulotlar va Kategoriyalar (Products & Menu)
 
-### 3.1. Do'kondagi mahsulotlarni olish / Qidirish
+### 4.1. Do'kon mahsulotlarini olish va Qidirish
 * **Metod:** `GET`
-* **URL:** `/api/products/?tenant_id={tenantId}`
-* **Qidiruv parametrlari:**
-  * Qidiruv matni bo'yicha: `/api/products/?tenant_id={tenantId}&search=cola`
-  * Shtrix-kod bo'yicha: `/api/products/?tenant_id={tenantId}&barcode=3454634536456`
+* **URL:** `/api/v1/products/?tenantId={tenantId}`
+* **Headers:** `Authorization: Bearer <access_token>`
+* **Qidiruv filtrlari:**
+  * Nomi bo'yicha: `/api/v1/products/?tenantId={tenantId}&search=lavash`
+  * Shtrix-kod bo'yicha: `/api/v1/products/?tenantId={tenantId}&barcode=4780012345678`
 * **Javob (200 OK):**
 ```json
 {
@@ -135,172 +168,260 @@ Har bir xodim o'zining shaxsiy PIN-kodi bilan kiradi:
   "results": [
     {
       "id": "c0abc21b-8552-4004-acbc-33b091c90f8a",
-      "name": "Coca-Cola 1.5",
-      "barcode": "3454634536456",
-      "price_per_sale_unit": "18000.00",
-      "current_stock": "96.0000",
+      "name": "Mini Lavash Mol go'shti",
+      "barcode": "4780012345678",
+      "price_per_sale_unit": "28000.00",
+      "current_stock": "50.0000",
       "sale_unit": "dona",
-      "tenant_id": "5322a772-e9db-402a-8d2b-6293edd03832"
+      "category_id": 1,
+      "tenant_id": "90e04abf-246d-4683-91eb-1ac34d7b2ee7"
     }
   ]
 }
 ```
 
-### 3.2. Yangi tovar qo'shishda Global Bazadan qidirish
-Agar do'konda tovar bo'lmasa, nomini qo'lda yozmaslik uchun shtrix-kod skaner qilinganda tekshiriladi:
+### 4.2. Kategoriyalar ro'yxatini olish
 * **Metod:** `GET`
-* **URL:** `/api/products/lookup-barcode/?barcode=3454634536456`
-* **Javob (Topilsa):**
+* **URL:** `/api/v1/categories/?tenantId={tenantId}`
+* **Javob (200 OK):**
 ```json
-{
-  "found": true,
-  "name": "Coca-Cola 1.5",
-  "unit": "dona",
-  "icon": "🥤"
-}
-```
-* **Javob (Topilmasa):**
-```json
-{
-  "found": false
-}
-```
-
-### 3.3. Do'kon omboriga yangi tovar kiritish
-* **Metod:** `POST`
-* **URL:** `/api/products/`
-* **Headers:** `Authorization: Bearer {token}`
-* **Body (JSON):**
-```json
-{
-  "tenant_id": "5322a772-e9db-402a-8d2b-6293edd03832",
-  "name": "Coca-Cola 1.5",
-  "price_per_sale_unit": 18000,
-  "current_stock": 100,
-  "sale_unit": "dona",
-  "purchase_unit": "dona",
-  "conversion_factor": 1.0,
-  "barcode": "3454634536456"
-}
+[
+  { "id": 1, "name": "Fast Food", "icon": "🍔" },
+  { "id": 2, "name": "Ichimliklar", "icon": "🥤" },
+  { "id": 3, "name": "Issiq taomlar", "icon": "🍲" }
+]
 ```
 
 ---
 
-## 🛒 4. Savat va Kassaga Uzatish (Baskets / Send to Kassa)
+## 🛒 5. Jonli Savat va Kassaga Uzatish (Baskets — Send to Kassa)
 
-### 4.1. Yangi savat ochish
+Ofitsiant yoki savdo agenti mobil ilovada savat yig'ib, 1 ta tugma bilan uni **Kassa kompyuteriga uzatadi**. Kassa dasturida bir zumda **`📥 Mobil Savat`** tugmasi yonadi va kassir uni chekka yuklaydi.
+
+### 5.1. Yangi savat ochish
 * **Metod:** `POST`
-* **URL:** `/api/baskets/`
+* **URL:** `/api/v1/baskets/`
+* **Headers:** `Authorization: Bearer <access_token>`
 * **Body (JSON):**
 ```json
 {
-  "tenant_id": "5322a772-e9db-402a-8d2b-6293edd03832",
-  "worker_id": "60612290-8399-4949-83f8-9f8216fab884",
-  "client_name": "Mijoz 1"
+  "tenantId": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+  "workerId": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+  "clientName": "Stol 5 / Anvar"
+}
+```
+* **Javob (201 Created):**
+```json
+{
+  "id": "a81d4b2e-2e91-4c19-9db3-d73c713b1902",
+  "status": "draft",
+  "tenantId": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+  "workerName": "Kafee",
+  "clientName": "Stol 5 / Anvar",
+  "totalAmount": 0,
+  "items": []
 }
 ```
 
-### 4.2. Savatga tovar qo'shish / Soni o'zgartirish
+### 5.2. Savatga mahsulot qo'shish yoki miqdorini o'zgartirish
 * **Metod:** `POST`
-* **URL:** `/api/baskets/{basketId}/items/`
+* **URL:** `/api/v1/baskets/{basketId}/items/`
 * **Body (JSON):**
 ```json
 {
-  "product_id": "c0abc21b-8552-4004-acbc-33b091c90f8a",
+  "productId": "c0abc21b-8552-4004-acbc-33b091c90f8a",
   "quantity": 2,
-  "scanned_by": "Ali (Xodim)"
+  "comment": "Piyozi ko'proq bo'lsin"
 }
 ```
 
-### 4.3. Savatdan tovarni o'chirish
+### 5.3. Savatdan mahsulotni o'chirish
 * **Metod:** `DELETE`
-* **URL:** `/api/baskets/{basketId}/items/{itemId}/`
+* **URL:** `/api/v1/baskets/{basketId}/items/{itemId}/`
+* **Javob (204 No Content / 200 OK)**
 
-### 4.4. Savatni "Kassaga Uzatish"
-Savat to'liq yig'ilgach, uni kassir qabul qilishi uchun statusini faollashtirish:
+### 5.4. Savatni "Kassaga Uzatish" (Statusni faollashtirish)
+Savat to'liq yig'ilgach, uni kassa kompyuteriga yuborish:
 * **Metod:** `PATCH`
-* **URL:** `/api/baskets/{basketId}/`
+* **URL:** `/api/v1/baskets/{basketId}/`
 * **Body (JSON):**
 ```json
 {
-  "status": "active",
-  "client_name": "Ali Valiyev (Zal 1)"
+  "status": "active"
 }
 ```
-> ⚡️ **Eslatma:** Ushbu so'rov yuborilishi bilan, kompyuterdagi Kassa dasturida avtomatik ravishda **`📥 Mobil Savat`** tugmasi yonadi va kassir uni 1 ta tugma bilan chekka yuklab to'lovni oladi.
+> ⚡️ **Natija:** Kassa dasturida bir vaqtning o'zida ovozli signal chalinadi va savatlar soni ko'rinadi (masalan: `📥 Mobil Savat (1)`).
 
-### 4.5. Xodimning o'ziga tegishli faol savatlarini olish
+### 5.5. Faol savatlar ro'yxatini ko'rish
 * **Metod:** `GET`
-* **URL:** `/api/baskets/?tenant_id={tenantId}&worker_id={workerId}&status=active`
-
----
-
-## 💰 5. To'g'ridan-to'g'ri Savdoni Yakunlash (Transactions)
-
-Agar to'lovni kassaga yubormasdan, to'g'ridan-to'g'ri mobil ilovadan olish kerak bo'lsa:
-* **Metod:** `POST`
-* **URL:** `/api/transactions/`
-* **Body (JSON):**
+* **URL:** `/api/v1/baskets/?tenantId={tenantId}&status=active`
+* **Javob (200 OK):**
 ```json
-{
-  "tenant_id": "5322a772-e9db-402a-8d2b-6293edd03832",
-  "basket_id": "832bc2ff-c7ee-4dea-81e8-64f4f264d4a3",
-  "payment_method": "cash",
-  "total_amount": 36000,
-  "client_name": "Mijoz Ali",
-  "client_phone": "+998901234567"
-}
+[
+  {
+    "id": "a81d4b2e-2e91-4c19-9db3-d73c713b1902",
+    "clientName": "Stol 5 / Anvar",
+    "totalAmount": 56000,
+    "status": "active",
+    "itemsCount": 2,
+    "createdAt": "2026-09-14T14:32:00Z"
+  }
+]
 ```
-* **To'lov turlari (`payment_method`):**
-  * `cash` — Naqd pul
-  * `card` — Plastik karta / Humo / Uzcard terminal
-  * `debt` — Qarz / Nasiya
-  * `click` — Click orqali to'lov
-  * `payme` — Payme orqali to'lov
 
 ---
 
-## 🍽️ 6. Kafe va Stollar Rejimi (Lokal Kassa API)
+## 🍽️ 6. Kafe va Stollar Rejimi (Lokal Kassa API — Wi-Fi)
 
-Kafening ichki Wi-Fi tarmog'ida ofitsiant stollar bilan ishlaganda quyidagi lokal kassa API ishlatiladi (`http://<KASSA_IP>:4000/api`):
+Ofitsiant kafening ichki Wi-Fi tarmog'ida to'g'ridan-to'g'ri kassa kompyuteriga (`http://<KASSA_IP>:4000/api`) ulanib ishlaganda:
 
-### 6.1. Stollar ro'yxatini olish
+### 6.1. Stollar holatini olish
 * **Metod:** `GET`
 * **URL:** `/api/tables`
-* **Response:**
+* **Javob (200 OK):**
 ```json
 [
   { "id": 1, "number": 1, "name": "STOL - 1", "status": "free", "hall": "Основной" },
-  { "id": 2, "number": 2, "name": "STOL - 2", "status": "busy", "hall": "Основной" }
+  { "id": 2, "number": 2, "name": "STOL - 2", "status": "busy", "hall": "Основной", "total": 124000, "waiter": "Ali" }
 ]
 ```
-*(Holatlar: `free` - yashil, `busy` - qizil, `bill_requested` - sariq)*.
+*(Holatlar: `free` — Bo'sh, `busy` — Band, `bill_requested` — Pre-chek so'ralgan)*.
 
-### 6.2. Stolga buyurtma jo'natish (Oshxonaga begunok chiqarish)
+### 6.2. Stolga buyurtma yuborish (Oshxona printeri / KDS begunok chiqaradi)
 * **Metod:** `POST`
 * **URL:** `/api/orders`
 * **Body (JSON):**
 ```json
 {
   "tableId": 1,
-  "waiterId": "60612290-8399-4949-83f8-9f8216fab884",
-  "waiterName": "Ali (Xodim)",
+  "waiterId": "b58d74f3-3541-4341-acf8-ff00c13964c7",
+  "waiterName": "Kafee",
   "items": [
     { "productId": 1, "name": "Mastava", "quantity": 2, "price": 32000, "comment": "Achchiq bo'lmasin" }
   ]
 }
 ```
 
-### 6.3. Hisob so'rash (Pre-check)
+### 6.3. Pre-chek / Hisob so'rash
 * **Metod:** `POST`
 * **URL:** `/api/orders/{orderId}/bill-request`
 
 ---
 
-## ⚡️ Muhim Qoidalar va Eslatmalar
+## 💰 7. To'lov va Savdoni Yakunlash (Transactions)
 
-1. **`tenant_id` majburiy:** Barcha so'rovlarda do'kon identifikatori (`tenant_id`) yuborilishi shart.
-2. **Kassaga yuborish:** Xodim savatga tovar qo'shib, savatni saqlaganda u avtomatik ravishda server orqali Kassa dasturiga tushadi va kassir kompyuterida **`📥 Mobil Savat`** tugmasi yonadi.
-3. **Ofitsiant va Admin PIN-kodlari:**
-   * John (Admin / Manager): **`1111`**
-   * Ali (Xodim / Ofitsiant): **`2222`**
+Agar to'lov kassaga bormasdan, ofitsiant yoki kuryer tomonidan joyida qabul qilinsa:
+* **Metod:** `POST`
+* **URL:** `/api/v1/transactions/`
+* **Body (JSON):**
+```json
+{
+  "tenantId": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
+  "basketId": "a81d4b2e-2e91-4c19-9db3-d73c713b1902",
+  "paymentMethod": "cash",
+  "totalAmount": 56000,
+  "clientName": "Anvar aka",
+  "clientPhone": "+998901234567"
+}
+```
+
+### To'lov turlari (`paymentMethod`):
+* `cash` — Naqd pul
+* `card` — Terminal (Humo / Uzcard)
+* `click` — Click orqali to'lov
+* `payme` — Payme orqali to'lov
+* `debt` — Nasiya / Qarz (Mijoz nomi va telefoni talab qilinadi)
+
+---
+
+## 📡 8. Realtime WebSocket Oqimi (Live Sync)
+
+* **WebSocket manzili:**
+  `wss://getpos.uz/ws/baskets/{tenantId}/`
+
+Ulanish hosil bo'lgach, server barcha o'zgarishlarni real vaqtda broadcast qiladi:
+```json
+{
+  "event": "BASKET_CREATED",
+  "data": {
+    "basketId": "a81d4b2e-2e91-4c19-9db3-d73c713b1902",
+    "clientName": "Stol 5 / Anvar",
+    "totalAmount": 56000,
+    "status": "active"
+  }
+}
+```
+
+---
+
+## 💻 9. Mobil Dasturchi Uchun Tayyor Kod Namunalari
+
+### Flutter (Dart) — Login va PIN tekshirish:
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<Map<String, dynamic>?> loginWithPin(String tenantId, String userId, String pin) async {
+  final url = Uri.parse('https://getpos.uz/api/v1/auth/login');
+  final response = await http.post(
+    url,
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'tenantId': tenantId,
+      'userId': userId,
+      'pin': pin,
+    }),
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    String token = data['access'] ?? data['token'];
+    print('Muvaffaqiyatli kirdi: ${data['name']}, Token: $token');
+    return data;
+  } else {
+    print('Xatolik: ${response.body}');
+    return null;
+  }
+}
+```
+
+### React Native / Axios — Kassaga Savat Uzatish:
+```javascript
+import axios from 'axios';
+
+const sendBasketToKassa = async (token, tenantId, workerId, clientName, items) => {
+  try {
+    // 1. Yangi savat ochish
+    const createRes = await axios.post('https://getpos.uz/api/v1/baskets/', {
+      tenantId,
+      workerId,
+      clientName,
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const basketId = createRes.data.id;
+
+    // 2. Mahsulotlarni qo'shish
+    for (const item of items) {
+      await axios.post(`https://getpos.uz/api/v1/baskets/${basketId}/items/`, {
+        productId: item.id,
+        quantity: item.qty,
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    }
+
+    // 3. Kassaga faol qilib uzatish
+    await axios.patch(`https://getpos.uz/api/v1/baskets/${basketId}/`, {
+      status: 'active'
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    console.log('Savat muvaffaqiyatli kassaga yuborildi!');
+  } catch (error) {
+    console.error('Xatolik yuz berdi:', error.response?.data || error.message);
+  }
+};
+```
+
