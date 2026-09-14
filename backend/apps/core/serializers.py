@@ -13,6 +13,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     PIN kod (worker/manager) yoki Email+Parol (manager/admin) orqali kirish
     """
     login = serializers.CharField(required=False, write_only=True, help_text="Email, username yoki xodim ismi")
+    user_id = serializers.CharField(required=False, write_only=True, help_text="Foydalanuvchi ID")
     pin = serializers.CharField(required=False, write_only=True, max_length=10, help_text="4 xonali PIN kod")
     password = serializers.CharField(required=False, write_only=True, help_text="Parol (email bilan kirilganda)")
     tenant_id = serializers.UUIDField(required=False, write_only=True, help_text="PIN bilan kirganda do'kon ID (agar bir nechta do'kon bo'lsa)")
@@ -36,23 +37,32 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         login_val = attrs.get('login') or attrs.get('email') or attrs.get('username')
+        user_id_val = attrs.get('user_id') or attrs.get('userId')
         pin_val = attrs.get('pin')
         password_val = attrs.get('password')
         tenant_id = attrs.get('tenant_id')
 
         user = None
 
-        # 1. PIN orqali kirish (Mobile App / Manager PIN)
-        if pin_val:
+        # 1. PIN yoki Login+Parol orqali kirish
+        if pin_val or password_val:
             users_qs = User.objects.filter(is_active=True)
-            if tenant_id:
+            if user_id_val:
+                users_qs = users_qs.filter(id=user_id_val)
+            elif tenant_id:
                 users_qs = users_qs.filter(tenant_id=tenant_id)
             if login_val:
-                users_qs = users_qs.filter(models.Q(name__iexact=login_val) | models.Q(email__iexact=login_val) | models.Q(phone_number=login_val))
+                users_qs = users_qs.filter(
+                    models.Q(name__iexact=login_val) |
+                    models.Q(email__iexact=login_val) |
+                    models.Q(email__istartswith=f"{login_val}@") |
+                    models.Q(phone_number=login_val)
+                )
 
+            check_val = pin_val or password_val
             found_user = None
             for u in users_qs:
-                if u.check_pin(pin_val):
+                if (pin_val and u.check_pin(pin_val)) or (password_val and u.check_password(password_val)) or (check_val and u.check_pin(check_val)) or (check_val and u.check_password(check_val)):
                     found_user = u
                     break
 
@@ -171,7 +181,7 @@ class TenantSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     pin = serializers.CharField(write_only=True, required=False, max_length=10)
-    password = serializers.CharField(write_only=True, required=False, min_length=6)
+    password = serializers.CharField(write_only=True, required=False, min_length=4)
 
     class Meta:
         model = User
@@ -187,12 +197,15 @@ class UserSerializer(serializers.ModelSerializer):
         pin = validated_data.pop('pin', None)
         password = validated_data.pop('password', None)
         user = User.objects.create(**validated_data)
+        update_fields = []
         if pin:
             user.set_pin(pin)
-            user.save(update_fields=['pin_hash'])
+            update_fields.extend(['pin_hash', 'plain_pin'])
         if password:
             user.set_password(password)
-            user.save(update_fields=['password'])
+            update_fields.extend(['password', 'plain_password'])
+        if update_fields:
+            user.save(update_fields=update_fields)
         return user
 
     def update(self, instance, validated_data):

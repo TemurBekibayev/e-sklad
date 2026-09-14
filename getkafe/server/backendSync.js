@@ -1,4 +1,4 @@
-// server/backendSync.js - Real Production Backend Sync Engine (https://amuhr.uz)
+// server/backendSync.js - Real Production Backend Sync Engine (https://getpos.uz)
 const https = require('https');
 const http = require('http');
 const { get, all, run } = require('./db');
@@ -18,9 +18,9 @@ let lastSyncResult = {
 
 // Known default credentials for auto-authentication on getpos.uz
 const KNOWN_TENANT_MANAGERS = {
-  '90e04abf-246d-4683-91eb-1ac34d7b2ee7': { userId: 'b58d74f3-3541-4341-acf8-ff00c13964c7', pin: '3333', name: 'Kafee' },
-  '5322a772-e9db-402a-8d2b-6293edd03832': { userId: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', pin: '1111', name: 'John' },
-  '57341e59-3c24-409f-af62-9aaec212b689': { userId: 'e6010bbc-f81a-4b86-bc19-f059e1100fba', pin: '1111', name: 'Rustam' },
+  '90e04abf-246d-4683-91eb-1ac34d7b2ee7': { userId: 'b58d74f3-3541-4341-acf8-ff00c13964c7', login: 'kafee@gmail.com', pin: '3333', name: 'Kafee' },
+  '5322a772-e9db-402a-8d2b-6293edd03832': { userId: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', login: 'john@example.com', pin: '1111', name: 'John' },
+  '57341e59-3c24-409f-af62-9aaec212b689': { userId: 'e6010bbc-f81a-4b86-bc19-f059e1100fba', login: 'rustam@getpos.uz', pin: '1111', name: 'Rustam' },
 };
 
 const KNOWN_USER_PINS = {
@@ -148,10 +148,10 @@ async function updateConfig({ api_url, tenant_id, tenant_name, auth_token, sync_
   return updated;
 }
 
-// Fetch all live tenants from backend (amuhr.uz/api/tenants/)
+// Fetch all live tenants from backend (getpos.uz/api/tenants/)
 async function fetchLiveTenants(customUrl = null) {
   const cfg = await getConfig();
-  const baseUrl = (customUrl || cfg.api_url || 'https://amuhr.uz').replace(/\/+$/, '');
+  const baseUrl = (customUrl || cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
   const url = `${baseUrl}/api/tenants/`;
 
   try {
@@ -182,36 +182,55 @@ async function fetchStaffForTenant(tenantId) {
   const cfg = await getConfig();
   const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
   const tId = tenantId || cfg.tenant_id;
+  const token = await ensureAuthToken();
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
-  // Try v1 first, then legacy /api
-  let url = `${baseUrl}/api/v1/auth/users?tenantId=${tId}`;
+  // Try v1 users first, then legacy auth/users
+  let url = `${baseUrl}/api/v1/users/?tenant_id=${tId}`;
   try {
-    let res = await makeRequest({ url, method: 'GET', timeoutMs: 6000 });
-    if (res.status !== 200 || !Array.isArray(res.data)) {
-      url = `${baseUrl}/api/auth/users?tenantId=${tId}`;
-      res = await makeRequest({ url, method: 'GET', timeoutMs: 6000 });
+    let res = await makeRequest({ url, method: 'GET', headers, timeoutMs: 6000 });
+    if (res.status !== 200 || !res.data) {
+      url = `${baseUrl}/api/v1/auth/users?tenantId=${tId}`;
+      res = await makeRequest({ url, method: 'GET', headers, timeoutMs: 6000 });
     }
 
-    if (res.status === 200 && Array.isArray(res.data) && res.data.length > 0) {
-      // Sync into SQLite users table for offline caching
-      for (const u of res.data) {
-        const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : 'waiter';
-        const pin = KNOWN_USER_PINS[u.id] || (mappedRole === 'admin' ? '1111' : '2222');
-        const existing = await get(`SELECT id FROM users WHERE user_code = ?`, [u.id]);
+    const items = res.data?.results || (Array.isArray(res.data) ? res.data : []);
+    if (res.status === 200 && items.length > 0) {
+      // Sync into SQLite users table for offline caching with deduplication
+      for (const u of items) {
+        const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
+        const uCode = String(u.id);
+        const uName = (u.name || '').trim();
+        const uLogin = u.email || u.login || uName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const uPhone = u.phone_number || u.phone || '';
+        const uPass = u.plain_password || u.plain_pin || u.password || u.pin || '123456';
+        const uPin = String(u.plain_pin || u.pin || uPass).replace(/[^0-9]/g, '').padEnd(4, '0').slice(0, 4);
+
+        // Match by user_code OR case-insensitive name OR login
+        const existing = await get(
+          `SELECT id, user_code, login, password FROM users 
+           WHERE user_code = ? OR LOWER(name) = LOWER(?) OR (login = ? AND login != '')`,
+          [uCode, uName, uLogin]
+        );
+
         if (existing) {
           await run(`
             UPDATE users
-            SET name = ?, role = ?, tenant_id = ?, status = 'active'
-            WHERE user_code = ?
-          `, [u.name, mappedRole, tId, u.id]);
+            SET name = ?, role = ?, tenant_id = ?, status = 'active', user_code = ?,
+                login = COALESCE(NULLIF(?, ''), login),
+                password = COALESCE(NULLIF(?, ''), password),
+                pin = COALESCE(NULLIF(?, ''), pin),
+                phone = COALESCE(NULLIF(?, ''), phone)
+            WHERE id = ?
+          `, [uName, mappedRole, tId, uCode, uLogin, uPass, uPin, uPhone, existing.id]);
         } else {
           await run(`
-            INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id)
-            VALUES (?, ?, ?, 1, 'active', ?, ?)
-          `, [u.name, mappedRole, pin, u.id, tId]);
+            INSERT INTO users (name, role, login, password, pin, phone, is_shift_open, status, user_code, tenant_id)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'active', ?, ?)
+          `, [uName, mappedRole, uLogin, uPass, uPin, uPhone, uCode, tId]);
         }
       }
-      return { success: true, users: res.data };
+      return { success: true, users: items };
     }
   } catch (err) {
     console.warn('[BackendSync] fetchStaffForTenant error:', err.message);
@@ -219,7 +238,7 @@ async function fetchStaffForTenant(tenantId) {
 
   // Fallback to local SQLite users for this tenant
   const localUsers = await all(
-    `SELECT id, user_code, name, role, status, tenant_id FROM users WHERE tenant_id = ? AND (status = 'active' OR status IS NULL)`,
+    `SELECT id, user_code, name, login, password, role, pin, phone, status, tenant_id FROM users WHERE tenant_id = ? AND (status = 'active' OR status IS NULL)`,
     [tId]
   );
   return {
@@ -227,31 +246,51 @@ async function fetchStaffForTenant(tenantId) {
     users: localUsers.map((u) => ({
       id: u.user_code || `usr_${u.id}`,
       name: u.name,
+      login: u.login,
       role: u.role === 'admin' ? 'manager' : 'worker',
       status: u.status || 'active',
     })),
   };
 }
 
-// Authenticate with user + PIN on getpos.uz
-async function loginLiveUser(userId, pin, customUrl = null) {
+// Authenticate with user + PIN or Email/Login on getpos.uz
+async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLogin = null) {
   const cfg = await getConfig();
   const baseUrl = (customUrl || cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
 
-  const payload = { pin: String(pin).trim() };
-  if (userId) payload.userId = userId;
+  const payload = {
+    pin: String(passOrPin).trim(),
+    password: String(passOrPin).trim(),
+  };
+
+  const isUUID = typeof userIdOrLogin === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userIdOrLogin);
+
+  if (isUUID) {
+    payload.userId = userIdOrLogin;
+    payload.user_id = userIdOrLogin;
+  } else if (userIdOrLogin) {
+    payload.login = userIdOrLogin;
+  }
+
+  if (extraLogin) {
+    payload.login = extraLogin;
+  }
+
+  if (cfg.tenant_id) {
+    payload.tenant_id = cfg.tenant_id;
+  }
 
   let res = null;
   try {
     res = await makeRequest({
-      url: `${baseUrl}/api/v1/auth/login`,
+      url: `${baseUrl}/api/v1/auth/login/`,
       method: 'POST',
       body: payload,
       timeoutMs: 6000,
     });
     if (res.status === 404 || res.status >= 500) {
       res = await makeRequest({
-        url: `${baseUrl}/api/auth/login`,
+        url: `${baseUrl}/api/auth/login/`,
         method: 'POST',
         body: payload,
         timeoutMs: 6000,
@@ -260,7 +299,7 @@ async function loginLiveUser(userId, pin, customUrl = null) {
   } catch (err) {
     try {
       res = await makeRequest({
-        url: `${baseUrl}/api/auth/login`,
+        url: `${baseUrl}/api/auth/login/`,
         method: 'POST',
         body: payload,
         timeoutMs: 6000,
@@ -332,7 +371,7 @@ async function ensureAuthToken() {
   const managerCreds = KNOWN_TENANT_MANAGERS[tenantId];
   if (managerCreds) {
     try {
-      const loginRes = await loginLiveUser(managerCreds.userId, managerCreds.pin, cfg.api_url);
+      const loginRes = await loginLiveUser(managerCreds.userId, managerCreds.pin, cfg.api_url, managerCreds.login || managerCreds.name);
       if (loginRes.success && loginRes.token) {
         cachedAuthToken = loginRes.token;
         return cachedAuthToken;
@@ -348,7 +387,7 @@ async function ensureAuthToken() {
 // Test Connectivity (Ping)
 async function testConnection(targetUrl, token, tenantId) {
   const cfg = await getConfig();
-  const url = (targetUrl || cfg.api_url || 'https://amuhr.uz').replace(/\/+$/, '');
+  const url = (targetUrl || cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
   const tId = tenantId || cfg.tenant_id || '5322a772-e9db-402a-8d2b-6293edd03832';
   const startTime = Date.now();
 
@@ -369,7 +408,7 @@ async function testConnection(targetUrl, token, tenantId) {
         success: true,
         latencyMs: latency,
         tenant: tenantObj,
-        message: `Real backend server (amuhr.uz) bilan aloqa muvaffaqiyatli! Ping: ${latency}ms` +
+        message: `Real backend server (getpos.uz) bilan aloqa muvaffaqiyatli! Ping: ${latency}ms` +
           (tenantObj ? ` [Do'kon: ${tenantObj.name}]` : ''),
       };
     } else {
@@ -487,7 +526,7 @@ async function syncFromBackend() {
     lastSyncResult = {
       status: 'synced',
       lastSyncTime: new Date().toISOString(),
-      message: `Real backend (amuhr.uz) dan ${usersSynced} ta xodim va ${productsSynced} ta mahsulot yuklandi`,
+      message: `Real backend (getpos.uz) dan ${usersSynced} ta xodim va ${productsSynced} ta mahsulot yuklandi`,
       latencyMs: latency,
       usersSynced,
       productsSynced,
@@ -510,7 +549,7 @@ async function syncFromBackend() {
   }
 }
 
-// Push a completed Order & Payment to amuhr.uz
+// Push a completed Order & Payment to getpos.uz
 async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
   const cfg = await getConfig();
   if (!cfg.is_external_active || !cfg.api_url) {
@@ -540,7 +579,7 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
 
     const clientLabel = `STOL - ${order.table_id || order.table_number || '1'} (KafePOS)`;
 
-    // 1. Create live Basket on amuhr.uz (POST /api/baskets/)
+    // 1. Create live Basket on getpos.uz (POST /api/baskets/)
     const basketPayload = {
       tenantId: tenantId,
       workerId: workerId,
@@ -580,7 +619,7 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
       }
     }
 
-    // 3. Finalize Transaction on amuhr.uz (POST /api/transactions/)
+    // 3. Finalize Transaction on getpos.uz (POST /api/transactions/)
     const paymentMethod = paymentData.paymentMethod === 'card' ? 'card' : 'cash';
     const totalSum = Number(order.total_amount || paymentData.totalAmount || 0).toFixed(2);
     const cashSum = paymentData.paymentMethod === 'card' ? '0.00' : totalSum;
@@ -640,7 +679,7 @@ async function queueOrderForSync({ order, items, paymentData }) {
   }
 }
 
-// Flush pending offline sales to amuhr.uz
+// Flush pending offline sales to getpos.uz
 async function syncToBackend() {
   const cfg = await getConfig();
   if (!cfg.is_external_active || !cfg.api_url) return { skipped: true };
@@ -768,6 +807,96 @@ async function patchBasketStatus(basketId, status = 'completed', extra = {}) {
   }
 }
 
+// Push newly created or updated staff to Central Backend (getpos.uz / Admin Panel)
+async function pushStaffMember(staff) {
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { success: false, error: 'No backend URL' };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const tenantId = cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+  const token = await ensureAuthToken();
+
+  const rawPass = staff.password || staff.pin || '123456';
+  const safePassword = rawPass.length >= 6 ? rawPass : (rawPass + '000000').slice(0, 6);
+  const safePin = String(staff.pin || staff.password || '1111').replace(/[^0-9]/g, '').padEnd(4, '0').slice(0, 4);
+
+  const payload = {
+    tenant_id: tenantId,
+    tenant: tenantId,
+    name: staff.name,
+    email: staff.login || (staff.email ? staff.email : `${staff.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@getpos.uz`),
+    role: (staff.role === 'admin' || staff.role === 'manager') ? 'manager' : 'worker',
+    password: safePassword,
+    pin: safePin,
+    phone_number: staff.phone || staff.phone_number || '',
+    is_active: staff.status !== 'inactive',
+  };
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let res = null;
+    if (staff.user_code && staff.user_code.length > 20) {
+      // Try update existing user on getpos.uz
+      res = await makeRequest({
+        url: `${baseUrl}/api/v1/users/${staff.user_code}/`,
+        method: 'PATCH',
+        headers,
+        body: payload,
+        timeoutMs: 6000,
+      });
+    }
+
+    if (!res || res.status >= 400) {
+      // If not exists or no user_code, create new
+      res = await makeRequest({
+        url: `${baseUrl}/api/v1/users/`,
+        method: 'POST',
+        headers,
+        body: payload,
+        timeoutMs: 6000,
+      });
+    }
+
+    if (res && res.status >= 200 && res.status < 300 && res.data) {
+      const returnedId = res.data.id;
+      if (returnedId && staff.id) {
+        await run(`UPDATE users SET user_code = ? WHERE id = ?`, [returnedId, staff.id]);
+      }
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res?.data || `Status ${res?.status}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Delete staff member from Central Backend (getpos.uz)
+async function deleteStaffMember(userCode) {
+  if (!userCode) return { success: false };
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { success: false };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+
+  try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/users/${userCode}/`,
+      method: 'DELETE',
+      headers,
+      timeoutMs: 6000,
+    });
+
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (err) {
+    console.warn('[BackendSync] deleteStaffMember error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -778,6 +907,8 @@ module.exports = {
   syncFromBackend,
   syncToBackend,
   pushOrderSale,
+  pushStaffMember,
+  deleteStaffMember,
   startPeriodicSync,
   stopPeriodicSync,
   fetchActiveBaskets,

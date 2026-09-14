@@ -3,18 +3,21 @@ import Header from './components/Header';
 import PinModal from './components/PinModal';
 import ReceiptModal from './components/ReceiptModal';
 import AddDishModal from './components/AddDishModal';
+import StaffManagementModal from './components/StaffManagementModal';
 import JetCafePosView from './pages/JetCafePosView';
 import CashierView from './pages/CashierView';
 import WaiterView from './pages/WaiterView';
 import KitchenView from './pages/KitchenView';
 import MenuView from './pages/MenuView';
 import MxikSettings from './pages/MxikSettings';
+import InventoryView from './pages/InventoryView';
 
 export default function App() {
-  const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'menu', 'mxik'
+  const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
   // Always enforce PIN modal on app launch - zero passwordless bypass!
   const [currentUser, setCurrentUser] = useState(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(true);
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
 
   // Clear any legacy mock sessions on mount
   useEffect(() => {
@@ -166,6 +169,21 @@ export default function App() {
             );
           } else if (ev === 'PRODUCT_ADDED') {
             setProducts((prev) => [data, ...prev]);
+          } else if (ev === 'INVENTORY_UPDATED') {
+            if (data && data.product) {
+              setProducts((prev) =>
+                prev.map((p) => (p.id === data.product.id ? { ...p, ...data.product } : p))
+              );
+            }
+          } else if (ev === 'STAFF_UPDATED') {
+            fetch('/api/staff')
+              .then((r) => r.json())
+              .then((res) => {
+                if (res.success && Array.isArray(res.staff)) {
+                  setStaffUsers(res.staff);
+                }
+              })
+              .catch(() => {});
           }
         } catch (e) {
           console.error('WS parse error:', e);
@@ -306,7 +324,7 @@ export default function App() {
     return data;
   };
 
-  // Save Category (Create or Update)
+  // Save Category
   const handleSaveCategory = async (catData, id) => {
     const url = id ? `/api/categories/${id}` : '/api/categories';
     const method = id ? 'PUT' : 'POST';
@@ -318,9 +336,7 @@ export default function App() {
     const data = await res.json();
     if (data.success && data.category) {
       if (id) {
-        setCategories((prev) =>
-          prev.map((c) => (c.id === id || c.rawId === id ? { ...c, ...data.category } : c))
-        );
+        setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...data.category } : c)));
       } else {
         setCategories((prev) => [...prev, data.category]);
       }
@@ -333,26 +349,30 @@ export default function App() {
     const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
-      setCategories((prev) => prev.filter((c) => c.id !== id && c.rawId !== id));
+      setCategories((prev) => prev.filter((c) => c.id !== id));
     }
     return data;
   };
 
+  // Auth login handler
   const handleLogin = (user) => {
     setCurrentUser(user);
     setIsPinModalOpen(false);
-    try {
-      sessionStorage.setItem('kafepos_user', JSON.stringify(user));
-    } catch (e) {}
+    if (user.role === 'waiter') {
+      setCurrentTab('waiter');
+    } else if (user.role === 'cook') {
+      setCurrentTab('kitchen');
+    } else {
+      setCurrentTab('cashier');
+    }
   };
 
+  // Logout handler
   const handleLogout = () => {
     setCurrentUser(null);
     setIsPinModalOpen(true);
-    try {
-      sessionStorage.removeItem('kafepos_user');
-      localStorage.removeItem('kafepos_user');
-    } catch (e) {}
+    setSelectedTable(null);
+    setActiveOrder(null);
   };
 
   return (
@@ -367,6 +387,7 @@ export default function App() {
         onToggleInternet={handleToggleInternet}
         onFlushSync={handleFlushSync}
         onOpenAddDish={() => setIsAddDishModalOpen(true)}
+        onOpenStaffModal={() => setIsStaffModalOpen(true)}
       />
 
       {/* Main Role Content Views */}
@@ -414,6 +435,13 @@ export default function App() {
           />
         )}
 
+        {currentTab === 'inventory' && (
+          <InventoryView
+            products={products}
+            onRefreshProducts={loadInitialData}
+          />
+        )}
+
         {currentTab === 'menu' && (
           <MenuView
             products={products}
@@ -431,6 +459,13 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Staff & Waiters Management Modal */}
+      <StaffManagementModal
+        isOpen={isStaffModalOpen}
+        onClose={() => setIsStaffModalOpen(false)}
+        onStaffUpdated={loadInitialData}
+      />
 
       {/* Add Dish Modal for Admin/Manager */}
       <AddDishModal

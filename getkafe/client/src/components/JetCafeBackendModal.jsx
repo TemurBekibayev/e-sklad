@@ -1,8 +1,8 @@
-// client/src/components/JetCafeBackendModal.jsx - Real Production Backend API (amuhr.uz) Configuration Dialog
+// client/src/components/JetCafeBackendModal.jsx - Real Production Backend API (getpos.uz) Configuration Dialog
 import React, { useState, useEffect } from 'react';
 
 export default function JetCafeBackendModal({ isOpen, onClose }) {
-  const [apiUrl, setApiUrl] = useState('https://amuhr.uz');
+  const [apiUrl, setApiUrl] = useState('https://getpos.uz');
   const [tenantId, setTenantId] = useState('5322a772-e9db-402a-8d2b-6293edd03832');
   const [tenantName, setTenantName] = useState('Test (Mangit)');
   const [authToken, setAuthToken] = useState('');
@@ -24,7 +24,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
       const res = await fetch('/api/config/backend');
       const data = await res.json();
       if (data.success && data.config) {
-        setApiUrl(data.config.api_url || 'https://amuhr.uz');
+        setApiUrl(data.config.api_url || 'https://getpos.uz');
         setTenantId(data.config.tenant_id || '5322a772-e9db-402a-8d2b-6293edd03832');
         setTenantName(data.config.tenant_name || 'Test (Mangit)');
         setAuthToken(data.config.auth_token || '');
@@ -62,14 +62,15 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
       loadBackendConfig();
       loadLiveTenants();
       setPingResult(null);
+      setStatusMsg('');
     }
   }, [isOpen]);
 
-  const handleSelectTenant = (tId) => {
-    setTenantId(tId);
-    const found = tenantsList.find((t) => t.id === tId);
-    if (found) {
-      setTenantName(`${found.name}${found.address ? ` (${found.address})` : ''}`);
+  const handleSelectTenant = (selectedTenantId) => {
+    const selected = tenantsList.find((t) => t.id === selectedTenantId);
+    if (selected) {
+      setTenantId(selected.id);
+      setTenantName(selected.name);
     }
   };
 
@@ -77,14 +78,10 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
     try {
       setLoading(true);
       setPingResult(null);
-      const res = await fetch('/api/config/backend/test', {
+      const res = await fetch('/api/config/backend/ping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_url: apiUrl,
-          auth_token: authToken,
-          tenant_id: tenantId,
-        }),
+        body: JSON.stringify({ api_url: apiUrl }),
       });
       const data = await res.json();
       setPingResult(data);
@@ -101,7 +98,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
       const res = await fetch('/api/config/backend/sync', { method: 'POST' });
       const data = await res.json();
       setSyncResult(data.pull || data);
-      setStatusMsg("Real backend (amuhr.uz) bilan to'liq sinxronlash yakunlandi!");
+      setStatusMsg("Real backend (getpos.uz) bilan to'liq sinxronlash yakunlandi!");
       setTimeout(() => setStatusMsg(''), 4000);
       loadBackendConfig();
     } catch (e) {
@@ -152,7 +149,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
         <div className="bg-[#005a9e] text-white px-3 py-1.5 flex items-center justify-between font-medium text-xs shadow">
           <div className="flex items-center gap-1.5">
             <span>🌐</span>
-            <span>GetPOS Kafe — Real Backend API (amuhr.uz) Integratsiyasi</span>
+            <span>GetPOS Kafe — Real Backend API (getpos.uz) Integratsiyasi</span>
           </div>
           <button
             type="button"
@@ -178,7 +175,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
               <span className="text-slate-700">Tizim Rejimi:</span>
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                 <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                {isExternalActive ? 'Gibrid (amuhr.uz Real API + Offline SQLite)' : 'Avtonom (Faqat Lokal)'}
+                {isExternalActive ? 'Gibrid (getpos.uz Real API + Offline SQLite)' : 'Avtonom (Faqat Lokal)'}
               </span>
             </div>
 
@@ -187,7 +184,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
                 Oflayn Soliq navbati: <b className="text-slate-900">{pendingCount} ta</b>
               </div>
               <div>
-                Server: <b className="text-blue-700 font-mono">https://amuhr.uz</b>
+                Server: <b className="text-blue-700 font-mono">https://getpos.uz</b>
               </div>
             </div>
 
@@ -201,7 +198,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
           {/* Configuration Form */}
           <div className="bg-white border border-[#d0d0d0] p-3 rounded shadow-sm flex flex-col gap-2.5">
             <div className="font-semibold text-slate-700 border-b pb-1 flex items-center justify-between">
-              <span>Dasturchi Real API Parametrlari (https://amuhr.uz)</span>
+              <span>Dasturchi Real API Parametrlari (https://getpos.uz)</span>
               <span className="text-[10px] text-emerald-600 font-normal">● Jonli Produksion Server</span>
             </div>
 
@@ -213,11 +210,11 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="https://amuhr.uz"
+                placeholder="https://getpos.uz"
                 className="w-full border border-slate-300 rounded px-2 py-1 font-mono text-xs bg-white focus:border-blue-500 focus:outline-none font-bold text-slate-900"
               />
               <span className="text-[10px] text-slate-500">
-                Backend dasturchi ishlab chiqqan asosiy server: <code>https://amuhr.uz</code>
+                Backend dasturchi ishlab chiqqan asosiy server: <code>https://getpos.uz</code>
               </span>
             </div>
 
@@ -332,7 +329,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
                 }`}
               >
                 <div className="font-bold flex items-center justify-between">
-                  <span>{pingResult.success ? '✓ Aloqa o\'rnatildi (amuhr.uz)' : '✕ Ulanib bo\'lmadi'}</span>
+                  <span>{pingResult.success ? '✓ Aloqa o\'rnatildi (getpos.uz)' : '✕ Ulanib bo\'lmadi'}</span>
                   {pingResult.latencyMs !== undefined && (
                     <span className="font-mono text-[10px]">{pingResult.latencyMs} ms</span>
                   )}
@@ -344,7 +341,7 @@ export default function JetCafeBackendModal({ isOpen, onClose }) {
 
           {/* Architecture note */}
           <div className="bg-slate-100 border border-slate-200 rounded p-2.5 text-[10px] text-slate-600 leading-relaxed">
-            💡 <b>Haqiqiy Ma'lumotlar bilan ishlash:</b> Kassa dasturi to'g'ridan-to'g'ri <code>https://amuhr.uz</code> serveridagi aktiv xodimlar va tovarlar katalogi bilan bog'langan. Har bir amalga oshirilgan to'lov va buyurtma real vaqtda backend'dagi do'kon hisobiga o'tadi.
+            💡 <b>Haqiqiy Ma'lumotlar bilan ishlash:</b> Kassa dasturi to'g'ridan-to'g'ri <code>https://getpos.uz</code> serveridagi aktiv xodimlar va tovarlar katalogi bilan bog'langan. Har bir amalga oshirilgan to'lov va buyurtma real vaqtda backend'dagi do'kon hisobiga o'tadi.
           </div>
         </div>
 

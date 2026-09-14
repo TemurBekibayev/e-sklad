@@ -152,21 +152,32 @@ app.post('/api/sync/flush', async (req, res) => {
   }
 });
 
-// 2.0. Filiallar / Do'konlar ro'yxati (GET /api/tenants va GET /api/config/backend/tenants)
-app.get(['/api/tenants', '/api/tenants/', '/api/config/backend/tenants'], async (req, res) => {
+// 2.0. Filiallar / Do'konlar ro'yxati (Faqat administrator sozlamalari uchun)
+app.get('/api/config/backend/tenants', async (req, res) => {
   try {
     const live = await backendSync.fetchLiveTenants();
     if (live.success && live.tenants && live.tenants.length > 0) {
       return res.json({ success: true, count: live.tenants.length, results: live.tenants, tenants: live.tenants });
     }
-    // Fallback known active tenants
+    const cfg = await backendSync.getConfig();
     const fallbackTenants = [
-      { id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7', name: 'Test Kafe', address: "Mang'it", status: 'active', usersCount: 1 },
-      { id: '5322a772-e9db-402a-8d2b-6293edd03832', name: 'Test', address: 'Mangit', status: 'active', usersCount: 2 },
-      { id: '57341e59-3c24-409f-af62-9aaec212b689', name: 'Rustam Telefon', address: "Mang'it", status: 'active', usersCount: 4 },
-      { id: '82c1ecfb-7a39-4aa8-b597-3c8745a661b1', name: 'Toshkent Elektron', address: 'Chilonzor tumani, Toshkent shahri', status: 'active', usersCount: 2 },
+      { id: cfg.tenant_id, name: cfg.tenant_name, status: 'active' }
     ];
     res.json({ success: true, count: fallbackTenants.length, results: fallbackTenants, tenants: fallbackTenants });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// /api/tenants: Public endpoint faqat joriy do'kon ma'lumotini qaytaradi (Boshqa do'konlar sir saqlanadi)
+app.get(['/api/tenants', '/api/tenants/'], async (req, res) => {
+  try {
+    const cfg = await backendSync.getConfig();
+    res.json({
+      success: true,
+      results: [{ id: cfg.tenant_id, name: cfg.tenant_name, status: 'active' }],
+      tenants: [{ id: cfg.tenant_id, name: cfg.tenant_name, status: 'active' }]
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -190,75 +201,84 @@ app.get('/api/auth/users', async (req, res) => {
     const cfg = await backendSync.getConfig();
     const tenantId = req.query.tenantId || cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
 
-    // 1. Fetch live staff from getpos.uz
+    // 1. Fetch live staff from getpos.uz and merge into local SQLite if missing
     try {
       const staffRes = await backendSync.fetchStaffForTenant(tenantId);
       if (staffRes.users && staffRes.users.length > 0) {
-        const formatted = staffRes.users.map((u) => {
+        for (const u of staffRes.users) {
+          const uCode = u.id || u.user_code;
           const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
-          return {
-            id: u.id || u.user_code,
-            name: u.name,
-            role: mappedRole,
-            status: u.status || 'active',
-            tenantId: tenantId,
-            tenantName: u.tenantName || cfg.tenant_name,
-          };
-        });
-        return res.json(formatted);
+          const localExists = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [uCode, u.name]);
+          if (!localExists) {
+            await run(
+              `INSERT INTO users (name, role, pin, phone, status, is_shift_open, user_code, tenant_id)
+               VALUES (?, ?, ?, ?, 'active', 1, ?, ?)`,
+              [u.name, mappedRole, u.pin || '1111', u.phone || '', uCode, tenantId]
+            );
+          }
+        }
       }
     } catch (e) {
-      console.warn('[Users] Live fetchStaffForTenant error:', e.message);
+      console.warn('[Users] Live fetchStaffForTenant sync error:', e.message);
     }
 
-    // 2. Fallback to SQLite users filtered by tenant_id
+    // 2. Return all local active users belonging to this tenant
     const users = await all(
-      `SELECT id, user_code, name, role, status, tenant_id FROM users WHERE (tenant_id = ? OR tenant_id IS NULL) AND (status = 'active' OR status IS NULL)`,
+      `SELECT id, user_code, name, role, status, tenant_id FROM users 
+       WHERE (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND (status = 'active' OR status IS NULL)
+       ORDER BY id ASC`,
       [tenantId]
     );
+
     const formatted = users.map((u) => ({
       id: u.user_code || `usr_${u.id}`,
       rawId: u.id,
       name: u.name,
-      role: u.role,
+      role: (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role),
       status: u.status || 'active',
       tenantId: u.tenant_id || cfg.tenant_id,
       tenantName: cfg.tenant_name,
     }));
+
     res.json(formatted);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// 2.2. Avtorizatsiya (POST /api/auth/login - PIN-kod yoki userId+PIN orqali)
+// 2.2. Avtorizatsiya (POST /api/auth/login - Login+Parol yoki PIN-kod orqali)
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { pin, userId } = req.body;
-    if (!pin) return res.status(400).json({ success: false, message: 'PIN-kod kiritilmadi' });
+    const { login, username, phone, email, password, pin, userId } = req.body;
+    const loginVal = (login || username || phone || email || '').trim();
+    const passVal = (password || pin || '').trim();
+
+    if (!passVal) {
+      return res.status(400).json({ success: false, message: "Parol yoki PIN-kod kiritilishi shart" });
+    }
 
     const cfg = await backendSync.getConfig();
 
     // 1. Live authentication against getpos.uz
     try {
-      const liveRes = await backendSync.loginLiveUser(userId, pin.trim(), cfg.api_url);
+      const liveRes = await backendSync.loginLiveUser(userId || loginVal, passVal, cfg.api_url);
       if (liveRes.success) {
         const liveUser = liveRes.user;
         const mappedRole = (liveUser.role === 'manager' || liveUser.role === 'admin') ? 'admin' : (liveUser.role === 'worker' || liveUser.role === 'waiter' ? 'waiter' : liveUser.role);
-        let localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
+        let localUser = await get(`SELECT * FROM users WHERE user_code = ? OR name = ?`, [liveUser.id, liveUser.name]);
         if (!localUser) {
           await run(`
-            INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id)
-            VALUES (?, ?, ?, 1, 'active', ?, ?)
-          `, [liveUser.name, mappedRole, pin.trim(), liveUser.id, liveUser.tenantId || cfg.tenant_id]);
-          localUser = await get(`SELECT * FROM users WHERE user_code = ?`, [liveUser.id]);
+            INSERT INTO users (name, role, pin, password, is_shift_open, status, user_code, tenant_id)
+            VALUES (?, ?, ?, ?, 1, 'active', ?, ?)
+          `, [liveUser.name, mappedRole, passVal, passVal, liveUser.id, liveUser.tenantId || cfg.tenant_id]);
+          localUser = await get(`SELECT * FROM users WHERE user_code = ? OR name = ?`, [liveUser.id, liveUser.name]);
         } else {
-          await run(`UPDATE users SET is_shift_open = 1, pin = ?, role = ?, tenant_id = ? WHERE id = ?`, [
-            pin.trim(), mappedRole, liveUser.tenantId || cfg.tenant_id, localUser.id
+          await run(`UPDATE users SET is_shift_open = 1, pin = ?, password = ?, role = ?, tenant_id = ? WHERE id = ?`, [
+            passVal, passVal, mappedRole, liveUser.tenantId || cfg.tenant_id, localUser.id
           ]);
         }
 
-        // Trigger immediate background sync for products
+        // Trigger background sync for products
         backendSync.syncFromBackend().catch((e) => console.warn('[Auth] Background sync warning:', e.message));
 
         return res.json({
@@ -268,7 +288,7 @@ app.post('/api/auth/login', async (req, res) => {
           role: mappedRole,
           tenantId: liveUser.tenantId || cfg.tenant_id,
           tenantName: liveUser.tenantName || cfg.tenant_name,
-          token: liveRes.token,
+          token: liveRes.token || `token_${Date.now()}`,
           user: {
             id: liveUser.id,
             rawId: localUser?.id,
@@ -279,25 +299,36 @@ app.post('/api/auth/login', async (req, res) => {
             is_shift_open: 1,
           },
         });
-      } else if (liveRes.message && !liveRes.message.includes("Serverga ulanib bo'lmadi")) {
-        // Explicit wrong PIN from getpos.uz
-        return res.status(401).json({ success: false, message: liveRes.message || "Noto'g'ri PIN-kod!" });
       }
     } catch (e) {
       console.warn('[Auth] Live login attempt error, falling back to local SQLite:', e.message);
     }
 
-    // 2. Local fallback login (offline mode ONLY for verified synced users)
+    // 2. Local fallback login (offline mode or local users)
     let user = null;
-    if (userId) {
-      user = await get(`SELECT * FROM users WHERE (user_code = ? OR id = ?) AND pin = ?`, [userId, userId, pin.trim()]);
+    if (loginVal) {
+      user = await get(
+        `SELECT * FROM users 
+         WHERE (LOWER(name) = LOWER(?) OR phone = ? OR LOWER(login) = LOWER(?) OR user_code = ?) 
+           AND (password = ? OR pin = ?)`,
+        [loginVal, loginVal, loginVal, loginVal, passVal, passVal]
+      );
     }
-    if (!user) {
-      user = await get(`SELECT * FROM users WHERE pin = ?`, [pin.trim()]);
+    if (!user && userId) {
+      user = await get(
+        `SELECT * FROM users WHERE (user_code = ? OR id = ?) AND (password = ? OR pin = ?)`,
+        [userId, userId, passVal, passVal]
+      );
+    }
+    if (!user && !loginVal) {
+      user = await get(
+        `SELECT * FROM users WHERE password = ? OR pin = ?`,
+        [passVal, passVal]
+      );
     }
 
     if (!user) {
-      return res.status(401).json({ success: false, message: "Noto'g'ri PIN-kod!" });
+      return res.status(401).json({ success: false, message: "Noto'g'ri login yoki parol!" });
     }
 
     // Smena ochish
@@ -353,6 +384,7 @@ app.get('/api/tables', async (req, res) => {
       activeOrderId: t.order_id || null,
       activeWaiterName: t.waiter_name || null,
       totalAmount: t.total_amount || 0,
+      total_amount: t.total_amount || 0,
       order_id: t.order_id,
       waiter_name: t.waiter_name,
       current_order_id: t.current_order_id,
@@ -399,9 +431,11 @@ app.get('/api/menu', async (req, res) => {
       name: p.name,
       price: p.price,
       cost_price: p.cost_price || 0,
+      stock_quantity: p.stock_quantity !== undefined && p.stock_quantity !== null ? Number(p.stock_quantity) : 100,
+      unit: p.unit || (p.package_code === '166' ? 'kg' : p.package_code === '112' ? 'litr' : 'dona'),
+      min_stock_alert: p.min_stock_alert !== undefined ? Number(p.min_stock_alert) : 5,
       workshop: p.workshop || 'Кухня',
       product_type: p.product_type || 'Товар',
-      unit: p.package_code === '166' ? 'kg' : p.package_code === '112' ? 'litr' : 'dona',
       category: categoryMap[p.category_id] || 'Boshqa',
       category_id: p.category_id,
       image: p.image,
@@ -495,18 +529,23 @@ app.put('/api/products/:id/mxik', async (req, res) => {
 // Yangi taom qo'shish (Admin / Menejer uchun)
 app.post('/api/products', async (req, res) => {
   try {
-    const { category_id, name, price, cost_price, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
+    const { category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
     if (!name || !price) {
       return res.status(400).json({ success: false, message: "Taom nomi va narxi majburiy" });
     }
+    const initialStock = stock_quantity !== undefined && stock_quantity !== null ? Number(stock_quantity) : 100;
+    const cost = Number(cost_price || 0);
     const result = await run(
-      `INSERT INTO products (category_id, name, price, cost_price, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         category_id || 1,
         name.trim(),
         Number(price),
-        Number(cost_price || 0),
+        cost,
+        initialStock,
+        unit || 'dona',
+        min_stock_alert !== undefined ? Number(min_stock_alert) : 5,
         workshop || 'Кухня',
         product_type || 'Товар',
         image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
@@ -516,6 +555,16 @@ app.post('/api/products', async (req, res) => {
         is_available !== undefined ? (is_available ? 1 : 0) : 1,
       ]
     );
+
+    // Initial stock movement record
+    if (initialStock > 0) {
+      await run(
+        `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+         VALUES (?, 'in', ?, 0, ?, ?, ?, 'Boshlang\'ich qoldiq', 'Admin')`,
+        [result.lastID, initialStock, initialStock, cost, cost * initialStock]
+      );
+    }
+
     const newProduct = await get(`SELECT * FROM products WHERE id = ?`, [result.lastID]);
     broadcast('PRODUCT_ADDED', newProduct);
     res.json({ success: true, product: newProduct });
@@ -528,16 +577,25 @@ app.post('/api/products', async (req, res) => {
 app.put('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { category_id, name, price, cost_price, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
+    const { category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
+    
+    const existing = await get(`SELECT * FROM products WHERE id = ?`, [id]);
+    if (!existing) return res.status(404).json({ success: false, message: 'Mahsulot topilmadi' });
+
+    const newStock = stock_quantity !== undefined && stock_quantity !== null ? Number(stock_quantity) : (existing.stock_quantity || 0);
+
     await run(
       `UPDATE products 
-       SET category_id = ?, name = ?, price = ?, cost_price = ?, workshop = ?, product_type = ?, image = ?, mxik_code = ?, package_code = ?, vat_percent = ?, is_available = ?
+       SET category_id = ?, name = ?, price = ?, cost_price = ?, stock_quantity = ?, unit = ?, min_stock_alert = ?, workshop = ?, product_type = ?, image = ?, mxik_code = ?, package_code = ?, vat_percent = ?, is_available = ?
        WHERE id = ?`,
       [
         category_id || 1,
         name.trim(),
         Number(price),
         Number(cost_price || 0),
+        newStock,
+        unit || existing.unit || 'dona',
+        min_stock_alert !== undefined ? Number(min_stock_alert) : (existing.min_stock_alert || 5),
         workshop || 'Кухня',
         product_type || 'Товар',
         image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
@@ -548,6 +606,7 @@ app.put('/api/products/:id', async (req, res) => {
         id
       ]
     );
+
     const updated = await get(`SELECT * FROM products WHERE id = ?`, [id]);
     broadcast('PRODUCT_UPDATED', updated);
     res.json({ success: true, product: updated });
@@ -563,6 +622,299 @@ app.delete('/api/products/:id', async (req, res) => {
     await run(`DELETE FROM products WHERE id = ?`, [id]);
     broadcast('PRODUCT_DELETED', { id: Number(id) });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// STAFF & WAITERS MANAGEMENT (XODIMLAR VA OFITSIANTLAR)
+// ----------------------------------------------------
+app.get('/api/staff', async (req, res) => {
+  try {
+    const cfg = await backendSync.getConfig();
+    const currentTenantId = cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+    const staff = await all(
+      `SELECT id, name, login, password, role, pin, phone, status, user_code, tenant_id, created_at 
+       FROM users 
+       WHERE tenant_id = ? OR tenant_id IS NULL OR tenant_id = ''
+       ORDER BY id ASC`,
+      [currentTenantId]
+    );
+    res.json({ success: true, staff, users: staff });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/staff', async (req, res) => {
+  try {
+    const { name, role, login, password, pin, phone, status } = req.body;
+    if (!name) {
+      return res.status(400).json({ success: false, message: "Xodim ismi kiritilishi majburiy" });
+    }
+    const staffLogin = (login || name.toLowerCase().replace(/[^a-z0-9]/g, '')).trim();
+    const staffPassword = (password || pin || '123456').trim();
+    const staffPin = String(pin || password || '1111').replace(/[^0-9]/g, '').padEnd(4, '0').slice(0, 4);
+
+    const cfg = await backendSync.getConfig();
+    const userCode = uuidv4();
+    const result = await run(
+      `INSERT INTO users (name, login, password, role, pin, phone, status, is_shift_open, user_code, tenant_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [name.trim(), staffLogin, staffPassword, role || 'waiter', staffPin, phone || '', status || 'active', userCode, cfg.tenant_id]
+    );
+    const newUser = await get(`SELECT id, name, login, password, role, pin, phone, status, user_code, tenant_id, created_at FROM users WHERE id = ?`, [result.lastID]);
+    broadcast('STAFF_UPDATED', { type: 'added', user: newUser });
+
+    // Asynchronously push to Central Backend / Admin Panel
+    backendSync.pushStaffMember(newUser).catch((e) => console.warn('[Staff] Backend push warning:', e.message));
+
+    res.json({ success: true, user: newUser, message: "Yangi ofitsiant/xodim muvaffaqiyatli qo'shildi!" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/staff/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role, login, password, pin, phone, status } = req.body;
+    const staffLogin = (login || name.toLowerCase().replace(/[^a-z0-9]/g, '')).trim();
+    const staffPassword = (password || pin || '123456').trim();
+    const staffPin = String(pin || password || '1111').replace(/[^0-9]/g, '').padEnd(4, '0').slice(0, 4);
+
+    await run(
+      `UPDATE users 
+       SET name = ?, login = ?, password = ?, role = ?, pin = ?, phone = ?, status = ? 
+       WHERE id = ?`,
+      [name.trim(), staffLogin, staffPassword, role || 'waiter', staffPin, phone || '', status || 'active', id]
+    );
+    const updated = await get(`SELECT id, name, login, password, role, pin, phone, status, user_code, tenant_id, created_at FROM users WHERE id = ?`, [id]);
+    broadcast('STAFF_UPDATED', { type: 'updated', user: updated });
+
+    // Asynchronously push update to Central Backend (getpos.uz)
+    backendSync.pushStaffMember(updated).catch((e) => console.warn('[Staff] Backend update warning:', e.message));
+
+    res.json({ success: true, user: updated, message: "Xodim ma'lumotlari muvaffaqiyatli yangilandi!" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/staff/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await get(`SELECT * FROM users WHERE id = ?`, [id]);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Xodim topilmadi" });
+    }
+
+    await run(`DELETE FROM users WHERE id = ?`, [id]);
+    broadcast('STAFF_UPDATED', { type: 'deleted', id: Number(id) });
+
+    // Also delete on Central Backend (getpos.uz)
+    if (user.user_code) {
+      backendSync.deleteStaffMember(user.user_code).catch((e) => console.warn('[Staff] Backend delete warning:', e.message));
+    }
+
+    res.json({ success: true, message: "Xodim muvaffaqiyatli o'chirildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// INVENTORY & STOCK MANAGEMENT (SKLAD / OMBORXONA)
+// ----------------------------------------------------
+app.get('/api/inventory', async (req, res) => {
+  try {
+    const products = await all(`
+      SELECT p.*, c.name as category_name
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      ORDER BY p.name ASC
+    `);
+
+    let totalStockValue = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    const formatted = products.map((p) => {
+      const stock = Number(p.stock_quantity !== null && p.stock_quantity !== undefined ? p.stock_quantity : 100);
+      const minAlert = Number(p.min_stock_alert || 5);
+      const cost = Number(p.cost_price || 0);
+      const price = Number(p.price || 0);
+      totalStockValue += (stock * (cost > 0 ? cost : price));
+
+      let status = 'in_stock';
+      if (stock <= 0) {
+        status = 'out_of_stock';
+        outOfStockCount++;
+      } else if (stock <= minAlert) {
+        status = 'low_stock';
+        lowStockCount++;
+      }
+
+      return {
+        id: p.id,
+        name: p.name,
+        category_id: p.category_id,
+        category_name: p.category_name || 'Boshqa',
+        price: price,
+        cost_price: cost,
+        stock_quantity: stock,
+        unit: p.unit || (p.package_code === '166' ? 'kg' : p.package_code === '112' ? 'litr' : 'dona'),
+        min_stock_alert: minAlert,
+        image: p.image,
+        mxik_code: p.mxik_code,
+        status: status,
+        is_available: p.is_available === 1,
+      };
+    });
+
+    res.json({
+      success: true,
+      summary: {
+        totalItems: formatted.length,
+        totalStockValue,
+        lowStockCount,
+        outOfStockCount,
+      },
+      items: formatted,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Prihod / Kirim qilish (Inflow)
+app.post('/api/inventory/inflow', async (req, res) => {
+  try {
+    const { productId, quantity, costPrice, supplier, note, createdBy } = req.body;
+    if (!productId || !quantity || Number(quantity) <= 0) {
+      return res.status(400).json({ success: false, message: "Mahsulot va to'g'ri miqdor kiritilishi shart" });
+    }
+
+    const prod = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: "Mahsulot topilmadi" });
+
+    const prevStock = Number(prod.stock_quantity !== null && prod.stock_quantity !== undefined ? prod.stock_quantity : 100);
+    const qty = Number(quantity);
+    const newStock = prevStock + qty;
+    const unitPrice = costPrice !== undefined && costPrice !== null && costPrice !== '' ? Number(costPrice) : (prod.cost_price || 0);
+    const totalPrice = unitPrice * qty;
+
+    await run(
+      `UPDATE products SET stock_quantity = ?, cost_price = ? WHERE id = ?`,
+      [newStock, unitPrice, productId]
+    );
+
+    const moveRes = await run(
+      `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, supplier, note, created_by)
+       VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [productId, qty, prevStock, newStock, unitPrice, totalPrice, supplier || '', note || 'Skladga kirim', createdBy || 'Admin']
+    );
+
+    const updatedProd = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    broadcast('INVENTORY_UPDATED', { product: updatedProd, movementId: moveRes.lastID });
+    broadcast('PRODUCT_UPDATED', updatedProd);
+
+    res.json({
+      success: true,
+      message: `${prod.name} uchun ${qty} ta mahsulot omborga muvaffaqiyatli kirim qilindi!`,
+      product: updatedProd,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Inventarizatsiya / Qoldiqni to'g'rilash (Adjustment)
+app.post('/api/inventory/adjustment', async (req, res) => {
+  try {
+    const { productId, newStock, note, createdBy } = req.body;
+    if (!productId || newStock === undefined || Number(newStock) < 0) {
+      return res.status(400).json({ success: false, message: "Mahsulot va yangi qoldiq kiritilishi shart" });
+    }
+
+    const prod = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: "Mahsulot topilmadi" });
+
+    const prevStock = Number(prod.stock_quantity !== null && prod.stock_quantity !== undefined ? prod.stock_quantity : 100);
+    const targetStock = Number(newStock);
+    const diff = targetStock - prevStock;
+
+    await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [targetStock, productId]);
+
+    await run(
+      `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+       VALUES (?, 'adjustment', ?, ?, ?, ?, ?, ?, ?)`,
+      [productId, diff, prevStock, targetStock, prod.cost_price || 0, 0, note || 'Inventarizatsiya orqali to\'g\'rilandi', createdBy || 'Admin']
+    );
+
+    const updatedProd = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    broadcast('INVENTORY_UPDATED', { product: updatedProd });
+    broadcast('PRODUCT_UPDATED', updatedProd);
+
+    res.json({
+      success: true,
+      message: `${prod.name} qoldig'i ${targetStock} ga muvaffaqiyatli o'zgartirildi`,
+      product: updatedProd,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Spisanie / Chiqim (Waste / Damage)
+app.post('/api/inventory/waste', async (req, res) => {
+  try {
+    const { productId, quantity, note, createdBy } = req.body;
+    if (!productId || !quantity || Number(quantity) <= 0) {
+      return res.status(400).json({ success: false, message: "Mahsulot va chiqim miqdori kiritilishi shart" });
+    }
+
+    const prod = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: "Mahsulot topilmadi" });
+
+    const prevStock = Number(prod.stock_quantity !== null && prod.stock_quantity !== undefined ? prod.stock_quantity : 100);
+    const qty = Number(quantity);
+    const newStock = Math.max(0, prevStock - qty);
+
+    await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newStock, productId]);
+
+    await run(
+      `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+       VALUES (?, 'waste', ?, ?, ?, ?, ?, ?, ?)`,
+      [productId, qty, prevStock, newStock, prod.cost_price || 0, (prod.cost_price || 0) * qty, note || 'Spisanie / Brak', createdBy || 'Admin']
+    );
+
+    const updatedProd = await get(`SELECT * FROM products WHERE id = ?`, [productId]);
+    broadcast('INVENTORY_UPDATED', { product: updatedProd });
+    broadcast('PRODUCT_UPDATED', updatedProd);
+
+    res.json({
+      success: true,
+      message: `${prod.name} uchun ${qty} ta mahsulot hisobdan chiqarildi (spisanie)`,
+      product: updatedProd,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Sklad harakatlari tarixi (Movements history)
+app.get('/api/inventory/movements', async (req, res) => {
+  try {
+    const movements = await all(`
+      SELECT sm.*, p.name as product_name, p.image as product_image, p.unit
+      FROM stock_movements sm
+      LEFT JOIN products p ON sm.product_id = p.id
+      ORDER BY sm.id DESC
+      LIMIT 100
+    `);
+    res.json({ success: true, movements });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -628,6 +980,36 @@ app.post('/api/orders', async (req, res) => {
         quantity: item.quantity || 1,
         comment: item.comment || '',
       });
+
+      // Sklad qoldig'ini avtomatik kamaytirish
+      try {
+        const prodRow = await get(`SELECT id, name, stock_quantity, price, cost_price FROM products WHERE id = ?`, [pId]);
+        if (prodRow) {
+          const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 100);
+          const reqQty = Number(item.quantity || 1);
+          const newSt = Math.max(0, prevSt - reqQty);
+          await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
+          await run(
+            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+             VALUES (?, 'out_sale', ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              prodRow.id,
+              reqQty,
+              prevSt,
+              newSt,
+              prodRow.price,
+              prodRow.price * reqQty,
+              `Savdo: ${table.number}-stol (Buyurtma ${orderId})`,
+              waiterName || 'Ofitsiant'
+            ]
+          );
+          const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
+          broadcast('INVENTORY_UPDATED', { product: updP });
+          broadcast('PRODUCT_UPDATED', updP);
+        }
+      } catch (stockErr) {
+        console.warn('[Stock] Auto-deduct error:', stockErr.message);
+      }
     }
 
     // Buyurtma umumiy summasini hisoblash
@@ -933,7 +1315,7 @@ app.post('/api/payments', async (req, res) => {
       cardAmount,
     }).catch(e => console.error('[JetBot] notifyOrderPaid error:', e.message));
 
-    // Real Backend API Sync (Push transaction to amuhr.uz)
+    // Real Backend API Sync (Push transaction to getpos.uz)
     backendSync.pushOrderSale({
       order,
       items,
@@ -947,7 +1329,7 @@ app.post('/api/payments', async (req, res) => {
       waiterUserCode: order.waiter_id,
     }).then((syncRes) => {
       if (syncRes && syncRes.success) {
-        console.log(`[BackendSync] Sale successfully synced to amuhr.uz! TxId: ${syncRes.transactionId}`);
+        console.log(`[BackendSync] Sale successfully synced to getpos.uz! TxId: ${syncRes.transactionId}`);
         broadcast('BACKEND_SYNC_COMPLETED', { success: true, transactionId: syncRes.transactionId });
       }
     }).catch((e) => console.warn('[BackendSync] Sale sync warning:', e.message));
@@ -1526,7 +1908,7 @@ server.on('error', (err) => {
 });
 
 initDB().then(async () => {
-  // Real Backend Sync initialization (amuhr.uz)
+  // Real Backend Sync initialization (getpos.uz)
   try {
     const bCfg = await backendSync.getConfig();
     if (bCfg.is_external_active && bCfg.api_url) {

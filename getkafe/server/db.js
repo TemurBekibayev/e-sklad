@@ -219,17 +219,48 @@ async function initDB() {
     )
   `);
 
+  // 13. Stock Movements (Sklad Kirim, Chiqim va Inventarizatsiya Tarixi)
+  await run(`
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      type TEXT NOT NULL, -- 'in' (prihod/kirim), 'out_sale' (savdo/chiqim), 'adjustment' (inventarizatsiya/tahrir), 'waste' (spisanie/brak)
+      quantity REAL NOT NULL,
+      previous_stock REAL NOT NULL,
+      new_stock REAL NOT NULL,
+      unit_price INTEGER DEFAULT 0,
+      total_price INTEGER DEFAULT 0,
+      supplier TEXT DEFAULT '',
+      note TEXT DEFAULT '',
+      created_by TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (product_id) REFERENCES products (id)
+    )
+  `);
+
   // Seed default data if empty
   await seedInitialData();
 }
 
 async function seedInitialData() {
-  // Check products columns
+  // Check products columns for inventory
   try {
     await run(`ALTER TABLE products ADD COLUMN remote_id TEXT`);
   } catch (e) {}
   try {
     await run(`ALTER TABLE products ADD COLUMN barcode TEXT`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE products ADD COLUMN stock_quantity REAL DEFAULT 100`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'dona'`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE products ADD COLUMN min_stock_alert REAL DEFAULT 5`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE products ADD COLUMN cost_price INTEGER DEFAULT 0`);
   } catch (e) {}
 
   // Check users
@@ -242,47 +273,36 @@ async function seedInitialData() {
   try {
     await run(`ALTER TABLE users ADD COLUMN tenant_id TEXT`);
   } catch (e) {}
+  try {
+    await run(`ALTER TABLE users ADD COLUMN phone TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE users ADD COLUMN login TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE users ADD COLUMN password TEXT DEFAULT ''`);
+  } catch (e) {}
 
-  // Purge legacy mock/fake users completely (Never invent fake users!)
-  await run(`
-    DELETE FROM users 
-    WHERE user_code IS NULL 
-       OR user_code NOT IN (
-         'b58d74f3-3541-4341-acf8-ff00c13964c7',
-         '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7',
-         '60612290-8399-4949-83f8-9f8216fab884',
-         'e6010bbc-f81a-4b86-bc19-f059e1100fba',
-         '4215e424-99fb-4a6d-a555-51388ab7c06f',
-         '42798f70-c266-403c-8f85-28dbbf1373c0',
-         '89e6dcab-71b3-4f51-aeaf-2fcc5883cdf5',
-         '5fce8412-80bf-4ac7-8e28-f39be76d0160',
-         '12b090f1-4de6-4536-b30d-030f383da7de'
-       )
-       OR name LIKE '%Aziz%' 
-       OR name LIKE '%Malika%' 
-       OR name LIKE '%Bobur Aliyev%' 
-       OR name LIKE '%Kassir (GetPOS)%'
-  `);
-
-  // Real users from getpos.uz backend
-  const realUsers = [
+  // Real users from getpos.uz backend for Test Kafe (Only active tenant!)
+  const currentStoreUsers = [
     { name: 'Kafee', role: 'admin', pin: '3333', code: 'b58d74f3-3541-4341-acf8-ff00c13964c7', tenant_id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7' },
-    { name: 'John', role: 'admin', pin: '1111', code: '447a1ad6-e23f-4dde-b4a2-d9256c7af5a7', tenant_id: '5322a772-e9db-402a-8d2b-6293edd03832' },
-    { name: 'Ali (Xodim)', role: 'waiter', pin: '2222', code: '60612290-8399-4949-83f8-9f8216fab884', tenant_id: '5322a772-e9db-402a-8d2b-6293edd03832' },
-    { name: 'Rustam', role: 'admin', pin: '1111', code: 'e6010bbc-f81a-4b86-bc19-f059e1100fba', tenant_id: '57341e59-3c24-409f-af62-9aaec212b689' },
-    { name: 'Sardor Karimov', role: 'waiter', pin: '1234', code: '4215e424-99fb-4a6d-a555-51388ab7c06f', tenant_id: '57341e59-3c24-409f-af62-9aaec212b689' },
   ];
 
-  for (const ru of realUsers) {
-    const existing = await get(`SELECT id FROM users WHERE user_code = ?`, [ru.code]);
+  // Remove any legacy users from other stores/tenants
+  await run(`
+    DELETE FROM users 
+    WHERE name IN ('John', 'Ali (Xodim)', 'Rustam', 'Sardor Karimov')
+       OR (tenant_id IS NOT NULL AND tenant_id != '90e04abf-246d-4683-91eb-1ac34d7b2ee7' AND user_code NOT LIKE '%-%-%')
+  `);
+
+  for (const ru of currentStoreUsers) {
+    const existing = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [ru.code, ru.name]);
     if (!existing) {
       await run(`INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id) VALUES (?, ?, ?, 1, 'active', ?, ?)`, [
         ru.name, ru.role, ru.pin, ru.code, ru.tenant_id
       ]);
     } else {
-      await run(`UPDATE users SET name = ?, role = ?, user_code = ?, pin = ?, status = 'active', is_shift_open = 1, tenant_id = ? WHERE id = ?`, [
-        ru.name, ru.role, ru.code, ru.pin, ru.tenant_id, existing.id
-      ]);
+      await run(`UPDATE users SET user_code = ?, tenant_id = ?, status = 'active' WHERE id = ?`, [ru.code, ru.tenant_id, existing.id]);
     }
   }
 

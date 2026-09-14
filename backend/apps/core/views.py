@@ -59,15 +59,18 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = User.objects.all()
-        tenant_id = self.request.query_params.get('tenant_id')
-        
-        if tenant_id:
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return User.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return User.objects.filter(tenant_id=tenant_id)
+            return User.objects.all()
+
+        if user.tenant:
+            return User.objects.filter(tenant=user.tenant)
+        return User.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -416,15 +419,18 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Product.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Product.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Product.objects.filter(tenant_id=tenant_id)
+            return Product.objects.all()
+
+        if user.tenant:
+            return Product.objects.filter(tenant=user.tenant)
+        return Product.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -518,15 +524,18 @@ class DebtViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Debt.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Debt.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Debt.objects.filter(tenant_id=tenant_id)
+            return Debt.objects.all()
+
+        if user.tenant:
+            return Debt.objects.filter(tenant=user.tenant)
+        return Debt.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -547,15 +556,18 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Transaction.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Transaction.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Transaction.objects.filter(tenant_id=tenant_id)
+            return Transaction.objects.all()
+
+        if user.tenant:
+            return Transaction.objects.filter(tenant=user.tenant)
+        return Transaction.objects.none()
 
     def create(self, request, *args, **kwargs):
         from decimal import Decimal

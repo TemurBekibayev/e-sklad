@@ -6,85 +6,51 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(false);
-  const [tenants, setTenants] = useState([]);
-  const [selectedTenant, setSelectedTenant] = useState({
-    id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7',
-    name: 'Test Kafe',
+  const [currentStore, setCurrentStore] = useState({
+    id: '',
+    name: 'GetPOS Kafe',
   });
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  // 1. Load real tenants from getpos.uz
+  // 1. Load current terminal's configured store only (No multi-tenant data leak!)
   useEffect(() => {
     let isMounted = true;
-    async function loadTenants() {
+    async function loadCurrentStoreAndStaff() {
+      setLoadingStaff(true);
       try {
-        const res = await fetch('/api/tenants');
-        if (res.ok) {
-          const data = await res.json();
-          const list = data.results || data.tenants || [];
-          if (isMounted && Array.isArray(list) && list.length > 0) {
-            setTenants(list);
-            // Default to Test Kafe if available, else first tenant
-            const testKafe = list.find((t) => t.id === '90e04abf-246d-4683-91eb-1ac34d7b2ee7') || list[0];
-            setSelectedTenant(testKafe);
+        const configRes = await fetch('/api/config/backend');
+        let tenantId = '';
+        let tenantName = 'GetPOS Kafe';
+        if (configRes.ok) {
+          const cfg = await configRes.json();
+          tenantId = cfg.tenant_id || cfg.tenantId || '';
+          tenantName = cfg.tenant_name || cfg.tenantName || 'GetPOS Kafe';
+          if (isMounted) {
+            setCurrentStore({ id: tenantId, name: tenantName });
+          }
+        }
+
+        // Load staff ONLY for this store
+        const staffRes = await fetch(tenantId ? `/api/auth/users?tenantId=${tenantId}` : '/api/auth/users');
+        if (staffRes.ok) {
+          const data = await staffRes.json();
+          if (isMounted && Array.isArray(data)) {
+            setUsers(data);
+            if (data.length === 1) {
+              setSelectedUser(data[0]);
+            }
           }
         }
       } catch (e) {
-        console.warn('Could not load tenants:', e);
+        console.warn('Could not load store/staff:', e);
+      } finally {
+        if (isMounted) setLoadingStaff(false);
       }
     }
-    loadTenants();
+    loadCurrentStoreAndStaff();
     return () => { isMounted = false; };
   }, []);
-
-  // 2. Load real staff for currently selected tenant
-  const loadStaffForTenant = async (tenantId) => {
-    if (!tenantId) return;
-    setLoadingStaff(true);
-    try {
-      const res = await fetch(`/api/auth/users?tenantId=${tenantId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setUsers(data);
-          // If only 1 user exists (like Kafee in Test Kafe), auto-select
-          if (data.length === 1) {
-            setSelectedUser(data[0]);
-          } else {
-            setSelectedUser(null);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Could not load users for tenant:', e);
-    } finally {
-      setLoadingStaff(false);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedTenant?.id) {
-      loadStaffForTenant(selectedTenant.id);
-    }
-  }, [selectedTenant?.id]);
-
-  const handleTenantChange = async (newTenantId) => {
-    const t = tenants.find((item) => item.id === newTenantId);
-    if (!t) return;
-    setSelectedTenant(t);
-    setSelectedUser(null);
-    setPin('');
-    setError('');
-    // Inform backend of tenant switch
-    try {
-      await fetch('/api/config/backend/tenant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantId: t.id, tenantName: t.name }),
-      });
-    } catch (e) {}
-  };
 
   const handleNumber = (num) => {
     if (pin.length < 6) {
@@ -121,7 +87,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         body: JSON.stringify({
           pin: enteredPin,
           userId: userToLogin?.id || undefined,
-          tenantId: selectedTenant?.id,
+          tenantId: currentStore?.id || undefined,
         }),
       });
       const data = await res.json();
@@ -189,24 +155,12 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
 
         <h2 className="text-2xl font-bold text-white mb-1">GetPOS Kafe Avtorizatsiya</h2>
 
-        {/* Branch / Tenant Selector Dropdown */}
+        {/* Fixed Store Badge (Multi-tenant isolated) */}
         <div className="mb-4">
-          <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-center gap-1">
-            <Building2 className="w-3.5 h-3.5 text-amber-400" />
-            <span>Filial / Do'kon:</span>
-          </label>
-          <select
-            value={selectedTenant?.id || ''}
-            onChange={(e) => handleTenantChange(e.target.value)}
-            className="w-full bg-slate-950 border border-slate-700 text-slate-100 font-semibold rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-inner"
-          >
-            {tenants.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name === 'Test Kafe' ? '☕ ' : '🏪 '}
-                {t.name} {t.address ? `(${t.address})` : ''}
-              </option>
-            ))}
-          </select>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-950 border border-slate-700/80 text-slate-200 text-sm font-bold shadow-inner">
+            <Building2 className="w-4 h-4 text-amber-400" />
+            <span>{currentStore.name}</span>
+          </div>
         </div>
 
         {/* User Prompt / Hint */}

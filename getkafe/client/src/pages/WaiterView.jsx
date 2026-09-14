@@ -350,6 +350,19 @@ export default function WaiterView({
                       {inCart.quantity}
                     </span>
                   )}
+
+                  {/* Stock remaining badge */}
+                  {prod.stock_quantity !== undefined && (
+                    <span className={`absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold shadow-sm ${
+                      prod.stock_quantity <= 0
+                        ? 'bg-rose-600 text-white animate-pulse'
+                        : prod.stock_quantity <= (prod.min_stock_alert || 5)
+                        ? 'bg-amber-500 text-slate-950 font-black'
+                        : 'bg-black/60 text-white backdrop-blur-[2px]'
+                    }`}>
+                      {prod.stock_quantity <= 0 ? 'Tugagan' : `${prod.stock_quantity} ${prod.unit || 'ta'}`}
+                    </span>
+                  )}
                 </div>
 
                 {/* Dish Name (Uppercase bold, matching Image 2) */}

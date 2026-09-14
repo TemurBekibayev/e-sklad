@@ -11,7 +11,9 @@ import {
   QrCode,
   Layers,
   UtensilsCrossed,
-  PlusCircle
+  PlusCircle,
+  Package,
+  Users
 } from 'lucide-react';
 
 export default function Header({ 
@@ -22,7 +24,8 @@ export default function Header({
   syncState, 
   onToggleInternet, 
   onFlushSync,
-  onOpenAddDish
+  onOpenAddDish,
+  onOpenStaffModal
 }) {
   return (
     <header className="bg-slate-800 border-b border-slate-700 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
@@ -39,7 +42,7 @@ export default function Header({
             </span>
             <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              amuhr.uz Live
+              GetPOS Cloud Live
             </span>
           </div>
           <p className="text-xs text-slate-400">
@@ -87,6 +90,18 @@ export default function Header({
         </button>
 
         <button
+          onClick={() => setCurrentTab('inventory')}
+          className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            currentTab === 'inventory'
+              ? 'bg-amber-600 text-white font-bold shadow-md'
+              : 'text-slate-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Package className="w-4 h-4" />
+          <span className="hidden sm:inline">Sklad (Ombor)</span>
+        </button>
+
+        <button
           onClick={() => setCurrentTab('menu')}
           className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
             currentTab === 'menu'
@@ -113,6 +128,16 @@ export default function Header({
 
       {/* Sync Panel & User Status (TZ 3.1) */}
       <div className="flex items-center space-x-3">
+        {/* Xodimlar / Ofitsiantlar Button */}
+        <button
+          onClick={onOpenStaffModal}
+          title="Xodimlar va Ofitsiantlarni boshqarish"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs shadow border border-slate-700 active:scale-95 transition-all"
+        >
+          <Users className="w-4 h-4 text-amber-400" />
+          <span className="hidden md:inline">👥 Xodimlar</span>
+        </button>
+
         {/* Internet & Sync Status Widget */}
         <div className="flex items-center bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700/80 space-x-3">
           <button
