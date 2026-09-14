@@ -295,6 +295,14 @@ class OrderCartSheet extends StatelessWidget {
                             else
                               Row(
                                 children: [
+                                  IconButton(
+                                    icon: Icon(Icons.edit_outlined, size: 18, color: Colors.blue.shade600),
+                                    tooltip: 'Tahrirlash',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    onPressed: () => _showEditItemDialog(context, item, orderProv, tablesProv),
+                                  ),
+                                  const SizedBox(width: 4),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
@@ -644,6 +652,142 @@ class OrderCartSheet extends StatelessWidget {
                 }
               },
               child: const Text('Tasdiqlash', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditItemDialog(
+    BuildContext context,
+    OrderItem item,
+    OrderProvider orderProv,
+    TablesProvider tablesProv,
+  ) {
+    int currentQty = item.quantity;
+    final commentCtrl = TextEditingController(text: item.comment ?? '');
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.edit_note, color: AppColors.primary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Taomni tahrirlash',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.productName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Dona narxi: ${Formatters.formatCurrency(item.unitPrice)}',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+
+                // Miqdor
+                const Text(
+                  'Miqdori:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: currentQty > 1
+                          ? () => setDialogState(() => currentQty--)
+                          : null,
+                      icon: const Icon(Icons.remove_circle_outline, color: AppColors.primary),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Text(
+                        '$currentQty dona',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => setDialogState(() => currentQty++),
+                      icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Izoh
+                const Text(
+                  'Izoh / Eslatma:',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: commentCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Masalan: Kamroq yog\'li, piyozsiz...',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Bekor qilish'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final comment = commentCtrl.text.trim();
+                Navigator.pop(dialogCtx);
+
+                final success = await orderProv.updateOrderItem(
+                  item: item,
+                  newQuantity: currentQty,
+                  comment: comment.isEmpty ? null : comment,
+                  waiterName: orderProv.currentOrder?.waiterName,
+                  tablesProvider: tablesProv,
+                );
+
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Taom ma\'lumotlari yangilandi'
+                            : 'Tahrirlashda xatolik yuz berdi',
+                      ),
+                      backgroundColor: success ? AppColors.success : Colors.red,
+                    ),
+                  );
+                }
+              },
+              child: const Text('Saqlash', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),

@@ -20,6 +20,7 @@ class ApiConstants {
   static String tableOrder(String tableId) => '/orders/table/$tableId';
   static String orderBillRequest(String orderId) => '/orders/$orderId/bill-request';
   static String cancelOrderItem(String orderId) => '/orders/$orderId/cancel-item';
+  static String updateOrderItem(String orderId, String itemId) => '/orders/$orderId/items/$itemId';
 
   // WebSocket
   static String wsUrl(String baseUrl) {

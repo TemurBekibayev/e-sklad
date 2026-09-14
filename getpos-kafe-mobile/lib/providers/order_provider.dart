@@ -223,6 +223,51 @@ class OrderProvider extends ChangeNotifier {
     }
   }
 
+  // Buyurtmadagi taom miqdori yoki narxini tahrirlash (PUT /api/orders/{id}/items/{itemId})
+  Future<bool> updateOrderItem({
+    required OrderItem item,
+    required int newQuantity,
+    double? newPrice,
+    String? comment,
+    String? waiterName,
+    required TablesProvider tablesProvider,
+  }) async {
+    if (_currentOrder == null) return false;
+    _isSending = true;
+    notifyListeners();
+
+    try {
+      final success = await _apiService.updateOrderItem(
+        orderId: _currentOrder!.id,
+        itemId: item.id,
+        quantity: newQuantity,
+        price: newPrice,
+        comment: comment,
+        waiterName: waiterName,
+      );
+
+      if (success) {
+        item.quantity = newQuantity;
+        if (comment != null) item.comment = comment;
+        if (waiterName != null) item.waiterName = waiterName;
+
+        if (_currentTable != null) {
+          tablesProvider.updateTableAfterOrder(
+            tableId: _currentTable!.id,
+            totalAmount: _currentOrder!.grandTotal,
+            guestCount: _currentOrder!.guestCount,
+            waiterName: _currentOrder!.waiterName,
+            status: _currentTable!.status,
+          );
+        }
+      }
+      return success;
+    } finally {
+      _isSending = false;
+      notifyListeners();
+    }
+  }
+
   // Stolni yopish (hisob-kitob tugagach)
   void closeTable(TablesProvider tablesProvider) {
     if (_currentTable != null) {

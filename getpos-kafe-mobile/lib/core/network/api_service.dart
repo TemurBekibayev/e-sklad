@@ -311,6 +311,32 @@ class ApiService {
     }
   }
 
+  // 8. Taom soni yoki narxini tahrirlash (PUT /api/orders/:orderId/items/:itemId)
+  Future<bool> updateOrderItem({
+    required String orderId,
+    required dynamic itemId,
+    required int quantity,
+    double? price,
+    String? comment,
+    String? waiterName,
+  }) async {
+    try {
+      final dio = await _getDio();
+      final res = await dio.put(
+        ApiConstants.updateOrderItem(orderId, itemId.toString()),
+        data: {
+          'quantity': quantity,
+          if (price != null) 'price': price,
+          if (comment != null) 'comment': comment,
+          if (waiterName != null) 'waiter_name': waiterName,
+        },
+      );
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // 8. Pre-chek / Hisob so'rash (POST /api/orders/{id}/bill-request)
   Future<bool> requestPreBill({required String orderId}) async {
     final useMock = await AppPreferences.isUsingMockData();
