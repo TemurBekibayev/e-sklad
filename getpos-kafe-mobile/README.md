@@ -1,6 +1,6 @@
 # GetPOS Kafe — Mobile Ofitsiant Ilovasi (Flutter / React Native) uchun To'liq API Qo'llanmasi
 
-Ushbu hujjat **GetPOS Kafe** ofitsiant mobil ilovasini ishlab chiqayotgan dasturchi uchun mo'ljallangan.
+Ushbu hujjat **GetPOS Kafe** ofitsiant mobil ilovasini ishlab chiqayotgan dasturchi uchun to'liq va yangilangan API qo'llanmasidir.
 
 ---
 
@@ -24,8 +24,7 @@ Ofitsiant ilovaga kirganda barcha xodimlar ro'yxati ko'rinmaydi. Xodim faqat kas
 
 ### 2.1. Login va Parol orqali kirish
 * **Metod:** `POST`
-* **URL (Lokal Wi-Fi):** `http://<KASSA_IP>:4000/api/auth/login`
-* **URL (Bulut):** `https://getpos.uz/api/v1/auth/login/`
+* **URL:** `/api/auth/login` (yoki `/auth/login`)
 * **Headers:** `Content-Type: application/json`
 * **Request Body:**
 ```json
@@ -34,7 +33,7 @@ Ofitsiant ilovaga kirganda barcha xodimlar ro'yxati ko'rinmaydi. Xodim faqat kas
   "password": "3333"
 }
 ```
-*(Izoh: `login` o'rniga xodim logini yoki ismi `akbar` / `Akbar`, `password` o'rniga esa uning paroli yoki 4 xonali PIN `3333` yuboriladi).*
+*(Izoh: `login` o'rniga xodim logini, email, telefon yoki ismi `akbar` / `Akbar`, `password` o'rniga esa uning paroli yoki 4 xonali PIN `3333` yuboriladi).*
 
 * **Muvaffaqiyatli Javob (200 OK):**
 ```json
@@ -45,7 +44,7 @@ Ofitsiant ilovaga kirganda barcha xodimlar ro'yxati ko'rinmaydi. Xodim faqat kas
   "role": "waiter",
   "tenantId": "90e04abf-246d-4683-91eb-1ac34d7b2ee7",
   "tenantName": "Test Kafe",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "token_1789390247",
   "user": {
     "id": "0ea11162-a4d9-4f94-a38e-192fdf88d89b",
     "rawId": 10,
@@ -58,116 +57,199 @@ Ofitsiant ilovaga kirganda barcha xodimlar ro'yxati ko'rinmaydi. Xodim faqat kas
 }
 ```
 
-* **Xato Javob (401 Unauthorized):**
+---
+
+## 🏢 3. Zallar / Xonalar Ro'yxati (Halls / Rooms)
+
+### 3.1. Zallar ro'yxatini olish
+* **Metod:** `GET`
+* **URL:** `/api/halls` (yoki `/api/rooms`)
+* **Response (200 OK):**
 ```json
 {
-  "success": false,
-  "message": "Noto'g'ri login yoki parol!"
+  "success": true,
+  "halls": [
+    { "id": 1, "name": "Asosiy Zal", "order_index": 1, "table_count": 5 },
+    { "id": 2, "name": "Zal 1", "order_index": 2, "table_count": 5 },
+    { "id": 3, "name": "Zal 2", "order_index": 3, "table_count": 5 },
+    { "id": 4, "name": "2-Qavat Zal", "order_index": 4, "table_count": 5 },
+    { "id": 5, "name": "VIP Xona", "order_index": 5, "table_count": 0 }
+  ]
 }
 ```
 
 ---
 
-## 🍽️ 3. Stollar Boshqaruvi (Tables)
+## 🍽️ 4. Stollar Boshqaruvi (Tables)
 
-### 3.1. Barcha stollar va ularning holati
+### 4.1. Barcha stollar va ularning holati
+Har bir stol obyektida agar stol band bo'lsa, uning ichidagi taomlar (`items` va `order_items`) avtomatik biriktirib qaytariladi!
 * **Metod:** `GET`
 * **URL:** `/api/tables`
-* **Response:**
-``json
+* **Response (200 OK):**
+```json
 {
   "success": true,
   "tables": [
     {
-      "id": 1,
-      "number": 1,
+      "id": 3,
+      "number": 3,
+      "name": "STOL - 3",
+      "hall": "Asosiy Zal",
+      "capacity": 4,
       "status": "busy",
-      "order_id": "ord_7944a017",
-      "waiter_name": "Sardor",
-      "total_amount": 40000,
-      "order_created_at": "2026-09-14 15:58:21"
+      "order_id": "ord_92db73a5",
+      "waiter_name": "Akbar",
+      "total_amount": 208000,
+      "order_created_at": "2026-09-14 17:50:47",
+      "items_count": 2,
+      "items": [
+        {
+          "id": 1,
+          "order_id": "ord_92db73a5",
+          "product_id": 1,
+          "product_name": "Mastava",
+          "quantity": 2,
+          "price": 32000,
+          "comment": "Issiq",
+          "status": "sent"
+        },
+        {
+          "id": 2,
+          "order_id": "ord_92db73a5",
+          "product_id": 3,
+          "product_name": "Chuchvara",
+          "quantity": 1,
+          "price": 38000,
+          "comment": "Qatiq bilan",
+          "status": "sent"
+        }
+      ]
     },
     {
-      "id": 2,
-      "number": 2,
+      "id": 4,
+      "number": 4,
+      "name": "STOL - 4",
+      "hall": "Asosiy Zal",
+      "capacity": 4,
       "status": "free",
       "order_id": null,
       "waiter_name": null,
       "total_amount": 0,
-      "order_created_at": null
+      "items": []
     }
   ]
 }
-``
+```
 
 ---
 
-## 📋 4. Menyu va Taomlar Katalogi
+## 📋 5. Menyu va Taomlar Katalogi
 
-### 4.1. Kategoriya va Taomlar ro'yxati
+### 5.1. Kategoriya va Taomlar ro'yxati
 * **Metod:** `GET`
 * **URL:** `/api/menu`
+* **Response:**
+```json
+{
+  "success": true,
+  "categories": [
+    { "id": 1, "name": "БИР ЗУМДА", "slug": "fastfood_1", "icon": "🍔", "image": "..." }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "name": "CHEESEBURGER",
+      "price": 28000,
+      "category_id": 1,
+      "stock_quantity": 100,
+      "unit": "dona",
+      "image": "https://..."
+    }
+  ]
+}
+```
 
 ---
 
-## 🛒 5. Buyurtmalar (Orders)
+## 🛒 6. Buyurtmalar (Orders)
 
-### 5.1. Yangi stolga buyurtma kiritish (Stolni band qilish va oshxonaga jo'natish)
+### 6.1. Stolga buyurtma kiritish yoki taom qo'shish
 * **Metod:** `POST`
-* **URL:** `/api/orders`
-* **Request Body:**
-``json
+* **URL:** `/api/orders` (yoki `/api/orders/items` yoki `/api/tables/:tableId/orders`)
+* **Request Body (camelCase yoki snake_case qabul qilinadi):**
+```json
 {
-  "tableId": 1,
-  "waiterId": "usr_1",
-  "waiterName": "Sardor",
+  "tableId": 3,
+  "waiterName": "Akbar",
   "items": [
     {
       "product_id": 1,
-      "product_name": "Qiyma shashlik",
+      "product_name": "Mastava",
       "quantity": 2,
-      "price": 20000,
-      "comment": "Piyozsiz"
-    },
-    {
-      "product_id": 2,
-      "product_name": "Choyxona Oshi (Palov)",
-      "quantity": 1,
-      "price": 45000,
-      "comment": "Issiqroq"
+      "price": 32000,
+      "comment": "Issiq"
     }
   ]
 }
-``
+```
 
-### 5.2. Ochiq stoldagi faol buyurtmani ko'rish
+### 6.2. Stol bo'yicha faol buyurtma va taomlarni ko'rish
 * **Metod:** `GET`
-* **URL:** `/api/orders/table/:tableId`
+* **URL:** `/api/orders/table/:tableId` (yoki `/api/tables/:tableId/order` yoki `/api/orders?tableId=3`)
+* **Response (200 OK):**
+```json
+{
+  "success": true,
+  "order": {
+    "id": "ord_92db73a5",
+    "table_id": 3,
+    "table_number": 3,
+    "table_name": "STOL - 3",
+    "waiter_name": "Akbar",
+    "status": "open",
+    "total_amount": 208000,
+    "items": [
+      {
+        "id": 1,
+        "product_id": 1,
+        "product_name": "Mastava",
+        "quantity": 2,
+        "price": 32000,
+        "comment": "Issiq"
+      }
+    ]
+  },
+  "items": [
+    {
+      "id": 1,
+      "product_id": 1,
+      "product_name": "Mastava",
+      "quantity": 2,
+      "price": 32000,
+      "comment": "Issiq"
+    }
+  ],
+  "table": {
+    "id": 3,
+    "number": 3,
+    "name": "STOL - 3",
+    "status": "busy",
+    "total_amount": 208000
+  }
+}
+```
 
-### 5.3. Ochiq stolga qo'shimcha taom qo'shish
-* **Metod:** `POST`
-* **URL:** `/api/orders/items`
-
-### 5.4. "Hisob so'raldi" (Bill Request) yuborish
+### 6.3. "Hisob so'raldi" (Bill Request / Pre-chek) yuborish
 * **Metod:** `POST`
 * **URL:** `/api/orders/:orderId/bill-request`
 
 ---
 
-## ⚡ 6. Real-Time WebSockets (ws://<KASSA_IP>:4000/ws)
+## ⚡ 7. Real-Time WebSockets (`ws://<KASSA_IP>:4000/ws`)
 
 * **Ulanish:** `ws://192.168.1.5:4000/ws`
-* **TABLE_UPDATED:** Boshqa ofitsiant yoki kassa tomonidan stol o'zgarganda keladi:
-``json
-{
-  "event": "TABLE_UPDATED",
-  "data": {
-    "id": 1,
-    "number": 1,
-    "status": "busy",
-    "order_id": "ord_7944a017",
-    "waiter_name": "Sardor",
-    "total_amount": 85000
-  }
-}
-``
+* **Hodisalar:**
+  - `TABLE_UPDATED`: Stol holati o'zgarganda (ochilganda, to'langanda, buyurtma qo'shilganda)
+  - `KITCHEN_NEW_TICKET`: Yangi buyurtma oshxonaga yuborilganda
+  - `BILL_REQUESTED`: Mijoz hisob so'raganda
