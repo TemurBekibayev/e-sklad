@@ -1,4 +1,4 @@
-import uuid
+﻿import uuid
 from decimal import Decimal
 from django.utils import timezone
 from django.db import transaction
@@ -15,7 +15,6 @@ from apps.cafe.serializers import (
     OrderItemSerializer, ShiftSerializer
 )
 from apps.products.models import Product, Category
-from apps.products.serializers import ProductSerializer, CategorySerializer
 from apps.transactions.models import Transaction
 
 
@@ -24,15 +23,15 @@ def broadcast_cafe_event(tenant_id, event_type, data):
         channel_layer = get_channel_layer()
         if channel_layer:
             async_to_sync(channel_layer.group_send)(
-                fcafe_tenant_{tenant_id},
+                f"cafe_tenant_{tenant_id}",
                 {
-                    type: cafe_message,
-                    event: event_type,
-                    data: data,
+                    "type": "cafe_message",
+                    "event": event_type,
+                    "data": data,
                 }
             )
     except Exception as e:
-        print(f[WebSocket Broadcast Error] {e})
+        print(f"[WebSocket Broadcast Error] {e}")
 
 
 class HallViewSet(viewsets.ModelViewSet):
@@ -55,11 +54,11 @@ class TableViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         table = serializer.save(tenant=self.request.user.tenant)
-        broadcast_cafe_event(str(self.request.user.tenant.id), TABLE_CREATED, TableSerializer(table).data)
+        broadcast_cafe_event(str(self.request.user.tenant.id), "TABLE_CREATED", TableSerializer(table).data)
 
     def perform_update(self, serializer):
         table = serializer.save()
-        broadcast_cafe_event(str(self.request.user.tenant.id), TABLE_UPDATED, TableSerializer(table).data)
+        broadcast_cafe_event(str(self.request.user.tenant.id), "TABLE_UPDATED", TableSerializer(table).data)
 
     @action(detail=True, methods=['post'], url_path='change-status')
     def change_status(self, request, pk=None):
@@ -71,12 +70,12 @@ class TableViewSet(viewsets.ModelViewSet):
                 table.active_order_id = None
                 table.current_waiter = None
             table.save(update_fields=['status', 'active_order_id', 'current_waiter', 'updated_at'])
-            broadcast_cafe_event(str(request.user.tenant.id), TABLE_STATUS_CHANGED, {
-                table_id: str(table.id),
-                status: table.status
+            broadcast_cafe_event(str(request.user.tenant.id), "TABLE_STATUS_CHANGED", {
+                "table_id": str(table.id),
+                "status": table.status
             })
             return Response(TableSerializer(table).data)
-        return Response({detail: Noto'g'ri holat}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Noto'g'ri holat"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -94,15 +93,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         guests_count = int(request.data.get('guests_count', 1))
 
         if not table_id:
-            return Response({detail: Stol ko'rsatilishi shart}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Stol ko'rsatilishi shart"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             table = Table.objects.for_tenant(tenant).get(id=table_id)
         except Table.DoesNotExist:
-            return Response({detail: Stol topilmadi}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Stol topilmadi"}, status=status.HTTP_404_NOT_FOUND)
 
         with transaction.atomic():
-            # If table already has an active order, add items to it
             if table.active_order_id and table.status in [TableStatus.BUSY, TableStatus.BILL_REQUESTED]:
                 try:
                     order = Order.objects.for_tenant(tenant).get(id=table.active_order_id, status__in=[OrderStatus.OPEN, OrderStatus.BILL_REQUESTED])
@@ -112,11 +110,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                 order = None
 
             if not order:
-                # Generate order number
                 today_count = Order.objects.for_tenant(tenant).filter(created_at__date=timezone.now().date()).count() + 1
-                order_number = f#{today_count:04d}
+                order_number = f"#{today_count:04d}"
 
-                # Check hall service percent
                 service_pct = table.hall.service_percent if table.hall else Decimal('0.00')
 
                 order = Order.objects.create(
@@ -136,7 +132,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                 table.current_waiter = request.user
                 table.save(update_fields=['status', 'active_order_id', 'current_waiter', 'updated_at'])
 
-            # Add items
             for item in items_data:
                 prod_id = item.get('product_id') or item.get('product')
                 prod_name = item.get('product_name') or ''
@@ -160,7 +155,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     tenant=tenant,
                     order=order,
                     product=product_obj,
-                    product_name=prod_name or Taom,
+                    product_name=prod_name or "Taom",
                     quantity=qty,
                     price=price,
                     total_price=price * qty,
@@ -171,8 +166,8 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             order.recalculate_totals()
 
-        broadcast_cafe_event(str(tenant.id), ORDER_UPDATED, OrderSerializer(order).data)
-        broadcast_cafe_event(str(tenant.id), TABLE_UPDATED, TableSerializer(table).data)
+        broadcast_cafe_event(str(tenant.id), "ORDER_UPDATED", OrderSerializer(order).data)
+        broadcast_cafe_event(str(tenant.id), "TABLE_UPDATED", TableSerializer(table).data)
 
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
@@ -206,7 +201,7 @@ class OrderViewSet(viewsets.ModelViewSet):
                     tenant=tenant,
                     order=order,
                     product=product_obj,
-                    product_name=prod_name or Taom,
+                    product_name=prod_name or "Taom",
                     quantity=qty,
                     price=price,
                     total_price=price * qty,
@@ -217,7 +212,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             order.recalculate_totals()
 
-        broadcast_cafe_event(str(tenant.id), ORDER_ITEMS_ADDED, OrderSerializer(order).data)
+        broadcast_cafe_event(str(tenant.id), "ORDER_ITEMS_ADDED", OrderSerializer(order).data)
         return Response(OrderSerializer(order).data)
 
     @action(detail=True, methods=['post'], url_path='bill-request')
@@ -232,14 +227,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         table.status = TableStatus.BILL_REQUESTED
         table.save(update_fields=['status', 'updated_at'])
 
-        broadcast_cafe_event(str(tenant.id), BILL_REQUESTED, {
-            order_id: str(order.id),
-            table_id: str(table.id),
-            table_name: table.name,
-            waiter_name: order.waiter_name,
-            total_amount: str(order.total_amount)
+        broadcast_cafe_event(str(tenant.id), "BILL_REQUESTED", {
+            "order_id": str(order.id),
+            "table_id": str(table.id),
+            "table_name": table.name,
+            "waiter_name": order.waiter_name,
+            "total_amount": str(order.total_amount)
         })
-        return Response({status: bill_requested, order: OrderSerializer(order).data})
+        return Response({"status": "bill_requested", "order": OrderSerializer(order).data})
 
     @action(detail=True, methods=['post'], url_path='pay')
     def pay(self, request, pk=None):
@@ -258,21 +253,19 @@ class OrderViewSet(viewsets.ModelViewSet):
             order.closed_at = timezone.now()
             order.save(update_fields=['status', 'payment_method', 'cash_amount', 'card_amount', 'closed_at', 'updated_at'])
 
-            # Free the table
             table = order.table
             table.status = TableStatus.FREE
             table.active_order_id = None
             table.current_waiter = None
             table.save(update_fields=['status', 'active_order_id', 'current_waiter', 'updated_at'])
 
-            # Create Central Transaction Record
             items_snapshot = [
                 {
-                    product_name: it.product_name,
-                    quantity: it.quantity,
-                    price: str(it.price),
-                    total: str(it.total_price),
-                    comment: it.comment
+                    "product_name": it.product_name,
+                    "quantity": it.quantity,
+                    "price": str(it.price),
+                    "total": str(it.total_price),
+                    "comment": it.comment
                 }
                 for it in order.items.all()
             ]
@@ -280,7 +273,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             Transaction.objects.create(
                 tenant=tenant,
                 finalized_by=request.user,
-                client_name=f{table.name} (KafePOS),
+                client_name=f"{table.name} (KafePOS)",
                 payment_method=payment_method if payment_method in ['cash', 'card'] else 'cash',
                 cash_amount=cash_amt,
                 card_amount=card_amt,
@@ -290,17 +283,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 items_snapshot=items_snapshot
             )
 
-        broadcast_cafe_event(str(tenant.id), PAYMENT_COMPLETED, {
-            order_id: str(order.id),
-            table_id: str(table.id),
-            total_amount: str(order.total_amount),
-            payment_method: payment_method
+        broadcast_cafe_event(str(tenant.id), "PAYMENT_COMPLETED", {
+            "order_id": str(order.id),
+            "table_id": str(table.id),
+            "total_amount": str(order.total_amount),
+            "payment_method": payment_method
         })
 
         return Response({
-            success: True,
-            order: OrderSerializer(order).data,
-            table: TableSerializer(table).data
+            "success": True,
+            "order": OrderSerializer(order).data,
+            "table": TableSerializer(table).data
         })
 
 
