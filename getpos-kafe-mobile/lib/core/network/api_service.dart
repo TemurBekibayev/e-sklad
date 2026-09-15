@@ -265,7 +265,7 @@ class ApiService {
       final payload = {
         'table': order.tableId,
         'tableId': order.tableId,
-        'guests_count': order.guestCount ?? 1,
+        'guests_count': order.guestCount,
         'notes': '',
         'items': order.items.map((i) {
           return {
