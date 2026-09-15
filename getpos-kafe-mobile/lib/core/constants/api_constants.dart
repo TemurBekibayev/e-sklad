@@ -21,6 +21,8 @@ class ApiConstants {
   static String orderBillRequest(String orderId) => '/orders/$orderId/bill-request/';
   static String orderAddItems(String orderId) => '/orders/$orderId/add-items/';
   static String orderPay(String orderId) => '/orders/$orderId/pay/';
+  static String cancelOrderItem(String orderId) => '/orders/$orderId/cancel-item/';
+  static String updateOrderItem(String orderId, String itemId) => '/orders/$orderId/items/$itemId/';
 
   // WebSocket: wss://getpos.uz/ws/cafe/
   static String wsUrl(String baseUrl) {
