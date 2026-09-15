@@ -47,3 +47,4 @@ build/
 *.db
 *.sqlite
 *.sqlite3
+!getkafe/server/kafepos.sqlite
