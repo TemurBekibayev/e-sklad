@@ -14,7 +14,7 @@ from apps.cafe.serializers import (
     HallSerializer, TableSerializer, OrderSerializer,
     OrderItemSerializer, ShiftSerializer
 )
-from apps.products.models import Product, Category
+from apps.products.models import Product
 from apps.transactions.models import Transaction
 
 
