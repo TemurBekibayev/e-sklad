@@ -524,14 +524,58 @@ async function syncFromBackend() {
       }
     }
 
+    // 3. SYNC TABLES (GET & POST /api/v1/cafe/tables/)
+    let tablesSynced = 0;
+    try {
+      const tablesHeaders = {};
+      if (token) tablesHeaders['Authorization'] = `Bearer ${token}`;
+
+      const cloudTablesRes = await makeRequest({
+        url: `${baseUrl}/api/v1/cafe/tables/`,
+        method: 'GET',
+        headers: tablesHeaders,
+      });
+
+      if (cloudTablesRes.status === 200) {
+        const cloudTables = cloudTablesRes.data?.results || (Array.isArray(cloudTablesRes.data) ? cloudTablesRes.data : []);
+        if (cloudTables.length === 0) {
+          // Cloud has no tables yet for this tenant - upload all local tables
+          const localTables = await all(`SELECT * FROM tables`);
+          for (const lt of localTables) {
+            try {
+              await makeRequest({
+                url: `${baseUrl}/api/v1/cafe/tables/`,
+                method: 'POST',
+                headers: { ...tablesHeaders, 'Content-Type': 'application/json' },
+                body: {
+                  number: lt.number || lt.id,
+                  name: lt.name || `STOL - ${lt.number || lt.id}`,
+                  capacity: lt.capacity || 4,
+                  status: lt.status || 'free',
+                }
+              });
+              tablesSynced++;
+            } catch (upErr) {
+              // Ignore single upload error
+            }
+          }
+        } else {
+          tablesSynced = cloudTables.length;
+        }
+      }
+    } catch (tblErr) {
+      console.warn('[BackendSync] Table sync warning:', tblErr.message);
+    }
+
     const latency = Date.now() - startTime;
     lastSyncResult = {
       status: 'synced',
       lastSyncTime: new Date().toISOString(),
-      message: `Real backend (getpos.uz) dan ${usersSynced} ta xodim va ${productsSynced} ta mahsulot yuklandi`,
+      message: `Real backend (getpos.uz) dan ${usersSynced} ta xodim, ${productsSynced} ta mahsulot va ${tablesSynced} ta stol sinxronlandi`,
       latencyMs: latency,
       usersSynced,
       productsSynced,
+      tablesSynced,
       ordersPushed: lastSyncResult.ordersPushed || 0,
     };
 

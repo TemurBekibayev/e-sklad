@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.transactions.apps.TransactionsConfig',
     'apps.debts.apps.DebtsConfig',
     'apps.reports.apps.ReportsConfig',
+    'apps.cafe.apps.CafeConfig',
 ]
 
 MIDDLEWARE = [
