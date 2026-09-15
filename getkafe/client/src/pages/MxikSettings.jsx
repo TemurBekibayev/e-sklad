@@ -29,7 +29,7 @@ export default function MxikSettings({ products, categories, onUpdateMxik }) {
   const formatPrice = (val) => new Intl.NumberFormat('uz-UZ').format(val || 0);
 
   return (
-    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 w-full min-h-full flex-1 bg-slate-950 text-slate-100 flex flex-col">
       {/* Header info */}
       <div className="bg-slate-800/80 border border-slate-700 p-5 rounded-3xl mb-6">
         <div className="flex items-start gap-4">

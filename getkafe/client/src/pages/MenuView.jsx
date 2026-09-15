@@ -77,7 +77,7 @@ export default function MenuView({
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1440px] mx-auto min-h-screen bg-[#f3f6fa] text-slate-800">
+    <div className="p-4 sm:p-6 lg:p-8 w-full min-h-full flex-1 bg-[#f3f6fa] text-slate-800 flex flex-col">
       {/* Top Banner */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm mb-6">
         <div className="flex items-center gap-3.5">
@@ -260,7 +260,7 @@ export default function MenuView({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
           {filteredProducts.map((prod) => {
             const isAvailable = prod.is_available !== false;
             return (

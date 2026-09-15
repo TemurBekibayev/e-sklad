@@ -204,7 +204,7 @@ export default function InventoryView({ products, onRefreshProducts }) {
   });
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1500px] mx-auto min-h-screen bg-[#f1f5f9] text-slate-800">
+    <div className="p-4 sm:p-6 lg:p-8 w-full min-h-full flex-1 bg-[#f1f5f9] text-slate-800 flex flex-col">
       
       {/* Top Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-200">

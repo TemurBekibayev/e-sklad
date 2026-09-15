@@ -5,7 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 export default function KitchenView({ tickets, onPrintTicket, onPlayChime }) {
   const { t, tr } = useLanguage();
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 w-full min-h-full flex-1 bg-slate-950 text-slate-100 flex flex-col">
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6 bg-slate-800/80 p-4 rounded-2xl border border-slate-700">
         <div className="flex items-center gap-3">
@@ -41,7 +41,7 @@ export default function KitchenView({ tickets, onPrintTicket, onPlayChime }) {
           <h3 className="text-lg font-bold text-slate-400">{t('kds_pending', 'Hozircha yangi buyurtmalar yo\'q')}</h3>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5 flex-1">
           {tickets.map((ticket, idx) => {
             const timeStr = new Date(ticket.timestamp || Date.now()).toLocaleTimeString('uz-UZ', {
               hour: '2-digit',

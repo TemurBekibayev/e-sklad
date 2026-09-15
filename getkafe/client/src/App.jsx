@@ -536,7 +536,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+    <div className={`min-h-screen w-full flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 ${
+      currentTab === 'kitchen' || currentTab === 'mxik' ? 'bg-slate-950 text-slate-100' : 'bg-[#f1f5f9] text-slate-900'
+    }`}>
       {/* Top Header */}
       <Header
         currentTab={currentTab}
@@ -553,7 +555,7 @@ export default function App() {
       />
 
       {/* Main Role Content Views */}
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 w-full flex flex-col overflow-y-auto min-h-0">
         {currentTab === 'cashier' && (
           <JetCafePosView
             tables={tables}

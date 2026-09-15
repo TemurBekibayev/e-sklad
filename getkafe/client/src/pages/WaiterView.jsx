@@ -252,7 +252,7 @@ export default function WaiterView({
   // ----------------------------------------------------
   if (!selectedTable) {
     return (
-      <div className="p-4 sm:p-6 max-w-[1440px] mx-auto min-h-screen bg-[#f3f6fa] text-slate-800 flex flex-col">
+      <div className="p-4 sm:p-6 lg:p-8 w-full min-h-full flex-1 bg-[#f3f6fa] text-slate-800 flex flex-col">
         {/* Top Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-200">
           <div>
@@ -346,7 +346,7 @@ export default function WaiterView({
         </div>
 
         {/* Tables Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5 flex-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3.5 flex-1">
           {filteredTables.length === 0 ? (
             <div className="col-span-full py-20 text-center text-slate-400 bg-white rounded-3xl border border-slate-200 shadow-sm">
               <Building2 className="w-12 h-12 mx-auto mb-2 opacity-30" />
@@ -434,7 +434,7 @@ export default function WaiterView({
   const existingItems = existingOrderData?.items || [];
 
   return (
-    <div className="p-3 sm:p-5 max-w-[1440px] mx-auto min-h-screen bg-[#f3f6fa] text-slate-800 flex flex-col lg:flex-row gap-5">
+    <div className="p-3 sm:p-5 lg:p-6 w-full min-h-full flex-1 bg-[#f3f6fa] text-slate-800 flex flex-col lg:flex-row gap-5">
       {/* Left/Center: Menu, Search and Dishes */}
       <div className="flex-1 flex flex-col">
         {/* Header */}

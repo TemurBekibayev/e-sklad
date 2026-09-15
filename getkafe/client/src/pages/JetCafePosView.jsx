@@ -442,7 +442,7 @@ export default function JetCafePosView({
   const formatUZS = (val) => (val || 0).toLocaleString('ru-RU');
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#dce1e8] text-slate-800 select-none overflow-hidden font-sans text-xs">
+    <div className="flex flex-col h-full w-full flex-1 bg-[#dce1e8] text-slate-800 select-none overflow-hidden font-sans text-xs">
       
       {/* 1. TOP TITLEBAR matching JetCafe desktop interface */}
       <header className="h-10 bg-[#e4e8ef] border-b border-[#b0b9c7] flex items-center justify-between px-3 shadow-sm shrink-0">
@@ -1210,7 +1210,7 @@ export default function JetCafePosView({
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2.5">
                   {filteredProducts.map((dish) => (
                     <div
                       key={dish.id || dish.rawId}
