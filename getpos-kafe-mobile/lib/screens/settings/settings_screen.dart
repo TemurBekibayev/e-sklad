@@ -164,48 +164,82 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Kafedagi lokal Wi-Fi kassa kompyuteri (masalan: http://192.168.1.5:4000/api)',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  Text(
+                    'Holat: ${settingsProv.serverStatusLabel}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: settingsProv.isServerOnline ? AppColors.success : AppColors.error,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      hintText: 'http://192.168.1.5:4000/api',
+                      hintText: 'http://192.168.1.12:4000/api',
                       prefixIcon: Icon(Icons.link, color: AppColors.textSecondary),
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isSaving
-                          ? null
-                          : () async {
-                              setState(() => _isSaving = true);
-                              await settingsProv.updateServerUrl(_urlController.text.trim());
-                              final online = await settingsProv.checkHealth();
-                              setState(() => _isSaving = false);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(online
-                                        ? 'Kassa serveriga ulanish muvaffaqiyatli!'
-                                        : 'Serverga ulanib bo\'lmadi. IP-manzilni tekshiring.'),
-                                    backgroundColor: online ? AppColors.success : AppColors.error,
-                                  ),
-                                );
-                              }
-                            },
-                      child: _isSaving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                            )
-                          : const Text('Saqlash va tekshirish'),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: settingsProv.isDiscovering
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.radar_rounded, size: 18),
+                          label: Text(settingsProv.isDiscovering ? 'Qidirilmoqda...' : 'Avtomatik topish'),
+                          onPressed: settingsProv.isDiscovering
+                              ? null
+                              : () async {
+                                  await settingsProv.autoDiscoverServer(force: true);
+                                  _urlController.text = settingsProv.serverUrl;
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(settingsProv.serverStatusLabel),
+                                        backgroundColor: settingsProv.isServerOnline ? AppColors.success : AppColors.warning,
+                                      ),
+                                    );
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isSaving
+                              ? null
+                              : () async {
+                                  setState(() => _isSaving = true);
+                                  await settingsProv.updateServerUrl(_urlController.text.trim());
+                                  final online = await settingsProv.checkHealth();
+                                  setState(() => _isSaving = false);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(online
+                                            ? 'Kassa serveriga ulanish muvaffaqiyatli!'
+                                            : 'Serverga ulanib bo\'lmadi. IP-manzilni tekshiring.'),
+                                        backgroundColor: online ? AppColors.success : AppColors.error,
+                                      ),
+                                    );
+                                  }
+                                },
+                          child: _isSaving
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Text('Saqlash'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
