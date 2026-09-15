@@ -14,6 +14,24 @@ import MenuView from './pages/MenuView';
 import MxikSettings from './pages/MxikSettings';
 import InventoryView from './pages/InventoryView';
 
+function isProductMatch(p, targetId) {
+  if (!p || targetId === undefined || targetId === null) return false;
+  const tStr = String(targetId).trim();
+  const tNum = parseInt(tStr.replace(/\D/g, ''), 10);
+
+  const pIdStr = String(p.id || '').trim();
+  const pProdIdStr = String(p.product_id || '').trim();
+  const pRawId = p.rawId !== undefined && p.rawId !== null ? String(p.rawId).trim() : '';
+  const pNum = typeof p.id === 'number' ? p.id : (p.rawId !== undefined ? Number(p.rawId) : parseInt(pIdStr.replace(/\D/g, ''), 10));
+
+  if (pIdStr && (pIdStr === tStr || pIdStr === `prod_${tNum}` || pIdStr === `prod_${tStr}`)) return true;
+  if (pProdIdStr && (pProdIdStr === tStr || pProdIdStr === `prod_${tNum}` || pProdIdStr === `prod_${tStr}`)) return true;
+  if (pRawId && (pRawId === tStr || Number(pRawId) === tNum)) return true;
+  if (!isNaN(pNum) && !isNaN(tNum) && pNum === tNum) return true;
+
+  return false;
+}
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
   // Always enforce PIN modal on app launch
@@ -236,19 +254,9 @@ export default function App() {
           } else if (ev === 'PRODUCT_ADDED') {
             setProducts((prev) => [data, ...prev]);
           } else if (ev === 'PRODUCT_DELETED') {
-            const delId = data?.id;
-            const numDelId = parseInt(String(delId).replace(/\D/g, ''), 10);
-            if (delId !== undefined) {
-              setProducts((prev) =>
-                prev.filter(
-                  (p) =>
-                    Number(p.id) !== Number(numDelId) &&
-                    Number(p.rawId) !== Number(numDelId) &&
-                    p.id !== delId &&
-                    p.product_id !== delId &&
-                    p.id !== numDelId
-                )
-              );
+            const delId = data?.id || data?.rawId;
+            if (delId !== undefined && delId !== null) {
+              setProducts((prev) => prev.filter((p) => !isProductMatch(p, delId)));
             }
           } else if (ev === 'PRODUCTS_UPDATED') {
             fetch('/api/menu')
@@ -444,16 +452,7 @@ export default function App() {
       const res = await fetch(`/api/products/${numericId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        setProducts((prev) =>
-          prev.filter(
-            (p) =>
-              Number(p.id) !== Number(numericId) &&
-              Number(p.rawId) !== Number(numericId) &&
-              p.id !== id &&
-              p.product_id !== id &&
-              p.id !== numericId
-          )
-        );
+        setProducts((prev) => prev.filter((p) => !isProductMatch(p, id)));
       }
       return data;
     } catch (err) {
