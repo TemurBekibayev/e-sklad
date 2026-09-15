@@ -117,7 +117,7 @@ export default function AddDishModal({ isOpen, onClose, categories = [], onProdu
           vat_percent: 12,
         });
       } else {
-        setError(data.message || 'Xatolik yuz berdi!');
+        setError(data.message || data.error || 'Xatolik yuz berdi!');
       }
     } catch (err) {
       setError('Server bilan aloqa uzildi: ' + err.message);

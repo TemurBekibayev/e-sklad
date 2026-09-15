@@ -968,8 +968,8 @@ app.post('/api/products', async (req, res) => {
     if (initialStock > 0) {
       await run(
         `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
-         VALUES (?, 'in', ?, 0, ?, ?, ?, 'Boshlang\'ich qoldiq', 'Admin')`,
-        [result.lastID, initialStock, initialStock, cost, cost * initialStock]
+         VALUES (?, 'in', ?, 0, ?, ?, ?, ?, ?)`,
+        [result.lastID, initialStock, initialStock, cost, cost * initialStock, "Boshlang'ich qoldiq", 'Admin']
       );
     }
 
@@ -984,9 +984,11 @@ app.post('/api/products', async (req, res) => {
       newProduct.image = resolveImageUrl(req, newProduct.image);
     }
     broadcast('PRODUCT_ADDED', newProduct);
+    broadcast('PRODUCTS_UPDATED', {});
     res.json({ success: true, product: newProduct });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Add product error:', err);
+    res.status(500).json({ success: false, error: err.message, message: err.message });
   }
 });
 
@@ -1037,7 +1039,8 @@ app.put('/api/products/:id', async (req, res) => {
     broadcast('PRODUCT_UPDATED', updated);
     res.json({ success: true, product: updated });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Update product error:', err);
+    res.status(500).json({ success: false, error: err.message, message: err.message });
   }
 });
 
