@@ -1,7 +1,9 @@
 import React from 'react';
 import { Printer, CheckCircle, X, ExternalLink, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function ReceiptModal({ receipt, onClose }) {
+  const { t, tr } = useLanguage();
   if (!receipt) return null;
 
   const handlePrint = () => {
@@ -178,14 +180,14 @@ export default function ReceiptModal({ receipt, onClose }) {
               className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
             >
               <Printer className="w-4 h-4" />
-              <span>Chop etish (80mm)</span>
+              <span>{t('receipt_print', 'Chop etish')} (80mm)</span>
             </button>
 
             <button
               onClick={onClose}
               className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm transition-all"
             >
-              Yopish
+              {t('receipt_close', 'Yopish')}
             </button>
           </div>
         </div>

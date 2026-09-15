@@ -8,6 +8,7 @@ import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
 import JetCafeMobileBasketsModal from '../components/JetCafeMobileBasketsModal';
 import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function JetCafePosView({
   tables = [],
@@ -30,6 +31,8 @@ export default function JetCafePosView({
   onDeleteCategory,
   onOpenManageTables,
 }) {
+  const { t, tr, lang } = useLanguage();
+
   // Active table state
   const currentTable = selectedTable || tables[0] || { id: 1, number: 1, name: 'STOL - 1', status: 'free' };
 
@@ -654,11 +657,11 @@ export default function JetCafePosView({
           {/* Table info bar */}
           <div className="bg-[#dfe5ee] border-b border-[#b0b9c7] px-2.5 py-1.5 font-bold text-slate-700 text-xs truncate flex items-center justify-between">
             <span>
-              Стол №STOL {currentTable.number} (Основной).{' '}
-              {currentTable.current_order_id ? `Заказ №${currentTable.current_order_id.slice(-4)}` : 'Новый заказ'}
+              {t('pos_table', 'Stol')} №{currentTable.number} ({tr(currentTable.hall || currentTable.name)}).{' '}
+              {currentTable.current_order_id ? `${t('pos_order_number', 'Buyurtma №')}${currentTable.current_order_id.slice(-4)}` : t('pos_new_order', 'Yangi buyurtma')}
             </span>
             <span className="text-[10px] text-slate-500">
-              {orderItems.length} поз.
+              {orderItems.length} {t('pcs', 'ta')}
             </span>
           </div>
 
@@ -667,9 +670,9 @@ export default function JetCafePosView({
             {/* Table Header Row */}
             <div className="grid grid-cols-12 bg-[#eef2f7] border-b border-[#b8c2d1] font-bold text-slate-700 py-1.5 px-2 text-[11px] sticky top-0 z-10 select-none">
               <span className="col-span-1 text-center">№</span>
-              <span className="col-span-6">Наименование</span>
-              <span className="col-span-2 text-center">Кол-во</span>
-              <span className="col-span-3 text-right">Цена</span>
+              <span className="col-span-6">{t('pos_item_name', 'Nomi')}</span>
+              <span className="col-span-2 text-center">{t('pos_item_qty', 'Miqdor')}</span>
+              <span className="col-span-3 text-right">{t('pos_item_price', 'Narx')}</span>
             </div>
 
             {/* Table Item Rows */}
@@ -677,8 +680,8 @@ export default function JetCafePosView({
               {orderItems.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 select-none">
                   <div className="text-2xl mb-1 opacity-40">🍽️</div>
-                  <p>Заказ пуст</p>
-                  <p className="text-[11px] mt-0.5 text-slate-400">Выберите блюда из меню справа</p>
+                  <p>{t('pos_cart_empty', 'Buyurtma bo\'sh')}</p>
+                  <p className="text-[11px] mt-0.5 text-slate-400">{t('pos_cart_hint', 'Menyudan taomlarni tanlang')}</p>
                 </div>
               ) : (
                 orderItems.map((item, index) => {
@@ -826,7 +829,7 @@ export default function JetCafePosView({
                 className="h-11 px-1 bg-gradient-to-b from-[#34a853] to-[#1e8e3e] hover:from-[#3bbb5c] hover:to-[#1a7f37] text-white border border-[#187532] rounded flex items-center justify-center gap-1 text-xs font-black shadow-md active:translate-y-[1px]"
               >
                 <span className="text-sm">✓</span>
-                <span>Оплата</span>
+                <span>{t('pos_pay_cash', 'To\'lov')}</span>
               </button>
 
               <button
@@ -835,11 +838,11 @@ export default function JetCafePosView({
                   if (selectedItemIndex !== null && orderItems[selectedItemIndex]) {
                     setIsOrderItemEditModalOpen(true);
                   } else {
-                    alert('Tahrirlash uchun ro\'yxatdan taomni tanlang!');
+                    alert(t('pos_select_item_hint', 'Tahrirlash uchun ro\'yxatdan taomni tanlang!'));
                   }
                 }}
                 className="h-11 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-xs font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
-                title="Tanlangan taom soni yoki narxini tahrirlash"
+                title={t('pos_order_items_edit', 'Tanlangan taom soni yoki narxini tahrirlash')}
               >
                 <span className="text-base">✏️</span>
               </button>
@@ -897,7 +900,7 @@ export default function JetCafePosView({
           <div className="p-2.5 bg-[#dfe5ee] flex flex-col gap-1.5 select-none">
             {/* Waiter Dropdown */}
             <div className="flex items-center gap-2">
-              <label className="text-[11px] font-semibold text-slate-600 w-16">Официант:</label>
+              <label className="text-[11px] font-semibold text-slate-600 w-16">{t('pos_waiter', 'Ofitsiant:')}</label>
               <select
                 value={selectedWaiter}
                 onChange={(e) => setSelectedWaiter(e.target.value)}
@@ -906,11 +909,11 @@ export default function JetCafePosView({
                 {staffUsers && staffUsers.length > 0 ? (
                   staffUsers.map((u) => (
                     <option key={u.id} value={u.name}>
-                      {u.name} ({u.role === 'admin' || u.role === 'manager' ? 'Boshqaruvchi' : u.role === 'waiter' || u.role === 'worker' ? 'Ofitsiant' : u.role === 'cook' ? 'Oshpaz' : 'Kassir'})
+                      {u.name} ({u.role === 'admin' || u.role === 'manager' ? t('role_manager', 'Boshqaruvchi') : u.role === 'waiter' || u.role === 'worker' ? t('role_waiter', 'Ofitsiant') : u.role === 'cook' ? t('role_cook', 'Oshpaz') : t('role_cashier', 'Kassir')})
                     </option>
                   ))
                 ) : (
-                  <option value={currentUser?.name || 'Xodim'}>{currentUser?.name || 'Xodim'}</option>
+                  <option value={currentUser?.name || t('role_waiter', 'Ofitsiant')}>{currentUser?.name || t('role_waiter', 'Ofitsiant')}</option>
                 )}
               </select>
             </div>
@@ -920,24 +923,24 @@ export default function JetCafePosView({
               {/* Left: Time and Subtotals */}
               <div className="space-y-0.5 text-[11px] text-slate-600">
                 <div className="flex gap-2">
-                  <span className="w-20">Время:</span>
+                  <span className="w-20">{t('kds_time', 'Vaqti:')}</span>
                   <span className="font-semibold text-slate-800">
                     {currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="w-20">Итого:</span>
+                  <span className="w-20">{t('pos_subtotal', 'Oraliq summa:')}</span>
                   <span className="font-semibold text-slate-800">{formatUZS(subtotal)}</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="w-20">Обслуга(10%):</span>
+                  <span className="w-20">{t('pos_service_fee', 'Xizmat haqi:')}</span>
                   <span className="font-semibold text-slate-800">{formatUZS(serviceFee)}</span>
                 </div>
               </div>
 
-              {/* Right: Big "К оплате" Amount */}
+              {/* Right: Big Total Amount */}
               <div className="text-right">
-                <div className="text-[11px] font-bold text-slate-600">К оплате:</div>
+                <div className="text-[11px] font-bold text-slate-600">{t('pos_total', 'Jami to\'lov:')}</div>
                 <div className="text-2xl font-black text-slate-900 tracking-tight">
                   {formatUZS(totalAmount)}
                 </div>
@@ -959,7 +962,7 @@ export default function JetCafePosView({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск..."
+                placeholder={t('pos_search_dish', 'Taom qidirish...')}
                 className="w-full pl-3 pr-8 py-1.5 text-xs bg-white border border-[#b8c2d1] rounded focus:outline-none focus:border-blue-500 shadow-inner"
               />
               <span className="absolute right-2.5 top-1.5 text-slate-400 text-sm">
@@ -979,7 +982,7 @@ export default function JetCafePosView({
           {/* Box 1: "Категории" (Categories) matching the video */}
           <div className="p-2 border-b border-[#b0b9c7] bg-[#eef1f6]">
             <div className="text-center font-bold text-[11px] text-slate-600 mb-1.5 uppercase tracking-wide">
-              Категории
+              {t('pos_categories', 'Kategoriyalar')}
             </div>
             
             {/* Category Cards Carousel / Grid */}
@@ -998,7 +1001,7 @@ export default function JetCafePosView({
                   🍽️
                 </div>
                 <div className="py-1 px-1 text-center font-bold text-[10px] uppercase truncate border-t border-slate-200">
-                  ВСЕ БЛЮДА
+                  {t('pos_all_categories', 'Barchasi')}
                 </div>
               </button>
 
@@ -1031,7 +1034,7 @@ export default function JetCafePosView({
                       )}
                     </div>
                     <div className="py-1 px-1 text-center font-bold text-[10px] uppercase tracking-wide truncate border-t border-slate-200 bg-white">
-                      {c.name}
+                      {tr(c.name)}
                     </div>
                   </button>
                 );
@@ -1042,7 +1045,7 @@ export default function JetCafePosView({
           {/* Box 2: "Меню" (Dishes Grid) matching jetcafe_frame_1.jpg */}
           <div className="flex-1 flex flex-col min-h-0 bg-[#eef1f6]">
             <div className="text-center font-bold text-[11px] text-slate-600 py-1 bg-[#dfe5ee] border-b border-[#b0b9c7] uppercase tracking-wide">
-              Меню
+              {t('tab_menu', 'Menyu')}
             </div>
 
             {/* 4-column cards grid */}
@@ -1050,10 +1053,7 @@ export default function JetCafePosView({
               {filteredProducts.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8">
                   <div className="text-3xl mb-2 opacity-50">🔍</div>
-                  <p className="font-semibold text-sm">Таомлар топилмади</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Категорияни ўзгартиринг ёки янги таом қўшинг
-                  </p>
+                  <p className="font-semibold text-sm">{t('pos_no_dishes', 'Taomlar topilmadi')}</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
@@ -1075,7 +1075,7 @@ export default function JetCafePosView({
 
                       {/* Workshop Indicator Tag */}
                       <div className="absolute top-1.5 left-1.5 text-[9px] text-slate-400 font-semibold">
-                        {dish.workshop || 'Кухня'}
+                        {tr(dish.workshop || t('tab_kitchen', 'Oshxona'))}
                       </div>
 
                       {/* Center Food Photo */}
@@ -1093,7 +1093,7 @@ export default function JetCafePosView({
 
                       {/* Dish Name on Bottom matching JetCafe typography */}
                       <div className="text-center font-bold text-[11px] text-slate-900 uppercase tracking-tight truncate border-t border-slate-100 pt-1">
-                        {dish.name}
+                        {tr(dish.name)}
                       </div>
                     </div>
                   ))}

@@ -17,8 +17,10 @@ import {
   Boxes,
   DollarSign
 } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function InventoryView({ products, onRefreshProducts }) {
+  const { t, tr } = useLanguage();
   const [inventoryItems, setInventoryItems] = useState([]);
   const [summary, setSummary] = useState({ totalItems: 0, totalStockValue: 0, lowStockCount: 0, outOfStockCount: 0 });
   const [loading, setLoading] = useState(false);
@@ -213,10 +215,10 @@ export default function InventoryView({ products, onRefreshProducts }) {
             </span>
             <div>
               <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                Sklad va Omborxona Boshqaruvi
+                {t('inv_title', 'Sklad va Mahsulotlar Qoldig\'i')}
               </h1>
               <p className="text-xs text-slate-500 font-medium">
-                Mahsulot qoldiqlari, kirim qilish (prihod), inventarizatsiya va hisobdan chiqarish
+                {t('inv_subtitle', 'Mahsulot qoldiqlari, kirim qilish, inventarizatsiya va hisobdan chiqarish')}
               </p>
             </div>
           </div>
@@ -228,7 +230,7 @@ export default function InventoryView({ products, onRefreshProducts }) {
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/25 active:scale-95 transition-all"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>➕ Yangi Kirim (Prihod)</span>
+            <span>{t('inv_income', '➕ Yangi Kirim')}</span>
           </button>
 
           <button

@@ -20,6 +20,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import TableHallManagementModal from '../components/TableHallManagementModal';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function WaiterView({ 
   tables = [], 
@@ -34,6 +35,7 @@ export default function WaiterView({
   onRefreshTables,
   onRefreshHalls
 }) {
+  const { t, tr } = useLanguage();
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedHall, setSelectedHall] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(0); // 0 = Barchasi
@@ -746,18 +748,18 @@ export default function WaiterView({
           {existingItems.length > 0 && cart.length > 0 && (
             <div className="space-y-1 text-xs pb-1 border-b border-slate-100">
               <div className="flex justify-between text-slate-500">
-                <span>Avvalgi hisob:</span>
+                <span>{t('pos_subtotal', 'Avvalgi hisob:')}</span>
                 <span className="font-bold">{formatPrice(existingOrderTotal)} UZS</span>
               </div>
               <div className="flex justify-between text-orange-600 font-bold">
-                <span>Yangi qo'shilgan:</span>
+                <span>{t('pos_new_order', 'Yangi qo\'shilgan:')}</span>
                 <span>+{formatPrice(newCartTotal)} UZS</span>
               </div>
             </div>
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-slate-500 text-xs font-semibold">Jami to'lov:</span>
+            <span className="text-slate-500 text-xs font-semibold">{t('pos_total', 'Jami to\'lov:')}</span>
             <span className="text-2xl font-black text-orange-600">
               {formatPrice(grandTotal)} <span className="text-xs font-normal text-slate-500">UZS</span>
             </span>
@@ -771,7 +773,7 @@ export default function WaiterView({
               className="w-full py-3.5 rounded-2xl bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-black text-sm shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               <Send className="w-4 h-4" />
-              <span>{isSending ? 'Yuborilmoqda...' : `OSHXONAGA YUBORISH (+${formatPrice(newCartTotal)} UZS)`}</span>
+              <span>{isSending ? t('pin_checking', 'Yuborilmoqda...') : `${t('pos_send_kitchen', 'OSHXONAGA YUBORISH')} (+${formatPrice(newCartTotal)} UZS)`}</span>
             </button>
           ) : (
             selectedTable.status === 'busy' && (
@@ -780,7 +782,7 @@ export default function WaiterView({
                 className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition"
               >
                 <BellRing className="w-4 h-4" />
-                <span>MIJOZ UCHUN HISOB SO'RASH (PRE-CHEK)</span>
+                <span>{t('pos_print_precheck', 'MIJOZ UCHUN HISOB SO\'RASH (PRE-CHEK)')}</span>
               </button>
             )
           )}

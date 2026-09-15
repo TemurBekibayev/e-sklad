@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Lock, Delete, User, Building2, RefreshCw } from 'lucide-react';
+import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 
 export default function PinModal({ onLogin, roleHint = 'kassir' }) {
+  const { t } = useLanguage();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -75,7 +77,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
 
   const handleSubmit = async (enteredPin = pin, userToLogin = selectedUser) => {
     if (!enteredPin) {
-      setError('PIN-kodni kiriting');
+      setError(t('pin_enter_pin', 'PIN-kodni kiriting'));
       return;
     }
     setLoading(true);
@@ -96,12 +98,12 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
       if (data.success) {
         onLogin(data.user);
       } else {
-        const errMsg = Array.isArray(data.message) ? data.message.join(' ') : (data.message || "Noto'g'ri PIN-kod!");
+        const errMsg = Array.isArray(data.message) ? data.message.join(' ') : (data.message || t('pin_wrong', "Noto'g'ri PIN-kod!"));
         setError(errMsg);
         setPin('');
       }
     } catch (err) {
-      setError('Server bilan aloqa uzilgan');
+      setError(t('pin_server_error', 'Server bilan aloqa uzilgan'));
     } finally {
       setLoading(false);
     }
@@ -131,17 +133,22 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
   }, [pin, selectedUser]);
 
   const getRoleLabel = (role) => {
-    if (role === 'admin' || role === 'manager') return 'Boshqaruvchi';
-    if (role === 'waiter' || role === 'worker') return 'Ofitsiant';
-    if (role === 'cook') return 'Oshpaz';
-    if (role === 'cashier') return 'Kassir';
+    if (role === 'admin' || role === 'manager') return t('role_manager', 'Boshqaruvchi');
+    if (role === 'waiter' || role === 'worker') return t('role_waiter', 'Ofitsiant');
+    if (role === 'cook') return t('role_cook', 'Oshpaz');
+    if (role === 'cashier') return t('role_cashier', 'Kassir');
     return role;
   };
 
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center">
+      <div className="relative bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl text-center">
         
+        {/* Language switcher top right */}
+        <div className="absolute top-5 right-5 z-10">
+          <LanguageSwitcher />
+        </div>
+
         {/* Top Logo / Icon */}
         <div className="w-14 h-14 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-amber-500/10">
           <Lock className="w-7 h-7" />
@@ -155,7 +162,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-white mb-1">GetPOS Kafe Avtorizatsiya</h2>
+        <h2 className="text-2xl font-bold text-white mb-1">{t('pin_modal_title', 'GetPOS Kafe Avtorizatsiya')}</h2>
 
         {/* Fixed Store Badge (Multi-tenant isolated) */}
         <div className="mb-4">
@@ -172,7 +179,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
               {selectedUser.name} ({getRoleLabel(selectedUser.role)})
             </span>
           ) : (
-            'PIN-kodingizni kiriting yoki xodimni tanlang'
+            t('pin_hint_default', 'PIN-kodingizni kiriting yoki xodimni tanlang')
           )}
         </p>
 
@@ -180,7 +187,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         {loadingStaff ? (
           <div className="py-2 text-xs text-slate-500 flex items-center justify-center gap-1.5 mb-3">
             <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
-            <span>Xodimlar yuklanmoqda...</span>
+            <span>{t('pin_loading_staff', 'Xodimlar yuklanmoqda...')}</span>
           </div>
         ) : users.length > 0 ? (
           <div className="flex flex-wrap justify-center gap-1.5 mb-4 max-h-24 overflow-y-auto p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/80">
@@ -211,7 +218,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           </div>
         ) : (
           <div className="py-1 text-xs text-slate-500 mb-3">
-            Ushbu filialda faol xodimlar topilmadi
+            {t('pin_no_staff', 'Ushbu filialda faol xodimlar topilmadi')}
           </div>
         )}
 
@@ -276,7 +283,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           disabled={loading || pin.length === 0}
           className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 text-slate-950 font-black text-base shadow-lg shadow-amber-500/25 transition-all active:scale-[0.98]"
         >
-          {loading ? 'Tekshirilmoqda...' : 'TIZIMGA KIRISH'}
+          {loading ? t('pin_checking', 'Tekshirilmoqda...') : t('pin_login_btn', 'TIZIMGA KIRISH')}
         </button>
       </div>
     </div>
