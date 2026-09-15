@@ -1050,12 +1050,22 @@ app.delete(['/api/products/:id', '/products/:id'], async (req, res) => {
     const { id } = req.params;
     const numericId = parseInt(String(id).replace(/\D/g, ''), 10);
     const targetId = !isNaN(numericId) && numericId > 0 ? numericId : id;
+    const strProdId = `prod_${targetId}`;
 
-    // 1. Foreign Key cheklovlarini tozalash (stock_movements jadvalidan tozalash)
-    await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ?`, [targetId, id]);
+    // 1. stock_movements jadvalidan tegishli qoldiq yozuvlarini o'chirish
+    try {
+      await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ? OR product_id = ?`, [targetId, id, strProdId]);
+    } catch (smErr) {
+      console.warn('Stock movements delete warning:', smErr.message);
+    }
 
-    // 2. Mahsulotni o'chirish
-    await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
+    // 2. Mahsulotni o'chirish (Hard delete, agar cheklov bo'lsa Soft delete is_available = 0)
+    try {
+      await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
+    } catch (dbErr) {
+      console.warn('Hard delete failed, fallback to soft delete:', dbErr.message);
+      await run(`UPDATE products SET is_available = 0 WHERE id = ? OR id = ?`, [targetId, id]);
+    }
 
     broadcast('PRODUCT_DELETED', { id: targetId, rawId: targetId });
     broadcast('PRODUCTS_UPDATED', {});
@@ -1172,6 +1182,7 @@ app.get('/api/inventory', async (req, res) => {
       SELECT p.*, c.name as category_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.is_available = 1
       ORDER BY p.name ASC
     `);
 
