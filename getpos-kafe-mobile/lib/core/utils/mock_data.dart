@@ -12,119 +12,41 @@ class MockData {
       ];
 
   static List<Hall> get halls => [
-        Hall(id: '1', name: 'Asosiy zal', orderIndex: 0),
-        Hall(id: '2', name: 'Yozgi Terassa', orderIndex: 1),
-        Hall(id: '3', name: 'VIP Xonalar', orderIndex: 2),
+        Hall(id: '1', name: 'Asosiy Zal', orderIndex: 1),
+        Hall(id: '2', name: 'Zal 1', orderIndex: 2),
+        Hall(id: '3', name: 'Zal 2', orderIndex: 3),
+        Hall(id: '4', name: '2-Qavat Zal', orderIndex: 4),
+        Hall(id: '5', name: 'VIP Xona', orderIndex: 5),
       ];
 
   static List<RestaurantTable> get tables => [
-        // Asosiy zal
-        RestaurantTable(
-          id: 't1',
-          hallId: '1',
-          number: 'Stol 1',
-          seats: 4,
-          status: TableStatus.busy,
-          activeOrderId: 'ord_1',
-          activeWaiterName: 'Alisher Rahimov',
-          guestCount: 3,
-          totalAmount: 245000,
-          openedAt: DateTime.now().subtract(const Duration(minutes: 35)),
-        ),
-        RestaurantTable(
-          id: 't2',
-          hallId: '1',
-          number: 'Stol 2',
-          seats: 4,
-          status: TableStatus.free,
-        ),
-        RestaurantTable(
-          id: 't3',
-          hallId: '1',
-          number: 'Stol 3',
-          seats: 6,
-          status: TableStatus.billRequested,
-          activeOrderId: 'ord_2',
-          activeWaiterName: 'Malika Karimova',
-          guestCount: 5,
-          totalAmount: 480000,
-          openedAt: DateTime.now().subtract(const Duration(minutes: 75)),
-        ),
-        RestaurantTable(
-          id: 't4',
-          hallId: '1',
-          number: 'Stol 4',
-          seats: 2,
-          status: TableStatus.free,
-        ),
-        RestaurantTable(
-          id: 't5',
-          hallId: '1',
-          number: 'Stol 5',
-          seats: 8,
-          status: TableStatus.reserved,
-        ),
-        RestaurantTable(
-          id: 't6',
-          hallId: '1',
-          number: 'Stol 6',
-          seats: 4,
-          status: TableStatus.busy,
-          activeOrderId: 'ord_3',
-          activeWaiterName: 'Jamshid Umarov',
-          guestCount: 2,
-          totalAmount: 135000,
-          openedAt: DateTime.now().subtract(const Duration(minutes: 18)),
-        ),
+        // Asosiy Zal (1-5)
+        RestaurantTable(id: '1', hallId: 'Asosiy Zal', hallName: 'Asosiy Zal', number: 'STOL - 1', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '2', hallId: 'Asosiy Zal', hallName: 'Asosiy Zal', number: 'STOL - 2', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '3', hallId: 'Asosiy Zal', hallName: 'Asosiy Zal', number: 'STOL - 3', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '4', hallId: 'Asosiy Zal', hallName: 'Asosiy Zal', number: 'STOL - 4', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '5', hallId: 'Asosiy Zal', hallName: 'Asosiy Zal', number: 'STOL - 5', seats: 4, status: TableStatus.free),
 
-        // Terassa
-        RestaurantTable(
-          id: 't7',
-          hallId: '2',
-          number: 'Terassa 1',
-          seats: 4,
-          status: TableStatus.free,
-        ),
-        RestaurantTable(
-          id: 't8',
-          hallId: '2',
-          number: 'Terassa 2',
-          seats: 4,
-          status: TableStatus.busy,
-          activeOrderId: 'ord_4',
-          activeWaiterName: 'Alisher Rahimov',
-          guestCount: 4,
-          totalAmount: 310000,
-          openedAt: DateTime.now().subtract(const Duration(minutes: 50)),
-        ),
-        RestaurantTable(
-          id: 't9',
-          hallId: '2',
-          number: 'Terassa 3',
-          seats: 6,
-          status: TableStatus.free,
-        ),
+        // Zal 1 (6-10)
+        RestaurantTable(id: '6', hallId: 'Zal 1', hallName: 'Zal 1', number: 'STOL - 6', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '7', hallId: 'Zal 1', hallName: 'Zal 1', number: 'STOL - 7', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '8', hallId: 'Zal 1', hallName: 'Zal 1', number: 'STOL - 8', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '9', hallId: 'Zal 1', hallName: 'Zal 1', number: 'STOL - 9', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '10', hallId: 'Zal 1', hallName: 'Zal 1', number: 'STOL - 10', seats: 4, status: TableStatus.free),
 
-        // VIP
-        RestaurantTable(
-          id: 't10',
-          hallId: '3',
-          number: 'VIP 1 (Sharq)',
-          seats: 12,
-          status: TableStatus.busy,
-          activeOrderId: 'ord_5',
-          activeWaiterName: 'Alisher Rahimov',
-          guestCount: 10,
-          totalAmount: 1250000,
-          openedAt: DateTime.now().subtract(const Duration(minutes: 90)),
-        ),
-        RestaurantTable(
-          id: 't11',
-          hallId: '3',
-          number: 'VIP 2 (Yevropa)',
-          seats: 10,
-          status: TableStatus.free,
-        ),
+        // Zal 2 (11-15)
+        RestaurantTable(id: '11', hallId: 'Zal 2', hallName: 'Zal 2', number: 'STOL - 11', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '12', hallId: 'Zal 2', hallName: 'Zal 2', number: 'STOL - 12', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '13', hallId: 'Zal 2', hallName: 'Zal 2', number: 'STOL - 13', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '14', hallId: 'Zal 2', hallName: 'Zal 2', number: 'STOL - 14', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '15', hallId: 'Zal 2', hallName: 'Zal 2', number: 'STOL - 15', seats: 4, status: TableStatus.free),
+
+        // 2-Qavat Zal (16-20)
+        RestaurantTable(id: '16', hallId: '2-Qavat Zal', hallName: '2-Qavat Zal', number: 'STOL - 16', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '17', hallId: '2-Qavat Zal', hallName: '2-Qavat Zal', number: 'STOL - 17', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '18', hallId: '2-Qavat Zal', hallName: '2-Qavat Zal', number: 'STOL - 18', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '19', hallId: '2-Qavat Zal', hallName: '2-Qavat Zal', number: 'STOL - 19', seats: 4, status: TableStatus.free),
+        RestaurantTable(id: '20', hallId: '2-Qavat Zal', hallName: '2-Qavat Zal', number: 'STOL - 20', seats: 4, status: TableStatus.free),
       ];
 
   static List<Category> get categories => [
