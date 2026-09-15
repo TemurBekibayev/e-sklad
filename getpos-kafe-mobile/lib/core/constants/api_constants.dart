@@ -1,6 +1,6 @@
 class ApiConstants {
   // Standart Kassa Server Manzili (Lokal Wi-Fi yoki Cloud)
-  static const String defaultBaseUrl = 'http://192.168.1.5:4000/api';
+  static const String defaultBaseUrl = 'http://192.168.1.12:4000/api';
   static const String fallbackBaseUrl = 'https://getpos.uz/api';
 
   // Auth: POST /api/auth/login { "login": "...", "password": "..." }

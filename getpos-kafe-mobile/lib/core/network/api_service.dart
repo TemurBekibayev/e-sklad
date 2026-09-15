@@ -58,9 +58,9 @@ class ApiService {
     if (useMock) {
       await Future.delayed(const Duration(milliseconds: 300));
       if ((login == 'bekzod' && password == 'mypassword123') ||
-          (login == 'akbar' && password == '3333') ||
+          ((login == 'akbar' || login == 'akbar@getpos.uz') && (password == '3333' || password == '1234' || password == '123456')) ||
           (login == 'demo' && password == '1234') ||
-          (password == '1234' || password == '1111' || password == '2222' || password == '3333')) {
+          (password == '1234' || password == '123456' || password == '1111' || password == '2222' || password == '3333')) {
         final waiter = Waiter(
           id: 'usr_2',
           name: login.isNotEmpty ? login : 'Bekzod Test',
@@ -123,7 +123,7 @@ class ApiService {
     } catch (_) {}
 
     // Fallback: Offline/Demo login
-    if (login == 'bekzod' || login == 'akbar' || login == 'demo' || password == '1234') {
+    if (login == 'bekzod' || login == 'akbar' || login == 'akbar@getpos.uz' || login == 'demo' || password == '1234' || password == '123456') {
       final waiter = Waiter(
         id: 'usr_2',
         name: login.isNotEmpty ? login : 'Bekzod Test',
