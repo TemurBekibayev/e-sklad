@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.utils.translation import gettext_lazy as _
 from django.db import models
 from django.db.models import Q
-from .models import Tenant, AuditLog, UserRole
+from .models import Tenant, AuditLog, UserRole, SubscriptionPayment
 
 User = get_user_model()
 
@@ -132,20 +132,40 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+
+    class Meta:
+        model = SubscriptionPayment
+        fields = [
+            'id', 'tenant', 'tenant_name', 'amount', 'months_paid',
+            'paid_from', 'paid_until', 'payment_method', 'payment_date',
+            'notes', 'created_by', 'created_by_name', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'created_by_name', 'tenant_name']
+
+
 class TenantSerializer(serializers.ModelSerializer):
     users_count = serializers.IntegerField(source='users.count', read_only=True)
     products_count = serializers.SerializerMethodField()
     today_sales = serializers.SerializerMethodField()
     total_debts = serializers.SerializerMethodField()
+    is_subscription_active = serializers.BooleanField(read_only=True)
+    days_left = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Tenant
         fields = [
-            'id', 'name', 'address', 'status', 'settings', 
+            'id', 'name', 'address', 'status', 'settings',
+            'subscription_monthly_fee', 'sms_price_per_unit',
+            'paid_until', 'auto_freeze_on_expiry', 'last_payment_date',
+            'last_payment_amount', 'freeze_reason',
+            'is_subscription_active', 'days_left',
             'users_count', 'products_count', 'today_sales', 'total_debts',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_subscription_active', 'days_left']
 
     def get_products_count(self, obj):
         try:

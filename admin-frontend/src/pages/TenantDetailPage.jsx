@@ -4,8 +4,16 @@ import {
   Package, 
   DollarSign, 
   Users, 
-  AlertTriangle 
+  AlertTriangle,
+  CreditCard,
+  Calendar,
+  ShieldCheck,
+  ShieldAlert,
+  CheckCircle2,
+  Clock,
+  Plus
 } from 'lucide-react';
+import PaymentModal from '../components/PaymentModal';
 import { 
   BarChart, 
   Bar, 
@@ -18,10 +26,12 @@ import {
 import { apiFetch } from '../utils/api';
 
 export default function TenantDetailPage({ tenantId, onBack }) {
-  const [activeTab, setActiveTab] = useState('workers');
+  const [activeTab, setActiveTab] = useState('billing');
   const [tenant, setTenant] = useState(null);
   const [workers, setWorkers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [subscriptionPayments, setSubscriptionPayments] = useState([]);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -43,10 +53,31 @@ export default function TenantDetailPage({ tenantId, onBack }) {
       const productsData = await apiFetch(`/products/?tenant_id=${tenantId}`);
       const productsList = productsData.results || (Array.isArray(productsData) ? productsData : []);
       setProducts(productsList);
+
+      try {
+        const historyData = await apiFetch(`/tenants/${tenantId}/subscription-history/`);
+        setSubscriptionPayments(Array.isArray(historyData) ? historyData : []);
+      } catch (e) {
+        setSubscriptionPayments([]);
+      }
     } catch (err) {
       console.error('Do\'kon tafsilotlarini yuklashda xatolik:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleStatus = async () => {
+    if (!tenant) return;
+    const newStatus = tenant.status === 'active' ? 'frozen' : 'active';
+    try {
+      await apiFetch(`/tenants/${tenant.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
+      });
+      loadTenantData();
+    } catch (err) {
+      alert(err.message);
     }
   };
 
@@ -64,6 +95,7 @@ export default function TenantDetailPage({ tenantId, onBack }) {
   };
 
   const tabs = [
+    { id: 'billing', label: 'Obuna va To\'lovlar' },
     { id: 'workers', label: 'Xodimlar' },
     { id: 'products', label: 'Mahsulotlar' },
     { id: 'debts', label: 'Qarz daftari' },
@@ -181,6 +213,190 @@ export default function TenantDetailPage({ tenantId, onBack }) {
           ))}
         </nav>
       </div>
+
+      {/* Tab 1: Obuna va To'lovlar */}
+      {activeTab === 'billing' && (
+        <div className="space-y-6">
+          {/* Subscription Status Card */}
+          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div className="flex items-center gap-3.5">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md ${
+                  tenant?.status === 'active' && tenant?.is_subscription_active !== false
+                    ? 'bg-emerald-600 shadow-emerald-600/20'
+                    : 'bg-rose-600 shadow-rose-600/20'
+                }`}>
+                  <CreditCard className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black text-slate-900">Oylik Obuna & To'lov Holati</h3>
+                    {tenant?.status === 'active' ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        🟢 Faol
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        🔴 Muzlatilgan (Xizmat to'xtatilgan)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    {tenant?.status === 'active'
+                      ? "Do'kon barcha xizmatlardan, kassa va mobil ilovalardan to'liq foydalanmoqda"
+                      : "Do'kon oylik to'lov muddati tugaganligi sababli bloklangan"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={handleToggleStatus}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition ${
+                    tenant?.status === 'active'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  {tenant?.status === 'active' ? '🔒 Do\'konni Muzlatish' : '🔓 Blokdan Ochish'}
+                </button>
+
+                <button
+                  onClick={() => setIsPaymentModalOpen(true)}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-lg shadow-blue-600/20 active:scale-95 transition flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>➕ To'lov Qabul Qilish & Uzaytirish</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Detail Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-xs text-slate-500 font-semibold block mb-1">To'langan muddat:</span>
+                <div className="text-lg font-black text-slate-900 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span>{tenant?.paid_until ? new Date(tenant.paid_until).toLocaleDateString('ru-RU') : "Belgilanmagan"}</span>
+                </div>
+                <span className="text-[11px] font-bold text-slate-400 mt-1 block">
+                  {tenant?.paid_until ? (
+                    tenant.days_left >= 0 ? (
+                      <span className="text-emerald-600">{tenant.days_left} kun qoldi</span>
+                    ) : (
+                      <span className="text-rose-600">Muddati o'tgan (Qarzdor)</span>
+                    )
+                  ) : "Cheksiz / Sinov"}
+                </span>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-xs text-slate-500 font-semibold block mb-1">Oylik abonent to'lovi:</span>
+                <div className="text-lg font-black text-blue-600">
+                  {tenant?.subscription_monthly_fee ? parseFloat(tenant.subscription_monthly_fee).toLocaleString('ru-RU') : '250 000'} <span className="text-xs font-bold text-slate-500">so'm/oy</span>
+                </div>
+                <span className="text-[11px] font-medium text-slate-400 mt-1 block">Standart tarif</span>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-xs text-slate-500 font-semibold block mb-1">Oxirgi to'lov:</span>
+                <div className="text-lg font-black text-slate-900">
+                  {tenant?.last_payment_amount ? `${parseFloat(tenant.last_payment_amount).toLocaleString('ru-RU')} so'm` : "-"}
+                </div>
+                <span className="text-[11px] font-medium text-slate-400 mt-1 block">
+                  {tenant?.last_payment_date ? new Date(tenant.last_payment_date).toLocaleDateString('ru-RU') : "To'lovlar yo'q"}
+                </span>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <span className="text-xs text-slate-500 font-semibold block mb-1">Avtomatik bloklash:</span>
+                <div className="text-lg font-black text-emerald-600 flex items-center gap-1.5">
+                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                  <span>{tenant?.auto_freeze_on_expiry !== false ? "Faol" : "O'chirilgan"}</span>
+                </div>
+                <span className="text-[11px] font-medium text-slate-400 mt-1 block">Muddati o'tsa bloklaydi</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment History Table */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-black text-slate-900">Obuna To'lovlari Tarixi</h3>
+              </div>
+              <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                {subscriptionPayments.length} ta to'lov
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="py-3 px-4">TO'LOV VAQTI</th>
+                    <th className="py-3 px-4">SUMMA</th>
+                    <th className="py-3 px-4">DAVR (OY)</th>
+                    <th className="py-3 px-4">TO'LANGAN MUDDAT</th>
+                    <th className="py-3 px-4">TO'LOV USULI</th>
+                    <th className="py-3 px-4">QABUL QILDI</th>
+                    <th className="py-3 px-4">IZOH</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
+                  {subscriptionPayments.map((p) => {
+                    const methodLabels = {
+                      cash: '💵 Naqd',
+                      card: '💳 Karta',
+                      bank_transfer: '🏦 Bank',
+                      click: '📱 Click',
+                      payme: '📱 Payme',
+                      admin: '⚙️ Admin'
+                    };
+
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50/60 transition">
+                        <td className="py-3.5 px-4 font-semibold text-slate-900">
+                          {p.payment_date ? new Date(p.payment_date).toLocaleString('ru-RU') : '-'}
+                        </td>
+                        <td className="py-3.5 px-4 font-black text-blue-600">
+                          {parseFloat(p.amount || 0).toLocaleString('ru-RU')} so'm
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">
+                          {p.months_paid} oy
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-lg text-xs">
+                            {p.paid_until ? new Date(p.paid_until).toLocaleDateString('ru-RU') : '-'} gacha
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs font-bold text-slate-700">
+                          {methodLabels[p.payment_method] || p.payment_method}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-500 font-medium text-xs">
+                          {p.created_by_name || 'Admin'}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-500 text-xs">
+                          {p.notes || '-'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {subscriptionPayments.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-slate-400 font-medium text-xs">
+                        Hozircha to'lovlar tarixi mavjud emas.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab 2: Xodimlar */}
       {activeTab === 'workers' && (
@@ -316,6 +532,14 @@ export default function TenantDetailPage({ tenantId, onBack }) {
           </div>
         </div>
       )}
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        tenant={tenant}
+        onPaymentSuccess={() => loadTenantData()}
+      />
     </div>
   );
 }

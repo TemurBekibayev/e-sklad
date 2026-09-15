@@ -1,17 +1,25 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import Tenant, User, AuditLog
+from .models import Tenant, User, AuditLog, SubscriptionPayment
 
 @admin.register(Tenant)
 class TenantAdmin(admin.ModelAdmin):
-    list_display = ('name', 'status', 'address', 'created_at', 'users_count')
-    list_filter = ('status', 'created_at')
+    list_display = ('name', 'status', 'paid_until', 'subscription_monthly_fee', 'auto_freeze_on_expiry', 'address', 'created_at', 'users_count')
+    list_filter = ('status', 'auto_freeze_on_expiry', 'created_at')
     search_fields = ('name', 'address')
     readonly_fields = ('id', 'created_at', 'updated_at')
 
     def users_count(self, obj):
         return obj.users.count()
     users_count.short_description = "Xodimlar soni"
+
+
+@admin.register(SubscriptionPayment)
+class SubscriptionPaymentAdmin(admin.ModelAdmin):
+    list_display = ('payment_date', 'tenant', 'amount', 'months_paid', 'paid_until', 'payment_method', 'created_by')
+    list_filter = ('payment_method', 'payment_date', 'tenant')
+    search_fields = ('tenant__name', 'notes')
+    readonly_fields = ('id', 'created_at')
 
 
 @admin.register(User)
