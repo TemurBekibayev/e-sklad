@@ -9,12 +9,13 @@ from django.utils import timezone
 from django.db import models as dj_models
 from drf_spectacular.utils import extend_schema
 
-from .models import Tenant, AuditLog, UserRole
+from .models import Tenant, AuditLog, UserRole, SubscriptionPayment
 from .serializers import (
     CustomTokenObtainPairSerializer,
     TenantSerializer,
     UserSerializer,
-    AuditLogSerializer
+    AuditLogSerializer,
+    SubscriptionPaymentSerializer
 )
 from .permissions import IsPlatformAdmin, IsManager, IsTenantActive
 
@@ -59,15 +60,18 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = User.objects.all()
-        tenant_id = self.request.query_params.get('tenant_id')
-        
-        if tenant_id:
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return User.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return User.objects.filter(tenant_id=tenant_id)
+            return User.objects.all()
+
+        if user.tenant:
+            return User.objects.filter(tenant=user.tenant)
+        return User.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -111,6 +115,19 @@ class TenantViewSet(viewsets.ModelViewSet):
             return Tenant.objects.filter(id=user.tenant.id)
         return Tenant.objects.none()
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        for tenant in queryset:
+            tenant.check_and_update_subscription(save=True)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.check_and_update_subscription(save=True)
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
     def create(self, request, *args, **kwargs):
         name = request.data.get('name')
         address = request.data.get('address', '')
@@ -119,6 +136,8 @@ class TenantViewSet(viewsets.ModelViewSet):
         manager_phone = request.data.get('manager_phone', '')
         manager_pin = request.data.get('manager_pin')
         manager_password = request.data.get('manager_password')
+        subscription_months = int(request.data.get('subscription_months', 1))
+        subscription_fee = request.data.get('subscription_monthly_fee', 250000.0)
 
         if not name or not manager_name or not manager_pin:
             return Response({'detail': "Do'kon nomi, manager ismi va PIN-kodi kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
@@ -127,11 +146,25 @@ class TenantViewSet(viewsets.ModelViewSet):
             return Response({'detail': "PIN-kod 4 xonali son bo'lishi shart."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            import calendar
+            from datetime import date
+            today = timezone.now().date()
+            month = today.month - 1 + subscription_months
+            year = today.year + month // 12
+            month = month % 12 + 1
+            day = min(today.day, calendar.monthrange(year, month)[1])
+            initial_paid_until = date(year, month, day)
+
             with dj_transaction.atomic():
+                from decimal import Decimal
                 tenant = Tenant.objects.create(
                     name=name,
                     address=address,
                     status=TenantStatus.ACTIVE,
+                    paid_until=initial_paid_until,
+                    subscription_monthly_fee=Decimal(str(subscription_fee)),
+                    last_payment_date=timezone.now(),
+                    last_payment_amount=Decimal(str(subscription_fee)) * subscription_months,
                     settings={
                         'max_worker_finalize_amount': 1000000.0,
                         'allow_negative_stock': False,
@@ -152,10 +185,148 @@ class TenantViewSet(viewsets.ModelViewSet):
                     manager.set_password(manager_password)
                 manager.save()
 
+                SubscriptionPayment.objects.create(
+                    tenant=tenant,
+                    amount=Decimal(str(subscription_fee)) * subscription_months,
+                    months_paid=subscription_months,
+                    paid_from=today,
+                    paid_until=initial_paid_until,
+                    payment_method='admin',
+                    notes="Yangi do'kon ro'yxatdan o'tkazilganda dastlabki obuna",
+                    created_by=request.user if request.user.is_authenticated else None
+                )
+
             serializer = self.get_serializer(tenant)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(responses={200: dict})
+    @action(detail=True, methods=['post'], url_path='record-payment', permission_classes=[permissions.IsAuthenticated, IsPlatformAdmin])
+    def record_payment(self, request, pk=None):
+        """
+        Do'kon oylik to'lovini qabul qilish:
+        - Yangi to'langan muddatni belgilaydi
+        - Do'konni darhol ACTIVE (blokdan ochilgan) holatiga keltiradi
+        - SubscriptionPayment jadvaliga yozadi
+        """
+        tenant = self.get_object()
+        amount_raw = request.data.get('amount')
+        months_raw = request.data.get('months', 1)
+        payment_method = request.data.get('payment_method', 'cash')
+        notes = request.data.get('notes', '')
+        custom_paid_until = request.data.get('custom_paid_until')
+
+        import calendar
+        from datetime import date, datetime
+        from decimal import Decimal
+
+        try:
+            months = int(months_raw)
+            if months <= 0:
+                months = 1
+        except (ValueError, TypeError):
+            months = 1
+
+        if amount_raw is not None:
+            try:
+                amount = Decimal(str(amount_raw))
+            except Exception:
+                amount = (tenant.subscription_monthly_fee or Decimal('250000.00')) * months
+        else:
+            amount = (tenant.subscription_monthly_fee or Decimal('250000.00')) * months
+
+        today = timezone.now().date()
+
+        if custom_paid_until:
+            try:
+                new_paid_until = datetime.strptime(str(custom_paid_until).strip(), '%Y-%m-%d').date()
+                paid_from = tenant.paid_until if (tenant.paid_until and tenant.paid_until >= today) else today
+            except Exception:
+                return Response({'detail': "Sana formati noto'g'ri (YYYY-MM-DD bo'lishi kerak)."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            if tenant.paid_until and tenant.paid_until >= today:
+                base_date = tenant.paid_until
+            else:
+                base_date = today
+
+            month = base_date.month - 1 + months
+            year = base_date.year + month // 12
+            month = month % 12 + 1
+            day = min(base_date.day, calendar.monthrange(year, month)[1])
+            new_paid_until = date(year, month, day)
+            paid_from = base_date
+
+        with dj_transaction.atomic():
+            tenant.paid_until = new_paid_until
+            tenant.last_payment_date = timezone.now()
+            tenant.last_payment_amount = amount
+            tenant.status = TenantStatus.ACTIVE
+            tenant.freeze_reason = ''
+            tenant.save(update_fields=['paid_until', 'last_payment_date', 'last_payment_amount', 'status', 'freeze_reason', 'updated_at'])
+
+            payment = SubscriptionPayment.objects.create(
+                tenant=tenant,
+                amount=amount,
+                months_paid=months,
+                paid_from=paid_from,
+                paid_until=new_paid_until,
+                payment_method=payment_method,
+                notes=notes,
+                created_by=request.user
+            )
+
+            AuditLog.objects.create(
+                tenant=tenant,
+                user=request.user,
+                action='subscription_payment_recorded',
+                details={
+                    'amount': float(amount),
+                    'months': months,
+                    'paid_until': str(new_paid_until),
+                    'payment_method': payment_method,
+                    'unblocked': True
+                }
+            )
+
+        return Response({
+            'success': True,
+            'message': f"To'lov muvaffaqiyatli qabul qilindi. Do'kon {new_paid_until.strftime('%d.%m.%Y')} gacha faollashtirildi (blokdan ochildi).",
+            'tenant': TenantSerializer(tenant).data,
+            'payment': SubscriptionPaymentSerializer(payment).data
+        }, status=status.HTTP_200_OK)
+
+    @extend_schema(responses={200: list})
+    @action(detail=True, methods=['get'], url_path='subscription-history', permission_classes=[permissions.IsAuthenticated])
+    def subscription_history(self, request, pk=None):
+        tenant = self.get_object()
+        payments = SubscriptionPayment.objects.filter(tenant=tenant).order_by('-payment_date')
+        serializer = SubscriptionPaymentSerializer(payments, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(responses={200: dict})
+    @action(detail=False, methods=['post'], url_path='check-all-subscriptions', permission_classes=[permissions.IsAuthenticated, IsPlatformAdmin])
+    def check_all_subscriptions(self, request):
+        """
+        Barcha do'konlarning to'lov muddatini tekshirish va o'tib ketganlarini avtomatik muzlatish
+        """
+        tenants = Tenant.objects.all()
+        frozen_count = 0
+        active_count = 0
+        for t in tenants:
+            old_status = t.status
+            new_status = t.check_and_update_subscription(save=True)
+            if new_status == TenantStatus.FROZEN and old_status != TenantStatus.FROZEN:
+                frozen_count += 1
+            elif new_status == TenantStatus.ACTIVE:
+                active_count += 1
+
+        return Response({
+            'success': True,
+            'total_checked': tenants.count(),
+            'newly_frozen': frozen_count,
+            'total_active': active_count
+        })
 
     @extend_schema(responses={200: dict})
     @action(detail=False, methods=['get'], url_path='billing-summary', permission_classes=[permissions.IsAuthenticated])
@@ -416,15 +587,18 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Product.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Product.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Product.objects.filter(tenant_id=tenant_id)
+            return Product.objects.all()
+
+        if user.tenant:
+            return Product.objects.filter(tenant=user.tenant)
+        return Product.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -518,15 +692,18 @@ class DebtViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Debt.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Debt.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Debt.objects.filter(tenant_id=tenant_id)
+            return Debt.objects.all()
+
+        if user.tenant:
+            return Debt.objects.filter(tenant=user.tenant)
+        return Debt.objects.none()
 
     def perform_create(self, serializer):
         if self.request.user.role != UserRole.ADMIN and not self.request.user.is_superuser:
@@ -547,15 +724,18 @@ class TransactionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = Transaction.objects.all()
-        
-        tenant_id = self.request.query_params.get('tenant_id')
-        if tenant_id and (user.role == UserRole.ADMIN or user.is_superuser):
-            queryset = queryset.filter(tenant_id=tenant_id)
-        elif user.role != UserRole.ADMIN and not user.is_superuser:
-            queryset = queryset.filter(tenant=user.tenant)
-            
-        return queryset
+        if not user or not user.is_authenticated:
+            return Transaction.objects.none()
+
+        if user.role == UserRole.ADMIN or user.is_superuser:
+            tenant_id = self.request.query_params.get('tenant_id')
+            if tenant_id:
+                return Transaction.objects.filter(tenant_id=tenant_id)
+            return Transaction.objects.all()
+
+        if user.tenant:
+            return Transaction.objects.filter(tenant=user.tenant)
+        return Transaction.objects.none()
 
     def create(self, request, *args, **kwargs):
         from decimal import Decimal

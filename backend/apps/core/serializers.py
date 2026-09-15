@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.utils.translation import gettext_lazy as _
 from django.db import models
 from django.db.models import Q
-from .models import Tenant, AuditLog, UserRole
+from .models import Tenant, AuditLog, UserRole, SubscriptionPayment
 
 User = get_user_model()
 
@@ -13,6 +13,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     PIN kod (worker/manager) yoki Email+Parol (manager/admin) orqali kirish
     """
     login = serializers.CharField(required=False, write_only=True, help_text="Email, username yoki xodim ismi")
+    user_id = serializers.CharField(required=False, write_only=True, help_text="Foydalanuvchi ID")
     pin = serializers.CharField(required=False, write_only=True, max_length=10, help_text="4 xonali PIN kod")
     password = serializers.CharField(required=False, write_only=True, help_text="Parol (email bilan kirilganda)")
     tenant_id = serializers.UUIDField(required=False, write_only=True, help_text="PIN bilan kirganda do'kon ID (agar bir nechta do'kon bo'lsa)")
@@ -36,23 +37,32 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         login_val = attrs.get('login') or attrs.get('email') or attrs.get('username')
+        user_id_val = attrs.get('user_id') or attrs.get('userId')
         pin_val = attrs.get('pin')
         password_val = attrs.get('password')
         tenant_id = attrs.get('tenant_id')
 
         user = None
 
-        # 1. PIN orqali kirish (Mobile App / Manager PIN)
-        if pin_val:
+        # 1. PIN yoki Login+Parol orqali kirish
+        if pin_val or password_val:
             users_qs = User.objects.filter(is_active=True)
-            if tenant_id:
+            if user_id_val:
+                users_qs = users_qs.filter(id=user_id_val)
+            elif tenant_id:
                 users_qs = users_qs.filter(tenant_id=tenant_id)
             if login_val:
-                users_qs = users_qs.filter(models.Q(name__iexact=login_val) | models.Q(email__iexact=login_val) | models.Q(phone_number=login_val))
+                users_qs = users_qs.filter(
+                    models.Q(name__iexact=login_val) |
+                    models.Q(email__iexact=login_val) |
+                    models.Q(email__istartswith=f"{login_val}@") |
+                    models.Q(phone_number=login_val)
+                )
 
+            check_val = pin_val or password_val
             found_user = None
             for u in users_qs:
-                if u.check_pin(pin_val):
+                if (pin_val and u.check_pin(pin_val)) or (password_val and u.check_password(password_val)) or (check_val and u.check_pin(check_val)) or (check_val and u.check_password(check_val)):
                     found_user = u
                     break
 
@@ -122,20 +132,40 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+
+    class Meta:
+        model = SubscriptionPayment
+        fields = [
+            'id', 'tenant', 'tenant_name', 'amount', 'months_paid',
+            'paid_from', 'paid_until', 'payment_method', 'payment_date',
+            'notes', 'created_by', 'created_by_name', 'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'created_by_name', 'tenant_name']
+
+
 class TenantSerializer(serializers.ModelSerializer):
     users_count = serializers.IntegerField(source='users.count', read_only=True)
     products_count = serializers.SerializerMethodField()
     today_sales = serializers.SerializerMethodField()
     total_debts = serializers.SerializerMethodField()
+    is_subscription_active = serializers.BooleanField(read_only=True)
+    days_left = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Tenant
         fields = [
-            'id', 'name', 'address', 'status', 'settings', 
+            'id', 'name', 'address', 'status', 'settings',
+            'subscription_monthly_fee', 'sms_price_per_unit',
+            'paid_until', 'auto_freeze_on_expiry', 'last_payment_date',
+            'last_payment_amount', 'freeze_reason',
+            'is_subscription_active', 'days_left',
             'users_count', 'products_count', 'today_sales', 'total_debts',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_subscription_active', 'days_left']
 
     def get_products_count(self, obj):
         try:
@@ -171,7 +201,7 @@ class TenantSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     pin = serializers.CharField(write_only=True, required=False, max_length=10)
-    password = serializers.CharField(write_only=True, required=False, min_length=6)
+    password = serializers.CharField(write_only=True, required=False, min_length=4)
 
     class Meta:
         model = User
@@ -187,12 +217,15 @@ class UserSerializer(serializers.ModelSerializer):
         pin = validated_data.pop('pin', None)
         password = validated_data.pop('password', None)
         user = User.objects.create(**validated_data)
+        update_fields = []
         if pin:
             user.set_pin(pin)
-            user.save(update_fields=['pin_hash'])
+            update_fields.extend(['pin_hash', 'plain_pin'])
         if password:
             user.set_password(password)
-            user.save(update_fields=['password'])
+            update_fields.extend(['password', 'plain_password'])
+        if update_fields:
+            user.save(update_fields=update_fields)
         return user
 
     def update(self, instance, validated_data):

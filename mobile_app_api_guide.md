@@ -3,7 +3,7 @@
 **Mo'ljallangan:** Mobile App Dasturchisi (React Native / Flutter / Android / iOS)  
 **Tizim:** SotuvPro — Do'kon xodimlari mobil savdo ilovasi  
 **Hujjat versiyasi:** 3.1 (Kassa va Savdo jarayoniga to'liq moslashtirilgan)  
-**Server Base URL:** `https://amuhr.uz/api/v1` (yoki lokal `http://<SERVER_IP>:8000/api/v1`)
+**Server Base URL:** `https://getpos.uz/api/v1` (yoki lokal `http://<SERVER_IP>:8000/api/v1`)
 
 ---
 
@@ -16,7 +16,7 @@
    ```
 3. **Multi-tenant xavfsizligi:** `tenant_id` so'rov tanasida yuborilmaydi. Backend uni tokendan avtomatik aniqlaydi.
 4. **Muhim biznes qoidasi:** 
-   > ⚠️ **Qarz Daftari (Umumiy qarzdorlar ro'yxati, qarz summalari va SMS eslatmalar jo'natish) to'liq Menejer panelida (`manager.amuhr.uz`) boshqariladi.**  
+   > ⚠️ **Qarz Daftari (Umumiy qarzdorlar ro'yxati, qarz summalari va SMS eslatmalar jo'natish) to'liq Menejer panelida (`manager.getpos.uz`) boshqariladi.**  
    > Mobil ilovada alohida qarz daftari ekrani ochilmaydi. Mobil ilovada sotuvchi faqat **savdo paytida to'lov turini "Qarzga / Nasiya"** deb tanlaydi va yangi mijoz telefonini SMS orqali tasdiqlaydi.
 
 ---

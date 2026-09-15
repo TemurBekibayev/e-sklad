@@ -43,5 +43,8 @@ dist-ssr/
 .packages
 build/
 .flutter-plugins
-.flutter-plugins-dependencies
-
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+!getkafe/server/kafepos.sqlite
