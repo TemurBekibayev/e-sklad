@@ -146,7 +146,7 @@ class ApiService {
     return {'success': false, 'message': 'Serverga ulanib bo\'lmadi yoki login/parol noto\'g\'ri.'};
   }
 
-  // 2. Zallar / Xonalar Ro'yxati (GET /api/halls)
+  // 2. Zallar / Xonalar Ro'yxati (GET /halls/)
   Future<List<Hall>> getHalls() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -154,11 +154,13 @@ class ApiService {
         final dio = await _getDio();
         final res = await dio.get(ApiConstants.halls);
         if (res.statusCode == 200 && res.data != null) {
-          final List list = res.data['halls'] ?? (res.data is List ? res.data : []);
+          final List list = (res.data is Map && res.data['results'] != null)
+              ? res.data['results']
+              : (res.data['halls'] ?? (res.data is List ? res.data : []));
           if (list.isNotEmpty) {
             return [
               Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
-              ...list.map((e) => Hall.fromJson(e)),
+              ...list.map((e) => Hall.fromJson(e as Map<String, dynamic>)),
             ];
           }
         }
@@ -171,7 +173,7 @@ class ApiService {
     ];
   }
 
-  // 3. Stollar ro'yxati (GET /api/tables)
+  // 3. Stollar ro'yxati (GET /tables/)
   Future<List<RestaurantTable>> getTables({String? hallName}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -179,9 +181,11 @@ class ApiService {
         final dio = await _getDio();
         final res = await dio.get(ApiConstants.tables);
         if (res.statusCode == 200 && res.data != null) {
-          final List list = res.data['tables'] ?? (res.data is List ? res.data : []);
+          final List list = (res.data is Map && res.data['results'] != null)
+              ? res.data['results']
+              : (res.data['tables'] ?? (res.data is List ? res.data : []));
           if (list.isNotEmpty) {
-            final tables = list.map((e) => RestaurantTable.fromJson(e)).toList();
+            final tables = list.map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>)).toList();
             if (hallName != null && hallName != 'Barchasi') {
               return tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
             }
@@ -195,20 +199,22 @@ class ApiService {
     return MockData.tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
   }
 
-  // 4. Stol bo'yicha faol buyurtmani ko'rish (GET /api/orders/table/:tableId)
+  // 4. Stol bo'yicha faol buyurtmani ko'rish
   Future<RestaurantOrder?> getTableOrder(String tableId) async {
     try {
       final dio = await _getDio();
-      final res = await dio.get(ApiConstants.tableOrder(tableId));
+      final res = await dio.get(ApiConstants.tableDetail(tableId));
       if (res.statusCode == 200 && res.data != null) {
-        final orderData = res.data['order'] ?? res.data;
-        return RestaurantOrder.fromJson(orderData);
+        final orderData = res.data['active_order'] ?? res.data['order'] ?? res.data;
+        if (orderData != null && orderData is Map<String, dynamic>) {
+          return RestaurantOrder.fromJson(orderData);
+        }
       }
     } catch (_) {}
     return null;
   }
 
-  // 5. Taomlar Menyusi va Kategoriyalar (GET /api/menu)
+  // 5. Taomlar Menyusi va Kategoriyalar (GET /api/v1/products/)
   Future<Map<String, dynamic>> getMenu() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -216,22 +222,20 @@ class ApiService {
         final dio = await _getDio();
         final res = await dio.get(ApiConstants.menu);
         if (res.statusCode == 200 && res.data != null) {
-          final data = res.data;
-          final List catList = data['categories'] ?? [];
-          final List prodList = data['products'] ?? [];
+          final List prodList = (res.data is Map && res.data['results'] != null)
+              ? res.data['results']
+              : (res.data['products'] ?? (res.data is List ? res.data : []));
 
           final categories = [
             Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-            ...catList.map((c) => Category(
-                  id: c['id']?.toString() ?? '',
-                  name: c['name'] ?? '',
-                  iconName: c['icon'],
-                )),
+            Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
+            Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
+            Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
           ];
 
-          final products = prodList.map((p) => Product.fromJson(p)).toList();
+          final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
 
-          if (categories.length > 1 || products.isNotEmpty) {
+          if (products.isNotEmpty) {
             return {
               'categories': categories,
               'products': products,
@@ -247,7 +251,7 @@ class ApiService {
     };
   }
 
-  // 6. Stolga Buyurtma Qo'shish (POST /api/orders) - Multi-waiter qo'llab-quvvatlash
+  // 6. Stolga Buyurtma Qo'shish (POST /orders/) - Cloud First
   Future<bool> sendOrderToKitchen({required RestaurantOrder order}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
@@ -258,23 +262,18 @@ class ApiService {
     try {
       final dio = await _getDio();
 
-      final tableNum = int.tryParse(order.tableName.replaceAll(RegExp(r'[^0-9]'), '')) ?? 1;
-      final waiterNum = int.tryParse(order.waiterId.replaceAll(RegExp(r'[^0-9]'), '')) ?? 1;
-
       final payload = {
-        'tableId': tableNum,
-        'waiterId': waiterNum,
-        'waiterName': order.waiterName,
+        'table': order.tableId,
+        'tableId': order.tableId,
+        'guests_count': order.guestCount ?? 1,
+        'notes': '',
         'items': order.items.map((i) {
-          final prodId = int.tryParse(i.productId) ?? i.productId;
           return {
-            'product_id': prodId,
+            'product_id': i.productId,
             'product_name': i.productName,
             'quantity': i.quantity,
             'price': i.itemPrice,
             'comment': i.comment ?? '',
-            'waiter_id': i.waiterId ?? waiterNum,
-            'waiter_name': i.waiterName ?? order.waiterName,
           };
         }).toList(),
       };
