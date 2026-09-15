@@ -4,6 +4,8 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/tables_provider.dart';
 import '../../providers/menu_provider.dart';
+import '../../providers/settings_provider.dart';
+import '../../core/network/server_discovery_service.dart';
 import '../tables/tables_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -59,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final settingsProv = context.watch<SettingsProvider>();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -135,7 +138,80 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 12),
+
+                  // Smart Server Connection Badge
+                  Center(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: settingsProv.isDiscovering
+                          ? null
+                          : () => settingsProv.autoDiscoverServer(force: true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: settingsProv.isDiscovering
+                              ? Colors.grey.shade100
+                              : (settingsProv.isServerOnline
+                                  ? (settingsProv.connectionType == ServerConnectionType.local
+                                      ? AppColors.tableFreeLight
+                                      : Colors.blue.shade50)
+                                  : AppColors.tableBusyLight),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: settingsProv.isDiscovering
+                                ? Colors.grey.shade300
+                                : (settingsProv.isServerOnline
+                                    ? (settingsProv.connectionType == ServerConnectionType.local
+                                        ? AppColors.tableFree.withOpacity(0.4)
+                                        : Colors.blue.shade300)
+                                    : AppColors.tableBusy.withOpacity(0.4)),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (settingsProv.isDiscovering)
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            else
+                              Icon(
+                                settingsProv.isServerOnline
+                                    ? (settingsProv.connectionType == ServerConnectionType.local
+                                        ? Icons.wifi_rounded
+                                        : Icons.cloud_done_rounded)
+                                    : Icons.wifi_off_rounded,
+                                size: 14,
+                                color: settingsProv.isServerOnline
+                                    ? (settingsProv.connectionType == ServerConnectionType.local
+                                        ? AppColors.tableFree
+                                        : Colors.blue.shade700)
+                                    : AppColors.tableBusy,
+                              ),
+                            const SizedBox(width: 6),
+                            Text(
+                              settingsProv.isDiscovering
+                                  ? 'Server qidirilmoqda...'
+                                  : settingsProv.serverStatusLabel,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: settingsProv.isServerOnline
+                                    ? (settingsProv.connectionType == ServerConnectionType.local
+                                        ? AppColors.tableFree
+                                        : Colors.blue.shade800)
+                                    : AppColors.tableBusy,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
 
                   // Error Banner
                   if (auth.errorMessage != null) ...[
