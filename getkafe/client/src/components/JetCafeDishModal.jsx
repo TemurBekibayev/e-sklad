@@ -22,12 +22,24 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
 
   const [isSaving, setIsSaving] = useState(false);
 
+  const getNumericCatId = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return 1;
+    const num = parseInt(String(val).replace(/\D/g, ''), 10);
+    return isNaN(num) ? 1 : num;
+  };
+
   useEffect(() => {
     if (dish) {
+      const catId = dish.category_id !== undefined 
+        ? getNumericCatId(dish.category_id)
+        : (dish.category ? (categories.find(c => c.name === dish.category)?.rawId || categories.find(c => c.name === dish.category)?.id) : null)
+        || getNumericCatId(categories[0]?.id || 1);
+
       setForm({
         name: dish.name || '',
         code: dish.id || 0,
-        category_id: dish.category_id || (categories[0]?.id || 1),
+        category_id: catId,
         in_package: dish.in_package || 1,
         cost_price: dish.cost_price || 0,
         price: dish.price || 0,
@@ -45,7 +57,7 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
       setForm({
         name: '',
         code: 0,
-        category_id: categories[0]?.id || 1,
+        category_id: getNumericCatId(categories[0]?.id || 1),
         in_package: 1,
         cost_price: 0,
         price: 0,
@@ -200,17 +212,20 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
 
                 {/* Категория */}
                 <div className="flex items-center">
-                  <label className="w-28 text-slate-600 font-medium text-xs">Категория:</label>
+                  <label className="w-28 text-slate-700 font-semibold text-xs">Категория / Toifasi:</label>
                   <select
                     value={form.category_id}
                     onChange={(e) => setForm({ ...form, category_id: Number(e.target.value) })}
-                    className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-[#b8c2d1] rounded focus:border-blue-500 focus:outline-none shadow-inner"
+                    className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-[#b8c2d1] rounded font-bold text-slate-900 focus:border-blue-500 focus:outline-none shadow-inner"
                   >
-                    {categories.map((c) => (
-                      <option key={c.id || c.rawId} value={c.id || c.rawId}>
-                        {c.name}
-                      </option>
-                    ))}
+                    {categories.map((c) => {
+                      const cId = getNumericCatId(c.rawId || c.id);
+                      return (
+                        <option key={c.id || c.rawId} value={cId}>
+                          {c.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

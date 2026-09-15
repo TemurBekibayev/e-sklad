@@ -1,24 +1,74 @@
 import React, { useState } from 'react';
-import { UtensilsCrossed, PlusCircle, Search, Sparkles, CheckCircle2, XCircle } from 'lucide-react';
+import { UtensilsCrossed, PlusCircle, Search, Edit3, Trash2, Tag, Sparkles, CheckCircle2, XCircle, Layers } from 'lucide-react';
+import JetCafeDishModal from '../components/JetCafeDishModal';
 
-export default function MenuView({ products = [], categories = [], onOpenAddDish, currentUser }) {
+export default function MenuView({
+  products = [],
+  categories = [],
+  onOpenAddDish,
+  onSaveProduct,
+  onDeleteProduct,
+  currentUser,
+}) {
   const [selectedCategory, setSelectedCategory] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingDish, setEditingDish] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const formatPrice = (val) => new Intl.NumberFormat('uz-UZ').format(val || 0);
 
+  const getNumericCatId = (val) => {
+    if (typeof val === 'number') return val;
+    if (!val) return null;
+    const num = parseInt(String(val).replace(/\D/g, ''), 10);
+    return isNaN(num) ? null : num;
+  };
+
   const filteredProducts = products.filter((p) => {
+    const pCatId = getNumericCatId(p.category_id);
+    const selCatId = getNumericCatId(selectedCategory);
+
     const matchesCat =
       selectedCategory === 0 ||
+      pCatId === selCatId ||
       p.category_id === selectedCategory ||
-      p.category_id === Number(selectedCategory) ||
-      (selectedCategory && selectedCategory === `cat-${p.category_id}`);
-    const matchesSearch = !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase());
+      (p.category && categories.find((c) => c.id === selectedCategory || c.rawId === selectedCategory)?.name === p.category);
+
+    const matchesSearch =
+      !searchQuery ||
+      p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.mxik_code && p.mxik_code.includes(searchQuery)) ||
+      (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase()));
+
     return matchesCat && matchesSearch;
   });
 
+  const handleEditClick = (e, prod) => {
+    e.stopPropagation();
+    setEditingDish(prod);
+    setIsEditModalOpen(true);
+  };
+
+  const handleDeleteClick = async (e, prod) => {
+    e.stopPropagation();
+    if (window.confirm(`Haqiqatan ham "${prod.name}" taomini o'chirmoqchimisiz?`)) {
+      if (onDeleteProduct) {
+        await onDeleteProduct(prod.id);
+      }
+    }
+  };
+
+  const handleAddNewDish = () => {
+    if (onOpenAddDish) {
+      onOpenAddDish();
+    } else {
+      setEditingDish(null);
+      setIsEditModalOpen(true);
+    }
+  };
+
   return (
-    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto min-h-screen bg-[#f3f6fa] text-slate-800">
+    <div className="p-4 sm:p-6 max-w-[1440px] mx-auto min-h-screen bg-[#f3f6fa] text-slate-800">
       {/* Top Banner */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm mb-6">
         <div className="flex items-center gap-3.5">
@@ -26,17 +76,22 @@ export default function MenuView({ products = [], categories = [], onOpenAddDish
             <UtensilsCrossed className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Menyu Boshqaruvi</h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Jami taomlar soni: <strong className="text-slate-900">{products.length} ta</strong> | Foydalanuvchi: <strong className="text-slate-900">{currentUser?.name || 'Administrator'}</strong>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Menyu Boshqaruvi</h1>
+              <span className="text-xs bg-orange-100 text-[#ea580c] font-black px-2.5 py-0.5 rounded-full border border-orange-200">
+                {products.length} ta taom
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Taomlarni tahrirlash, bo'limini (kategoriyasini) o'zgartirish va yangi taom qo'shish | Administrator: <strong className="text-slate-900">{currentUser?.name || 'Admin'}</strong>
             </p>
           </div>
         </div>
 
         {/* Big Add Dish Button */}
         <button
-          onClick={onOpenAddDish}
-          className="flex items-center gap-2 px-5 py-3 bg-[#ea580c] hover:bg-[#d94e08] text-white rounded-2xl font-black text-sm shadow-lg shadow-orange-500/25 active:scale-95 transition-all"
+          onClick={handleAddNewDish}
+          className="flex items-center gap-2 px-5 py-3 bg-[#ea580c] hover:bg-[#d94e08] text-white rounded-2xl font-black text-sm shadow-lg shadow-orange-500/25 active:scale-95 transition-all cursor-pointer"
         >
           <PlusCircle className="w-5 h-5" />
           <span>➕ Yangi Taom Qo'shish</span>
@@ -44,12 +99,12 @@ export default function MenuView({ products = [], categories = [], onOpenAddDish
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-5">
         {/* Category Pills */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-1">
           <button
             onClick={() => setSelectedCategory(0)}
-            className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide whitespace-nowrap transition-all ${
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black tracking-wide whitespace-nowrap transition-all cursor-pointer ${
               selectedCategory === 0
                 ? 'bg-[#ea580c] text-white shadow-md shadow-orange-500/25'
                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -58,81 +113,170 @@ export default function MenuView({ products = [], categories = [], onOpenAddDish
             BARCHASI ({products.length})
           </button>
           {categories.map((cat) => {
-            const count = products.filter((p) => p.category_id === cat.id || p.category_id === cat.rawId).length;
-            const isSelected = selectedCategory === cat.id;
+            const catIdNum = getNumericCatId(cat.id || cat.rawId);
+            const count = products.filter(
+              (p) => getNumericCatId(p.category_id) === catIdNum || p.category === cat.name
+            ).length;
+            const isSelected = selectedCategory === cat.id || selectedCategory === catIdNum;
             return (
               <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide whitespace-nowrap transition-all uppercase ${
+                key={cat.id || cat.rawId}
+                onClick={() => setSelectedCategory(cat.id || catIdNum)}
+                className={`px-4 py-2.5 rounded-2xl text-xs font-black tracking-wide whitespace-nowrap transition-all uppercase cursor-pointer flex items-center gap-1.5 ${
                   isSelected
                     ? 'bg-[#ea580c] text-white shadow-md shadow-orange-500/25'
                     : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                 }`}
               >
-                {cat.name} ({count})
+                <span>{cat.icon || '🍽️'}</span>
+                <span>{cat.name}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {count}
+                </span>
               </button>
             );
           })}
         </div>
 
         {/* Search */}
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Taom nomini qidirish..."
+            placeholder="Taom nomi, toifa yoki MXIK..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#ea580c]"
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#ea580c] shadow-sm"
           />
         </div>
       </div>
 
       {/* Dishes Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-        {filteredProducts.map((prod) => (
-          <div
-            key={prod.id}
-            className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between hover:shadow-md transition-all group"
+      {filteredProducts.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm my-6">
+          <UtensilsCrossed className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-base font-black text-slate-700 mb-1">Hech qanday taom topilmadi</h3>
+          <p className="text-xs text-slate-400 mb-4">Qidiruv so'zini o'zgartiring yoki yangi taom qo'shing</p>
+          <button
+            onClick={handleAddNewDish}
+            className="px-4 py-2 bg-[#ea580c] text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20"
           >
-            <div className="relative w-full h-32 bg-slate-100 overflow-hidden">
-              {prod.image && prod.image.startsWith('http') ? (
-                <img
-                  src={prod.image}
-                  alt={prod.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-4xl">🍲</div>
-              )}
-              <div className="absolute top-2 left-2 bg-slate-900/80 backdrop-blur-sm text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">
-                {prod.category || 'Taom'}
-              </div>
-            </div>
+            ➕ Taom Qo'shish
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {filteredProducts.map((prod) => {
+            const isAvailable = prod.is_available !== false;
+            return (
+              <div
+                key={prod.id}
+                onClick={() => {
+                  setEditingDish(prod);
+                  setIsEditModalOpen(true);
+                }}
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between hover:shadow-lg hover:border-orange-300 transition-all duration-200 group cursor-pointer relative"
+              >
+                {/* Image & Badges */}
+                <div className="relative w-full h-36 bg-slate-100 overflow-hidden">
+                  {prod.image && prod.image.startsWith('http') ? (
+                    <img
+                      src={prod.image}
+                      alt={prod.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-4xl bg-gradient-to-br from-amber-50 to-orange-100">
+                      🍲
+                    </div>
+                  )}
 
-            <div className="p-3 flex flex-col flex-1 justify-between">
-              <div>
-                <h3 className="text-xs font-black text-slate-900 uppercase line-clamp-2 leading-tight mb-1">
-                  {prod.name}
-                </h3>
-                <div className="text-[10px] text-slate-400 font-mono">
-                  MXIK: {prod.mxik_code || '10701001001000000'}
-                </div>
-              </div>
+                  {/* Category Badge on top-left */}
+                  <div className="absolute top-2 left-2 bg-slate-900/85 backdrop-blur-md text-white px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm flex items-center gap-1 border border-white/10">
+                    <Tag className="w-3 h-3 text-orange-400" />
+                    <span>{prod.category || 'Taom'}</span>
+                  </div>
 
-              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between">
-                <div className="text-sm font-black text-[#ea580c]">
-                  {formatPrice(prod.price)} <span className="text-[11px] font-bold">UZS</span>
+                  {/* Availability Badge on top-right */}
+                  <div
+                    className={`absolute top-2 right-2 px-2 py-0.5 rounded-lg text-[10px] font-black backdrop-blur-md shadow-sm ${
+                      isAvailable
+                        ? 'bg-emerald-500/90 text-white'
+                        : 'bg-rose-500/90 text-white'
+                    }`}
+                  >
+                    {isAvailable ? 'Mavjud' : 'Tugagan'}
+                  </div>
                 </div>
-                <div className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-                  Mavjud
+
+                {/* Card Info */}
+                <div className="p-3.5 flex flex-col flex-1 justify-between gap-2.5">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 uppercase line-clamp-2 leading-snug mb-1 group-hover:text-[#ea580c] transition-colors">
+                      {prod.name}
+                    </h3>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                      <span>MXIK: {prod.mxik_code ? prod.mxik_code.slice(0, 8) + '...' : '10701...'}</span>
+                      {prod.workshop && (
+                        <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-sans font-semibold">
+                          {prod.workshop}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Price & Action Buttons */}
+                  <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-black text-[#ea580c] tracking-tight">
+                        {formatPrice(prod.price)} <span className="text-[10px] font-bold text-slate-500">UZS</span>
+                      </div>
+                    </div>
+
+                    {/* Edit & Delete Buttons */}
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={(e) => handleEditClick(e, prod)}
+                        className="flex-1 py-1.5 px-2 bg-orange-50 hover:bg-[#ea580c] text-[#ea580c] hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all border border-orange-200 hover:border-[#ea580c] shadow-xs active:scale-95"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Tahrirlash</span>
+                      </button>
+
+                      {onDeleteProduct && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteClick(e, prod)}
+                          title="Taomni o'chirish"
+                          className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-xl transition-all border border-slate-200 hover:border-rose-200 active:scale-95"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* JetCafe Full Dish Edit Modal */}
+      <JetCafeDishModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingDish(null);
+        }}
+        dish={editingDish}
+        categories={categories}
+        onSave={onSaveProduct}
+        onDelete={onDeleteProduct}
+      />
     </div>
   );
 }

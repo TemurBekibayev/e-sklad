@@ -494,6 +494,8 @@ export default function App() {
             products={products}
             categories={categories}
             onOpenAddDish={() => setIsAddDishModalOpen(true)}
+            onSaveProduct={handleSaveProduct}
+            onDeleteProduct={handleDeleteProduct}
             currentUser={currentUser}
           />
         )}

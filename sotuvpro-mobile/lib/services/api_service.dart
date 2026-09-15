@@ -21,9 +21,9 @@ class ApiService {
   static final ApiService instance = ApiService._();
   ApiService._();
 
-  // Backend rasmiy Server URL (https://amuhr.uz/api/v1)
-  String baseUrl = 'https://amuhr.uz/api/v1';
-  String wsUrl = 'wss://amuhr.uz/ws/tenant/baskets';
+  // Backend rasmiy Server URL (https://getpos.uz/api/v1)
+  String baseUrl = 'https://getpos.uz/api/v1';
+  String wsUrl = 'wss://getpos.uz/ws/tenant/baskets';
 
   String? accessToken;
   String? refreshToken;

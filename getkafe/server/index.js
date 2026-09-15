@@ -877,7 +877,15 @@ app.post('/api/products', async (req, res) => {
       );
     }
 
-    const newProduct = await get(`SELECT * FROM products WHERE id = ?`, [result.lastID]);
+    const newProduct = await get(
+      `SELECT p.*, c.name as category FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?`,
+      [result.lastID]
+    );
+    if (newProduct) {
+      newProduct.is_available = newProduct.is_available === 1;
+      newProduct.product_id = `prod_${newProduct.id}`;
+      newProduct.rawId = newProduct.id;
+    }
     broadcast('PRODUCT_ADDED', newProduct);
     res.json({ success: true, product: newProduct });
   } catch (err) {
@@ -901,7 +909,7 @@ app.put('/api/products/:id', async (req, res) => {
        SET category_id = ?, name = ?, price = ?, cost_price = ?, stock_quantity = ?, unit = ?, min_stock_alert = ?, workshop = ?, product_type = ?, image = ?, mxik_code = ?, package_code = ?, vat_percent = ?, is_available = ?
        WHERE id = ?`,
       [
-        category_id || 1,
+        Number(category_id) || 1,
         name.trim(),
         Number(price),
         Number(cost_price || 0),
@@ -919,7 +927,15 @@ app.put('/api/products/:id', async (req, res) => {
       ]
     );
 
-    const updated = await get(`SELECT * FROM products WHERE id = ?`, [id]);
+    const updated = await get(
+      `SELECT p.*, c.name as category FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.id = ?`,
+      [id]
+    );
+    if (updated) {
+      updated.is_available = updated.is_available === 1;
+      updated.product_id = `prod_${updated.id}`;
+      updated.rawId = updated.id;
+    }
     broadcast('PRODUCT_UPDATED', updated);
     res.json({ success: true, product: updated });
   } catch (err) {
