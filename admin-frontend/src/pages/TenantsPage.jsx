@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, MoreHorizontal, ChevronLeft, ChevronRight, CreditCard, Calendar, AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, ChevronLeft, ChevronRight, CreditCard, Calendar, AlertTriangle, CheckCircle2, ShieldAlert, Copy, Check } from 'lucide-react';
 import NewTenantModal from '../components/NewTenantModal';
 import PaymentModal from '../components/PaymentModal';
 import { apiFetch } from '../utils/api';
@@ -11,6 +11,14 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedTenantForPayment, setSelectedTenantForPayment] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopyId = (e, id) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const handleAddTenant = async (newTenant) => {
     try {
@@ -139,8 +147,30 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
                     onClick={() => onSelectTenant(row.id)}
                     className="hover:bg-slate-50/70 transition cursor-pointer group"
                   >
-                    <td className="py-4 px-6 font-bold text-slate-900 group-hover:text-blue-600 transition">
-                      {row.name}
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="font-bold text-slate-900 group-hover:text-blue-600 transition">
+                          {row.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyId(e, row.id)}
+                          title="Do'kon ID sini nusxalash"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[11px] font-mono text-slate-500 border border-slate-200/60 transition group/btn"
+                        >
+                          {copiedId === row.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span className="text-emerald-600 font-sans font-semibold">Nusxalandi!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-400 group-hover/btn:text-blue-600 shrink-0" />
+                              <span>ID: {row.id ? `${row.id.slice(0, 8)}...` : '-'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </td>
                     <td className="py-4 px-6 text-slate-600">
                       {row.address || '-'}

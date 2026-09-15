@@ -11,7 +11,9 @@ import {
   ShieldAlert,
   CheckCircle2,
   Clock,
-  Plus
+  Plus,
+  Copy,
+  Check
 } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
 import { 
@@ -33,6 +35,14 @@ export default function TenantDetailPage({ tenantId, onBack }) {
   const [subscriptionPayments, setSubscriptionPayments] = useState([]);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleCopyId = () => {
+    if (!tenant?.id) return;
+    navigator.clipboard.writeText(tenant.id);
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 2000);
+  };
 
   useEffect(() => {
     if (tenantId) {
@@ -121,19 +131,43 @@ export default function TenantDetailPage({ tenantId, onBack }) {
       </button>
 
       {/* Tenant Title & Status */}
-      <div className="flex items-center space-x-3">
-        <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-          {tenant?.name || 'Yuklanmoqda...'}
-        </h2>
-        {tenant?.status === 'active' ? (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
-            Faol
-          </span>
-        ) : (
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-700">
-            Muzlatilgan
-          </span>
-        )}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div className="space-y-1.5">
+          <div className="flex items-center space-x-3">
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              {tenant?.name || 'Yuklanmoqda...'}
+            </h2>
+            {tenant?.status === 'active' ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">
+                Faol
+              </span>
+            ) : (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-700">
+                Muzlatilgan
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Tenant ID:</span>
+            <button
+              onClick={handleCopyId}
+              title="ID nusxalash"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-xs font-mono font-semibold text-slate-700 border border-slate-200 transition"
+            >
+              {copiedId ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-600 font-sans font-medium">Nusxalandi!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{tenant?.id}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* 4 Stat Cards */}
