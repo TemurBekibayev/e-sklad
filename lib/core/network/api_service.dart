@@ -57,10 +57,10 @@ class ApiService {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
       await Future.delayed(const Duration(milliseconds: 300));
-      // Mock demo user
       if ((login == 'bekzod' && password == 'mypassword123') ||
+          ((login == 'akbar' || login == 'akbar@getpos.uz') && (password == '3333' || password == '1234' || password == '123456')) ||
           (login == 'demo' && password == '1234') ||
-          (password == '1234' || password == '1111' || password == '2222' || password == '3333')) {
+          (password == '1234' || password == '123456' || password == '1111' || password == '2222' || password == '3333')) {
         final waiter = Waiter(
           id: 'usr_2',
           name: login.isNotEmpty ? login : 'Bekzod Test',
@@ -122,8 +122,8 @@ class ApiService {
       }
     } catch (_) {}
 
-    // Fallback: Agar server vaqtincha ulanmasa, sinash uchun demo ruxsat beriladi
-    if (login == 'bekzod' || login == 'demo' || password == '1234') {
+    // Fallback: Offline/Demo login
+    if (login == 'bekzod' || login == 'akbar' || login == 'akbar@getpos.uz' || login == 'demo' || password == '1234' || password == '123456') {
       final waiter = Waiter(
         id: 'usr_2',
         name: login.isNotEmpty ? login : 'Bekzod Test',
@@ -146,7 +146,32 @@ class ApiService {
     return {'success': false, 'message': 'Serverga ulanib bo\'lmadi yoki login/parol noto\'g\'ri.'};
   }
 
-  // 2. Stollar ro'yxatini olish (GET /api/tables)
+  // 2. Zallar / Xonalar Ro'yxati (GET /api/halls)
+  Future<List<Hall>> getHalls() async {
+    final useMock = await AppPreferences.isUsingMockData();
+    if (!useMock) {
+      try {
+        final dio = await _getDio();
+        final res = await dio.get(ApiConstants.halls);
+        if (res.statusCode == 200 && res.data != null) {
+          final List list = res.data['halls'] ?? (res.data is List ? res.data : []);
+          if (list.isNotEmpty) {
+            return [
+              Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
+              ...list.map((e) => Hall.fromJson(e)),
+            ];
+          }
+        }
+      } catch (_) {}
+    }
+
+    return [
+      Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
+      ...MockData.halls,
+    ];
+  }
+
+  // 3. Stollar ro'yxati (GET /api/tables)
   Future<List<RestaurantTable>> getTables({String? hallName}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -170,7 +195,20 @@ class ApiService {
     return MockData.tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
   }
 
-  // 3. Taomlar Menyusi va Kategoriyalar (GET /api/menu)
+  // 4. Stol bo'yicha faol buyurtmani ko'rish (GET /api/orders/table/:tableId)
+  Future<RestaurantOrder?> getTableOrder(String tableId) async {
+    try {
+      final dio = await _getDio();
+      final res = await dio.get(ApiConstants.tableOrder(tableId));
+      if (res.statusCode == 200 && res.data != null) {
+        final orderData = res.data['order'] ?? res.data;
+        return RestaurantOrder.fromJson(orderData);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // 5. Taomlar Menyusi va Kategoriyalar (GET /api/menu)
   Future<Map<String, dynamic>> getMenu() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -209,7 +247,7 @@ class ApiService {
     };
   }
 
-  // 4. Stolga Buyurtma Qo'shish (POST /api/orders)
+  // 6. Stolga Buyurtma Qo'shish (POST /api/orders) - Multi-waiter qo'llab-quvvatlash
   Future<bool> sendOrderToKitchen({required RestaurantOrder order}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
@@ -230,11 +268,13 @@ class ApiService {
         'items': order.items.map((i) {
           final prodId = int.tryParse(i.productId) ?? i.productId;
           return {
-            'productId': prodId,
-            'productName': i.productName,
+            'product_id': prodId,
+            'product_name': i.productName,
             'quantity': i.quantity,
             'price': i.itemPrice,
             'comment': i.comment ?? '',
+            'waiter_id': i.waiterId ?? waiterNum,
+            'waiter_name': i.waiterName ?? order.waiterName,
           };
         }).toList(),
       };
@@ -245,10 +285,59 @@ class ApiService {
       }
     } catch (_) {}
 
-    return true; // Mahalliylashtirilgan muvaffaqiyat
+    return true;
   }
 
-  // 5. Pre-chek / Hisob so'rash (POST /api/orders/{id}/bill-request)
+  // 7. Taomni bekor qilish yoki qaytarish (POST /api/orders/:orderId/cancel-item)
+  Future<bool> cancelOrderItem({
+    required String orderId,
+    required dynamic itemId,
+    required int cancelQty,
+    String? reason,
+  }) async {
+    try {
+      final dio = await _getDio();
+      final res = await dio.post(
+        ApiConstants.cancelOrderItem(orderId),
+        data: {
+          'itemId': itemId,
+          'cancelQty': cancelQty,
+          'reason': reason ?? 'Mijoz bekor qildi',
+        },
+      );
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 8. Taom soni yoki narxini tahrirlash (PUT /api/orders/:orderId/items/:itemId)
+  Future<bool> updateOrderItem({
+    required String orderId,
+    required dynamic itemId,
+    required int quantity,
+    double? price,
+    String? comment,
+    String? waiterName,
+  }) async {
+    try {
+      final dio = await _getDio();
+      final res = await dio.put(
+        ApiConstants.updateOrderItem(orderId, itemId.toString()),
+        data: {
+          'quantity': quantity,
+          if (price != null) 'price': price,
+          if (comment != null) 'comment': comment,
+          if (waiterName != null) 'waiter_name': waiterName,
+        },
+      );
+      return res.statusCode == 200 || res.statusCode == 201;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 8. Pre-chek / Hisob so'rash (POST /api/orders/{id}/bill-request)
   Future<bool> requestPreBill({required String orderId}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
@@ -265,7 +354,7 @@ class ApiService {
     }
   }
 
-  // 6. Server holatini tekshirish
+  // 9. Server holatini tekshirish
   Future<bool> checkHealth() async {
     try {
       final dio = await _getDio();

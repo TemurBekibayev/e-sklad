@@ -1,3 +1,5 @@
+import 'order.dart';
+
 enum TableStatus {
   free,
   busy,
@@ -71,6 +73,7 @@ class RestaurantTable {
   int? guestCount;
   double totalAmount;
   DateTime? openedAt;
+  List<OrderItem> items;
 
   RestaurantTable({
     required this.id,
@@ -84,6 +87,7 @@ class RestaurantTable {
     this.guestCount,
     this.totalAmount = 0.0,
     this.openedAt,
+    this.items = const [],
   });
 
   factory RestaurantTable.fromJson(Map<String, dynamic> json) {
@@ -91,6 +95,10 @@ class RestaurantTable {
     final seatsVal = json['capacity'] ?? json['seats'] ?? 4;
     final totalVal = json['totalAmount'] ?? json['total'] ?? json['total_amount'] ?? 0.0;
     final hallVal = json['hall'] ?? json['hall_name'] ?? 'Asosiy Zal';
+    final rawItems = json['items'];
+    final itemsList = (rawItems is List)
+        ? rawItems.map((i) => OrderItem.fromJson(i as Map<String, dynamic>)).toList()
+        : <OrderItem>[];
 
     return RestaurantTable(
       id: json['id']?.toString() ?? '',
@@ -104,6 +112,7 @@ class RestaurantTable {
       guestCount: json['guest_count'] ?? json['guestCount'],
       totalAmount: (totalVal as num).toDouble(),
       openedAt: json['opened_at'] != null ? DateTime.tryParse(json['opened_at']) : null,
+      items: itemsList,
     );
   }
 

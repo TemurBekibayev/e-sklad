@@ -24,6 +24,7 @@ class _OrderScreenState extends State<OrderScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<MenuProvider>().init();
+      context.read<OrderProvider>().refreshCurrentOrder();
     });
   }
 
@@ -34,6 +35,7 @@ class _OrderScreenState extends State<OrderScreen> {
   }
 
   void _openCartSheet() {
+    context.read<OrderProvider>().refreshCurrentOrder();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -79,7 +81,7 @@ class _OrderScreenState extends State<OrderScreen> {
                     ),
                   ),
                   Text(
-                    '${orderProv.totalItemsCount} ta taom tanlangan',
+                    '${orderProv.totalItemsCount} ta taom · ${Formatters.currency(orderProv.grandTotal)}',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
@@ -88,6 +90,11 @@ class _OrderScreenState extends State<OrderScreen> {
                 ],
               ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: AppColors.textPrimary),
+            tooltip: 'Yangilash',
+            onPressed: () => orderProv.refreshCurrentOrder(),
+          ),
           IconButton(
             icon: Icon(_isSearchActive ? Icons.close : Icons.search),
             onPressed: () {

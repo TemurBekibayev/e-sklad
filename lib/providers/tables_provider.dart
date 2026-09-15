@@ -36,11 +36,23 @@ class TablesProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _allTables = await _apiService.getTables();
-      _extractHalls();
+      await _loadHallsAndTables();
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _loadHallsAndTables() async {
+    final fetchedHalls = await _apiService.getHalls();
+    _allTables = await _apiService.getTables();
+    if (fetchedHalls.isNotEmpty) {
+      _halls = [
+        Hall(id: 'all', name: 'Barchasi', orderIndex: 0),
+        ...fetchedHalls,
+      ];
+    } else {
+      _extractHalls();
     }
   }
 
@@ -119,8 +131,7 @@ class TablesProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    _allTables = await _apiService.getTables();
-    _extractHalls();
+    await _loadHallsAndTables();
     notifyListeners();
   }
 }
