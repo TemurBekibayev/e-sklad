@@ -14,6 +14,7 @@ export default function MenuView({
   currentUser,
 }) {
   const [selectedCategory, setSelectedCategory] = useState(0);
+  const [editingCategory, setEditingCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDish, setEditingDish] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -167,6 +168,60 @@ export default function MenuView({
         </div>
       </div>
 
+      {/* Selected Category Action Bar */}
+      {(() => {
+        if (selectedCategory === 0) return null;
+        const activeCat = categories.find(
+          (c) =>
+            c.id === selectedCategory ||
+            getNumericCatId(c.id || c.rawId) === getNumericCatId(selectedCategory)
+        );
+        if (!activeCat) return null;
+        return (
+          <div className="flex items-center justify-between gap-3 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm mb-5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500">Tanlangan toifa:</span>
+              <span className="text-xs font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200 uppercase">
+                {activeCat.name}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingCategory(activeCat);
+                  setIsCategoryModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Tahrirlash</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (window.confirm(`Haqiqatan ham "${activeCat.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`)) {
+                    await onDeleteCategory(activeCat.id || activeCat.rawId);
+                    setSelectedCategory(0);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Toifani o'chirish</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedCategory(0)}
+                className="px-2.5 py-1.5 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+              >
+                ✕ Barchasi
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Dishes Grid */}
       {filteredProducts.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm my-6 flex flex-col items-center justify-center space-y-4">
@@ -315,7 +370,11 @@ export default function MenuView({
       {/* JetCafe Categories Management Modal */}
       <JetCafeCategoryModal
         isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setEditingCategory(null);
+        }}
+        initialCategory={editingCategory}
         categories={categories}
         onSaveCategory={onSaveCategory}
         onDeleteCategory={onDeleteCategory}

@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
-export default function JetCafeCategoryModal({ isOpen, onClose, categories = [], onSaveCategory, onDeleteCategory }) {
+export default function JetCafeCategoryModal({
+  isOpen,
+  onClose,
+  categories = [],
+  initialCategory = null,
+  onSaveCategory,
+  onDeleteCategory,
+}) {
   const [selectedCat, setSelectedCat] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState({
@@ -45,10 +52,15 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
   };
 
   useEffect(() => {
-    if (categories.length > 0 && !selectedCat) {
-      setSelectedCat(categories[0]);
+    if (isOpen) {
+      if (initialCategory) {
+        setSelectedCat(initialCategory);
+        setIsEditing(true);
+      } else if (categories.length > 0 && !selectedCat) {
+        setSelectedCat(categories[0]);
+      }
     }
-  }, [categories, selectedCat]);
+  }, [isOpen, initialCategory]);
 
   useEffect(() => {
     if (selectedCat && isEditing) {
@@ -85,12 +97,16 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
     setIsEditing(true);
   };
 
-  const handleDelete = async () => {
-    if (!selectedCat) return;
-    if (confirm(`Вы действительно хотите удалить категорию "${selectedCat.name}"?`)) {
-      await onDeleteCategory(selectedCat.id || selectedCat.rawId);
-      setIsEditing(false);
-      setSelectedCat(null);
+  const handleDelete = async (catToDelete = null) => {
+    const target = catToDelete || selectedCat;
+    if (!target) return;
+    if (window.confirm(`Вы действительно хотите удалить категорию "${target.name}"?`)) {
+      const catId = target.id || target.rawId;
+      await onDeleteCategory(catId);
+      if (selectedCat && (selectedCat.id === catId || selectedCat.rawId === catId)) {
+        setIsEditing(false);
+        setSelectedCat(null);
+      }
     }
   };
 
@@ -162,15 +178,16 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
 
         {/* Content Area: Table on Left + Edit Box on Right */}
         <div className="p-3 grid grid-cols-1 md:grid-cols-12 gap-3 min-h-[300px]">
-          {/* Left: Category Table (7 cols) */}
+          {/* Left: Category Table (6 cols) */}
           <div className="md:col-span-6 bg-white border border-[#b8c2d1] rounded overflow-hidden flex flex-col shadow-inner">
-            <div className="grid grid-cols-6 bg-[#d9dfe8] border-b border-[#b8c2d1] font-bold text-slate-700 py-1 px-2 text-[11px]">
+            <div className="grid grid-cols-12 bg-[#d9dfe8] border-b border-[#b8c2d1] font-bold text-slate-700 py-1.5 px-2 text-[11px]">
               <span className="col-span-2 text-center">№</span>
-              <span className="col-span-4">Название</span>
+              <span className="col-span-8">Название</span>
+              <span className="col-span-2 text-center">Ўчириш</span>
             </div>
             <div className="flex-1 overflow-y-auto max-h-64 divide-y divide-slate-100 text-xs">
               {categories.map((c, idx) => {
-                const isSelected = selectedCat && (selectedCat.id === c.id || selectedCat.rawId === c.id);
+                const isSelected = selectedCat && (Number(selectedCat.id) === Number(c.id) || selectedCat.rawId === c.id);
                 return (
                   <div
                     key={c.id || c.rawId || idx}
@@ -185,16 +202,33 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
                         });
                       }
                     }}
-                    className={`grid grid-cols-6 py-1.5 px-2 cursor-pointer transition items-center ${
+                    className={`grid grid-cols-12 py-1.5 px-2 cursor-pointer transition items-center ${
                       isSelected
                         ? 'bg-blue-600 text-white font-bold'
                         : 'hover:bg-blue-50 text-slate-800'
                     }`}
                   >
-                    <span className="col-span-2 text-center text-slate-500 font-mono">
-                      {isSelected ? <span className="text-white font-bold">▶ {c.order_index ?? idx}</span> : (c.order_index ?? idx)}
+                    <span className={`col-span-2 text-center font-mono ${isSelected ? 'text-white' : 'text-slate-500'}`}>
+                      {isSelected ? `▶ ${c.order_index ?? idx}` : (c.order_index ?? idx)}
                     </span>
-                    <span className="col-span-4 uppercase tracking-wide truncate">{c.name}</span>
+                    <span className="col-span-8 uppercase tracking-wide truncate">{c.name}</span>
+                    <div className="col-span-2 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(c);
+                        }}
+                        className={`w-6 h-6 rounded flex items-center justify-center transition text-xs ${
+                          isSelected
+                            ? 'bg-white/20 hover:bg-rose-500 text-white'
+                            : 'text-slate-400 hover:text-white hover:bg-rose-600'
+                        }`}
+                        title={`"${c.name}" toifasini o'chirish`}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -284,7 +318,17 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
                   </div>
                 </div>
 
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex justify-between items-center">
+                  {selectedCat ? (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(selectedCat)}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 font-bold rounded text-xs shadow-sm flex items-center gap-1 active:translate-y-[1px] transition"
+                    >
+                      <span>✕</span>
+                      <span>Удалить</span>
+                    </button>
+                  ) : <div />}
                   <button
                     type="button"
                     disabled={isSaving}
@@ -309,13 +353,24 @@ export default function JetCafeCategoryModal({ isOpen, onClose, categories = [],
                   <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">{selectedCat.name}</h4>
                   <p className="text-xs text-slate-500">Порядок: {selectedCat.order_index ?? 0}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleStartEdit}
-                  className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs text-slate-700 font-medium"
-                >
-                  ✏ Изменить категорию
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleStartEdit}
+                    className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs text-slate-700 font-medium flex items-center gap-1"
+                  >
+                    <span>✏</span>
+                    <span>Изменить</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(selectedCat)}
+                    className="px-3 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded text-xs text-rose-700 font-bold flex items-center gap-1"
+                  >
+                    <span>✕</span>
+                    <span>Удалить</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center text-slate-400 text-xs">

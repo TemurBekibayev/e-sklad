@@ -235,6 +235,42 @@ export default function App() {
             );
           } else if (ev === 'PRODUCT_ADDED') {
             setProducts((prev) => [data, ...prev]);
+          } else if (ev === 'PRODUCT_DELETED') {
+            if (data && data.id) {
+              setProducts((prev) => prev.filter((p) => Number(p.id) !== Number(data.id)));
+            }
+          } else if (ev === 'CATEGORY_DELETED') {
+            const delId = data?.id;
+            if (delId !== undefined) {
+              setCategories((prev) =>
+                prev.filter((c) => Number(c.id) !== Number(delId) && c.rawId !== delId && c.id !== delId)
+              );
+              setProducts((prev) =>
+                prev.map((p) => (Number(p.category_id) === Number(delId) ? { ...p, category_id: null, category: 'Boshqa' } : p))
+              );
+            }
+          } else if (ev === 'CATEGORY_ADDED') {
+            if (data && data.id) {
+              setCategories((prev) => {
+                if (prev.some((c) => Number(c.id) === Number(data.id))) return prev;
+                return [...prev, data];
+              });
+            }
+          } else if (ev === 'CATEGORY_UPDATED') {
+            if (data && data.id) {
+              setCategories((prev) =>
+                prev.map((c) => (Number(c.id) === Number(data.id) ? { ...c, ...data } : c))
+              );
+            }
+          } else if (ev === 'CATEGORIES_UPDATED') {
+            fetch('/api/categories')
+              .then((r) => r.json())
+              .then((res) => {
+                if (res.success && Array.isArray(res.categories)) {
+                  setCategories(res.categories);
+                }
+              })
+              .catch(() => {});
           } else if (ev === 'INVENTORY_UPDATED') {
             if (data && data.product) {
               setProducts((prev) =>
@@ -393,32 +429,54 @@ export default function App() {
 
   // Save Category
   const handleSaveCategory = async (catData, id) => {
-    const url = id ? `/api/categories/${id}` : '/api/categories';
-    const method = id ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(catData),
-    });
-    const data = await res.json();
-    if (data.success && data.category) {
-      if (id) {
-        setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...data.category } : c)));
-      } else {
-        setCategories((prev) => [...prev, data.category]);
+    try {
+      const url = id ? `/api/categories/${id}` : '/api/categories';
+      const method = id ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(catData),
+      });
+      const data = await res.json();
+      if (data.success && data.category) {
+        if (id) {
+          setCategories((prev) =>
+            prev.map((c) =>
+              Number(c.id) === Number(id) || c.id === id || c.rawId === id ? { ...c, ...data.category } : c
+            )
+          );
+        } else {
+          setCategories((prev) => [...prev, data.category]);
+        }
       }
+      return data;
+    } catch (err) {
+      console.error('Save category error:', err);
+      return { success: false, error: err.message };
     }
-    return data;
   };
 
   // Delete Category
   const handleDeleteCategory = async (id) => {
-    const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-      setCategories((prev) => prev.filter((c) => c.id !== id));
+    try {
+      const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setCategories((prev) =>
+          prev.filter((c) => Number(c.id) !== Number(id) && c.rawId !== id && c.id !== id)
+        );
+        // Ushbu toifaga tegishli taomlarni xavfsiz holda category_id = null qilamiz
+        setProducts((prev) =>
+          prev.map((p) =>
+            Number(p.category_id) === Number(id) ? { ...p, category_id: null, category: 'Boshqa' } : p
+          )
+        );
+      }
+      return data;
+    } catch (err) {
+      console.error('Delete category error:', err);
+      return { success: false, error: err.message };
     }
-    return data;
   };
 
   // Auth login handler

@@ -56,7 +56,19 @@ export default function JetCafePosView({
   const [isDishModalOpen, setIsDishModalOpen] = useState(false);
   const [editingDish, setEditingDish] = useState(null);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
+  const selectedCategoryObj = useMemo(() => {
+    if (selectedCategoryId === null) return null;
+    return (
+      categories.find(
+        (c) =>
+          (c.id || c.rawId) === selectedCategoryId ||
+          Number(c.id || c.rawId) === Number(selectedCategoryId)
+      ) || null
+    );
+  }, [categories, selectedCategoryId]);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -1011,15 +1023,58 @@ export default function JetCafePosView({
           {/* Box 1: "Категории" (Categories) matching the video */}
           <div className="p-2 border-b border-[#b0b9c7] bg-[#eef1f6]">
             <div className="flex items-center justify-between font-bold text-[11px] text-slate-600 mb-1.5 uppercase tracking-wide px-1">
-              <span>{t('pos_categories', 'Kategoriyalar')}</span>
-              <button
-                type="button"
-                onClick={() => setIsCategoryModalOpen(true)}
-                className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-400 rounded text-[10px] text-blue-700 font-bold transition flex items-center gap-1 shadow-sm"
-              >
-                <span>➕</span>
-                <span>Toifa qo'shish</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <span>{t('pos_categories', 'Kategoriyalar')}</span>
+                {selectedCategoryObj && (
+                  <span className="text-[10px] text-blue-800 bg-blue-100/90 px-2 py-0.5 rounded font-black border border-blue-300 normal-case">
+                    {selectedCategoryObj.name}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                {selectedCategoryObj && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategory(selectedCategoryObj);
+                        setIsCategoryModalOpen(true);
+                      }}
+                      className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[10px] text-slate-700 font-bold transition flex items-center gap-1 shadow-sm"
+                      title="Tanlangan toifani tahrirlash"
+                    >
+                      <span>✏️</span>
+                      <span>Tahrirlash</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (window.confirm(`Haqiqatan ham "${selectedCategoryObj.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`)) {
+                          const catIdToDelete = selectedCategoryObj.id || selectedCategoryObj.rawId;
+                          await onDeleteCategory(catIdToDelete);
+                          setSelectedCategoryId(null);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 hover:text-rose-800 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm active:scale-95"
+                      title="Tanlangan toifani o'chirish"
+                    >
+                      <span>🗑️</span>
+                      <span>Toifani o'chirish</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setIsCategoryModalOpen(true);
+                  }}
+                  className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-400 rounded text-[10px] text-blue-700 font-bold transition flex items-center gap-1 shadow-sm"
+                >
+                  <span>➕</span>
+                  <span>Toifa qo'shish</span>
+                </button>
+              </div>
             </div>
             
             {/* Category Cards Carousel / Grid */}
@@ -1046,7 +1101,10 @@ export default function JetCafePosView({
               {categories.length === 0 && (
                 <button
                   type="button"
-                  onClick={() => setIsCategoryModalOpen(true)}
+                  onClick={() => {
+                    setEditingCategory(null);
+                    setIsCategoryModalOpen(true);
+                  }}
                   className="h-20 px-4 rounded border-2 border-dashed border-blue-300 bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 transition flex flex-col items-center justify-center gap-1 shrink-0"
                 >
                   <span className="text-xl">📁</span>
@@ -1056,36 +1114,58 @@ export default function JetCafePosView({
 
               {/* Categorized Cards matching video jetcafe_frame_1.jpg */}
               {categories.map((c) => {
-                const isSelected = selectedCategoryId === (c.id || c.rawId);
+                const isSelected =
+                  selectedCategoryId === (c.id || c.rawId) ||
+                  Number(selectedCategoryId) === Number(c.id || c.rawId);
                 return (
-                  <button
-                    key={c.id || c.rawId}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) setSelectedCategoryId(null);
-                      else setSelectedCategoryId(c.id || c.rawId);
-                    }}
-                    className={`h-20 min-w-[105px] max-w-[120px] rounded border transition flex flex-col overflow-hidden shadow-sm shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'border-blue-600 ring-2 ring-blue-500/50 bg-blue-50'
-                        : 'border-[#b8c2d1] bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex-1 bg-slate-100 overflow-hidden flex items-center justify-center">
-                      {c.image ? (
-                        <img
-                          src={c.image}
-                          alt={c.name}
-                          className="w-full h-full object-cover transform hover:scale-105 transition"
-                        />
-                      ) : (
-                        <span className="text-2xl">{c.icon || '🍲'}</span>
-                      )}
-                    </div>
-                    <div className="py-1 px-1 text-center font-bold text-[10px] uppercase tracking-wide truncate border-t border-slate-200 bg-white">
-                      {tr(c.name)}
-                    </div>
-                  </button>
+                  <div key={c.id || c.rawId} className="relative group shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) setSelectedCategoryId(null);
+                        else setSelectedCategoryId(c.id || c.rawId);
+                      }}
+                      className={`h-20 min-w-[105px] max-w-[120px] w-full rounded border transition flex flex-col overflow-hidden shadow-sm shrink-0 cursor-pointer ${
+                        isSelected
+                          ? 'border-blue-600 ring-2 ring-blue-500/50 bg-blue-50'
+                          : 'border-[#b8c2d1] bg-white hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex-1 bg-slate-100 overflow-hidden flex items-center justify-center">
+                        {c.image ? (
+                          <img
+                            src={c.image}
+                            alt={c.name}
+                            className="w-full h-full object-cover transform hover:scale-105 transition"
+                          />
+                        ) : (
+                          <span className="text-2xl">{c.icon || '🍲'}</span>
+                        )}
+                      </div>
+                      <div className="py-1 px-1 text-center font-bold text-[10px] uppercase tracking-wide truncate border-t border-slate-200 bg-white">
+                        {tr(c.name)}
+                      </div>
+                    </button>
+
+                    {/* Quick delete button on card */}
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`"${c.name}" toifasini o'chirishni tasdiqlaysizmi?`)) {
+                          const catIdToDelete = c.id || c.rawId;
+                          await onDeleteCategory(catIdToDelete);
+                          if (isSelected) setSelectedCategoryId(null);
+                        }
+                      }}
+                      className={`absolute top-1 right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md transition z-10 ${
+                        isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                      title={`"${c.name}" toifasini o'chirish`}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -1235,7 +1315,11 @@ export default function JetCafePosView({
       {/* 3. Categories Management Modal */}
       <JetCafeCategoryModal
         isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setEditingCategory(null);
+        }}
+        initialCategory={editingCategory}
         categories={categories}
         onSaveCategory={onSaveCategory}
         onDeleteCategory={onDeleteCategory}
