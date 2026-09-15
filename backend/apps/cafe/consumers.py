@@ -9,7 +9,7 @@ class CafeConsumer(AsyncWebsocketConsumer):
             return
 
         self.tenant_id = str(user.tenant.id)
-        self.room_group_name = fcafe_tenant_{self.tenant_id}
+        self.room_group_name = f"cafe_tenant_{self.tenant_id}"
 
         await self.channel_layer.group_add(
             self.room_group_name,
@@ -27,14 +27,13 @@ class CafeConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
-            # Echo or handle client ping
             if data.get('type') == 'ping':
-                await self.send(text_data=json.dumps({type: pong}))
+                await self.send(text_data=json.dumps({"type": "pong"}))
         except Exception:
             pass
 
     async def cafe_message(self, event):
         await self.send(text_data=json.dumps({
-            event: event.get(event),
-            data: event.get(data)
+            "event": event.get("event"),
+            "data": event.get("data")
         }))
