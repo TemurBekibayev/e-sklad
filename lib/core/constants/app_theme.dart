@@ -21,7 +21,7 @@ class AppTheme {
         centerTitle: false,
         iconTheme: IconThemeData(color: AppColors.textPrimary),
       ),
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         color: AppColors.cardBg,
         elevation: 1,
         shadowColor: Colors.black.withOpacity(0.04),
