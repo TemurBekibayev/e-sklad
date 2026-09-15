@@ -174,7 +174,7 @@ class RestaurantOrder {
       waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString() ?? '',
       waiterName: json['waiter_name'] ?? json['waiterName'] ?? 'Ofitsiant',
       guestCount: json['guest_count'] ?? json['guestCount'] ?? 1,
-      items: (json['items'] as List<dynamic>?)
+      items: ((json['items'] ?? json['order_items'] ?? json['products']) as List<dynamic>?)
               ?.map((item) => OrderItem.fromJson(item))
               .toList() ??
           [],

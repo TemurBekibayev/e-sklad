@@ -64,16 +64,29 @@ class ServerDiscoveryService {
   Future<DiscoveredServer> autoDiscoverBestServer({bool forceRescan = false}) async {
     final savedUrl = await AppPreferences.getServerUrl();
 
-    // 1. Agar avval saqlangan URL mavjud bo'lsa va ishlayotgan bo'lsa
+    // 1. Odamlar kafeda Wi-Fi ulanishida bo'lganda avval har doim lokal Kassa IP-sini tekshirish!
+    final isDefaultHealthy = await _pingServer(ApiConstants.defaultBaseUrl, timeoutMs: 1200);
+    if (isDefaultHealthy) {
+      await AppPreferences.setServerUrl(ApiConstants.defaultBaseUrl);
+      return DiscoveredServer(
+        url: ApiConstants.defaultBaseUrl,
+        type: ServerConnectionType.local,
+        label: 'Kafedagi Kassa (Wi-Fi Faol)',
+      );
+    }
+
+    // 2. Agar avval saqlangan lokal IP ishlayotgan bo'lsa
     if (!forceRescan && savedUrl.isNotEmpty) {
-      final isSavedHealthy = await _pingServer(savedUrl, timeoutMs: 1500);
-      if (isSavedHealthy) {
-        final isLocal = savedUrl.contains('192.168.') || savedUrl.contains('10.') || savedUrl.contains('localhost') || savedUrl.contains('127.0.0.1');
-        return DiscoveredServer(
-          url: savedUrl,
-          type: isLocal ? ServerConnectionType.local : ServerConnectionType.cloud,
-          label: isLocal ? 'Kafedagi Kassa (Faol)' : 'Online Bulut (Faol)',
-        );
+      final isLocal = savedUrl.contains('192.168.') || savedUrl.contains('10.') || savedUrl.contains('localhost') || savedUrl.contains('127.0.0.1');
+      if (isLocal) {
+        final isSavedHealthy = await _pingServer(savedUrl, timeoutMs: 1500);
+        if (isSavedHealthy) {
+          return DiscoveredServer(
+            url: savedUrl,
+            type: ServerConnectionType.local,
+            label: 'Kafedagi Kassa (Faol)',
+          );
+        }
       }
     }
 

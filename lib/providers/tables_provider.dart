@@ -47,9 +47,10 @@ class TablesProvider extends ChangeNotifier {
     final fetchedHalls = await _apiService.getHalls();
     _allTables = await _apiService.getTables();
     if (fetchedHalls.isNotEmpty) {
+      final cleanHalls = fetchedHalls.where((h) => h.name != 'Barchasi' && h.id != 'all').toList();
       _halls = [
-        Hall(id: 'all', name: 'Barchasi', orderIndex: 0),
-        ...fetchedHalls,
+        Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
+        ...cleanHalls,
       ];
     } else {
       _extractHalls();
