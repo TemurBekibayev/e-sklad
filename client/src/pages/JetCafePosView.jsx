@@ -697,11 +697,19 @@ export default function JetCafePosView({
           
           {/* Table info bar */}
           <div className="bg-[#dfe5ee] border-b border-[#b0b9c7] px-2.5 py-1.5 font-bold text-slate-700 text-xs truncate flex items-center justify-between">
-            <span>
-              {t('pos_table', 'Stol')} №{currentTable.number} ({tr(currentTable.hall || currentTable.name)}).{' '}
-              {currentTable.current_order_id ? `${t('pos_order_number', 'Buyurtma №')}${currentTable.current_order_id.slice(-4)}` : t('pos_new_order', 'Yangi buyurtma')}
-            </span>
-            <span className="text-[10px] text-slate-500">
+            <div className="flex items-center gap-2 truncate">
+              <span>
+                {t('pos_table', 'Stol')} №{currentTable.number} ({tr(currentTable.hall || currentTable.name)}).{' '}
+                {currentTable.current_order_id ? `${t('pos_order_number', 'Buyurtma №')}${currentTable.current_order_id.slice(-4)}` : t('pos_new_order', 'Yangi buyurtma')}
+              </span>
+              {(currentTable.activeWaiterName || currentTable.waiter_name || currentUser?.name) && (
+                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold text-[10px] shrink-0 flex items-center gap-1">
+                  <span>👤</span>
+                  <span>{currentTable.activeWaiterName || currentTable.waiter_name || currentUser?.name}</span>
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-slate-500 shrink-0">
               {orderItems.length} {t('pcs', 'ta')}
             </span>
           </div>
