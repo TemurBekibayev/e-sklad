@@ -484,41 +484,43 @@ async function syncFromBackend() {
     if (prodsRes.status === 200) {
       const prodList = prodsRes.data?.results || (Array.isArray(prodsRes.data) ? prodsRes.data : []);
 
-      // Ensure a "Do'kon tovarlari / Bar" category exists
-      let storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
-      if (!storeCat) {
-        await run(`
-          INSERT INTO categories (name, slug, icon, order_index)
-          VALUES ('BAR VA ICHIMLIKLAR', 'store_goods', '🥤', 7)
-        `);
-        storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
-      }
-      const catId = storeCat?.id || 7;
-
-      for (const p of prodList) {
-        const rawPrice = p.price_per_sale_unit || p.price || 0;
-        const priceNum = Math.round(parseFloat(rawPrice)) || 0;
-        const barcodeVal = p.barcode || p.qr_code || null;
-
-        // Check if product exists by remote_id or name
-        const existingProd = await get(
-          `SELECT id FROM products WHERE remote_id = ? OR name = ?`,
-          [p.id, p.name]
-        );
-
-        if (existingProd) {
+      if (prodList.length > 0) {
+        // Ensure a "Do'kon tovarlari / Bar" category exists
+        let storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
+        if (!storeCat) {
           await run(`
-            UPDATE products 
-            SET price = ?, remote_id = ?, barcode = COALESCE(?, barcode), is_available = 1
-            WHERE id = ?
-          `, [priceNum, p.id, barcodeVal, existingProd.id]);
-        } else {
-          await run(`
-            INSERT INTO products (category_id, name, price, cost_price, workshop, product_type, mxik_code, package_code, vat_percent, is_available, remote_id, barcode)
-            VALUES (?, ?, ?, ?, 'Бар', 'Товар', '10702002001000000', '796', 12, 1, ?, ?)
-          `, [catId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
+            INSERT INTO categories (name, slug, icon, order_index)
+            VALUES ('BAR VA ICHIMLIKLAR', 'store_goods', '🥤', 7)
+          `);
+          storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
         }
-        productsSynced++;
+        const catId = storeCat?.id || 7;
+
+        for (const p of prodList) {
+          const rawPrice = p.price_per_sale_unit || p.price || 0;
+          const priceNum = Math.round(parseFloat(rawPrice)) || 0;
+          const barcodeVal = p.barcode || p.qr_code || null;
+
+          // Check if product exists by remote_id or name
+          const existingProd = await get(
+            `SELECT id FROM products WHERE remote_id = ? OR name = ?`,
+            [p.id, p.name]
+          );
+
+          if (existingProd) {
+            await run(`
+              UPDATE products 
+              SET price = ?, remote_id = ?, barcode = COALESCE(?, barcode), is_available = 1
+              WHERE id = ?
+            `, [priceNum, p.id, barcodeVal, existingProd.id]);
+          } else {
+            await run(`
+              INSERT INTO products (category_id, name, price, cost_price, workshop, product_type, mxik_code, package_code, vat_percent, is_available, remote_id, barcode)
+              VALUES (?, ?, ?, ?, 'Бар', 'Товар', '10702002001000000', '796', 12, 1, ?, ?)
+            `, [catId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
+          }
+          productsSynced++;
+        }
       }
     }
 

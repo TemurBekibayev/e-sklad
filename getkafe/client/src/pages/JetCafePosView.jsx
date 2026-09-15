@@ -34,7 +34,7 @@ export default function JetCafePosView({
   const { t, tr, lang } = useLanguage();
 
   // Active table state
-  const currentTable = selectedTable || tables[0] || { id: 1, number: 1, name: 'STOL - 1', status: 'free' };
+  const currentTable = selectedTable || (tables && tables.length > 0 ? tables[0] : { id: null, number: '-', name: "Stollar yo'q (Stol qo'shing)", status: 'free' });
 
   // Cart / Order items for current table
   const [orderItems, setOrderItems] = useState([]);
@@ -981,8 +981,16 @@ export default function JetCafePosView({
 
           {/* Box 1: "Категории" (Categories) matching the video */}
           <div className="p-2 border-b border-[#b0b9c7] bg-[#eef1f6]">
-            <div className="text-center font-bold text-[11px] text-slate-600 mb-1.5 uppercase tracking-wide">
-              {t('pos_categories', 'Kategoriyalar')}
+            <div className="flex items-center justify-between font-bold text-[11px] text-slate-600 mb-1.5 uppercase tracking-wide px-1">
+              <span>{t('pos_categories', 'Kategoriyalar')}</span>
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-400 rounded text-[10px] text-blue-700 font-bold transition flex items-center gap-1 shadow-sm"
+              >
+                <span>➕</span>
+                <span>Toifa qo'shish</span>
+              </button>
             </div>
             
             {/* Category Cards Carousel / Grid */}
@@ -1004,6 +1012,18 @@ export default function JetCafePosView({
                   {t('pos_all_categories', 'Barchasi')}
                 </div>
               </button>
+
+              {/* If no categories yet */}
+              {categories.length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="h-20 px-4 rounded border-2 border-dashed border-blue-300 bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 transition flex flex-col items-center justify-center gap-1 shrink-0"
+                >
+                  <span className="text-xl">📁</span>
+                  <span className="font-bold text-[10px]">+ Birinchi toifani qo'shing</span>
+                </button>
+              )}
 
               {/* Categorized Cards matching video jetcafe_frame_1.jpg */}
               {categories.map((c) => {
@@ -1044,16 +1064,41 @@ export default function JetCafePosView({
 
           {/* Box 2: "Меню" (Dishes Grid) matching jetcafe_frame_1.jpg */}
           <div className="flex-1 flex flex-col min-h-0 bg-[#eef1f6]">
-            <div className="text-center font-bold text-[11px] text-slate-600 py-1 bg-[#dfe5ee] border-b border-[#b0b9c7] uppercase tracking-wide">
-              {t('tab_menu', 'Menyu')}
+            <div className="flex items-center justify-between font-bold text-[11px] text-slate-600 py-1 px-3 bg-[#dfe5ee] border-b border-[#b0b9c7] uppercase tracking-wide">
+              <span>{t('tab_menu', 'Menyu')}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDish(null);
+                  setIsDishModalOpen(true);
+                }}
+                className="px-2 py-0.5 bg-white hover:bg-orange-50 border border-slate-300 hover:border-orange-400 rounded text-[10px] text-orange-700 font-bold transition flex items-center gap-1 shadow-sm"
+              >
+                <span>➕</span>
+                <span>Taom qo'shish</span>
+              </button>
             </div>
 
             {/* 4-column cards grid */}
             <div className="flex-1 overflow-y-auto p-2">
               {filteredProducts.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8">
-                  <div className="text-3xl mb-2 opacity-50">🔍</div>
-                  <p className="font-semibold text-sm">{t('pos_no_dishes', 'Taomlar topilmadi')}</p>
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 space-y-3">
+                  <div className="text-4xl opacity-40">🍽️</div>
+                  <div className="text-center max-w-sm">
+                    <p className="font-bold text-slate-700 text-sm">{t('pos_no_dishes', 'Taomlar mavjud emas')}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">Baza toza holatda. Yangi taom kiritish uchun quyidagi tugmani bosing.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingDish(null);
+                      setIsDishModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-[#ea580c] hover:bg-[#d94e08] text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5"
+                  >
+                    <span>➕</span>
+                    <span>Yangi taom kiritish</span>
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UtensilsCrossed, PlusCircle, Search, Edit3, Trash2, Tag, Sparkles, CheckCircle2, XCircle, Layers } from 'lucide-react';
 import JetCafeDishModal from '../components/JetCafeDishModal';
+import JetCafeCategoryModal from '../components/JetCafeCategoryModal';
 
 export default function MenuView({
   products = [],
@@ -8,12 +9,15 @@ export default function MenuView({
   onOpenAddDish,
   onSaveProduct,
   onDeleteProduct,
+  onSaveCategory,
+  onDeleteCategory,
   currentUser,
 }) {
   const [selectedCategory, setSelectedCategory] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDish, setEditingDish] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
   const formatPrice = (val) => new Intl.NumberFormat('uz-UZ').format(val || 0);
 
@@ -88,14 +92,24 @@ export default function MenuView({
           </div>
         </div>
 
-        {/* Big Add Dish Button */}
-        <button
-          onClick={handleAddNewDish}
-          className="flex items-center gap-2 px-5 py-3 bg-[#ea580c] hover:bg-[#d94e08] text-white rounded-2xl font-black text-sm shadow-lg shadow-orange-500/25 active:scale-95 transition-all cursor-pointer"
-        >
-          <PlusCircle className="w-5 h-5" />
-          <span>➕ Yangi Taom Qo'shish</span>
-        </button>
+        {/* Action Buttons: Categories & Dishes */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsCategoryModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-sm shadow-md active:scale-95 transition-all cursor-pointer"
+            title="Kategoriyalarni kiritish, tahrirlash yoki o'chirish"
+          >
+            <Layers className="w-5 h-5" />
+            <span>📁 Kategoriyalar</span>
+          </button>
+          <button
+            onClick={handleAddNewDish}
+            className="flex items-center gap-2 px-5 py-3 bg-[#ea580c] hover:bg-[#d94e08] text-white rounded-2xl font-black text-sm shadow-lg shadow-orange-500/25 active:scale-95 transition-all cursor-pointer"
+          >
+            <PlusCircle className="w-5 h-5" />
+            <span>➕ Yangi Taom Qo'shish</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -155,16 +169,36 @@ export default function MenuView({
 
       {/* Dishes Grid */}
       {filteredProducts.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm my-6">
-          <UtensilsCrossed className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-base font-black text-slate-700 mb-1">Hech qanday taom topilmadi</h3>
-          <p className="text-xs text-slate-400 mb-4">Qidiruv so'zini o'zgartiring yoki yangi taom qo'shing</p>
-          <button
-            onClick={handleAddNewDish}
-            className="px-4 py-2 bg-[#ea580c] text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20"
-          >
-            ➕ Taom Qo'shish
-          </button>
+        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 shadow-sm my-6 flex flex-col items-center justify-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-orange-100 flex items-center justify-center text-orange-600 text-3xl shadow-inner">
+            🍽️
+          </div>
+          <div className="max-w-md">
+            <h3 className="text-lg font-black text-slate-900 mb-1">
+              {searchQuery ? "Qidiruv bo'yicha taom topilmadi" : "Menyuda hozircha taomlar mavjud emas"}
+            </h3>
+            <p className="text-xs text-slate-500 font-medium">
+              {searchQuery 
+                ? "Boshqa so'z bilan qidiring yoki filtrni tozalang."
+                : "Baza toza holatda. Kafe taomlari va ichimliklarini kiritish uchun avval toifa (kategoriya) qo'shing, so'ngra taomlarni rasmi bilan qo'shing."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow transition flex items-center gap-2"
+            >
+              <Layers className="w-4 h-4" />
+              <span>📁 Kategoriya qo'shish</span>
+            </button>
+            <button
+              onClick={handleAddNewDish}
+              className="px-5 py-2.5 bg-[#ea580c] hover:bg-[#d94e08] text-white font-black text-xs rounded-xl shadow-md transition flex items-center gap-2"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>➕ Taom qo'shish</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -276,6 +310,15 @@ export default function MenuView({
         categories={categories}
         onSave={onSaveProduct}
         onDelete={onDeleteProduct}
+      />
+
+      {/* JetCafe Categories Management Modal */}
+      <JetCafeCategoryModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        categories={categories}
+        onSaveCategory={onSaveCategory}
+        onDeleteCategory={onDeleteCategory}
       />
     </div>
   );

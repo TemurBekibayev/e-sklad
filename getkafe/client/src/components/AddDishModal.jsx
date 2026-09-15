@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, PlusCircle, Image as ImageIcon, Sparkles, Check } from 'lucide-react';
+import { X, PlusCircle, Image as ImageIcon, Sparkles, Check, Upload, Loader2, Trash2 } from 'lucide-react';
 
 const PRESET_IMAGES = [
   { name: 'Osh / Palov', url: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&auto=format&fit=crop&q=80', catId: 3, mxik: '10701002001000000' },
@@ -15,15 +15,55 @@ export default function AddDishModal({ isOpen, onClose, categories = [], onProdu
     name: '',
     price: '',
     category_id: categories[0]?.id || 1,
-    image: PRESET_IMAGES[0].url,
+    image: '',
     mxik_code: '10701002001000000',
     package_code: '796',
     vat_percent: 12,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setError('');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: reader.result, filename: file.name }),
+          });
+          const data = await res.json();
+          if (data.success && data.url) {
+            setForm((prev) => ({ ...prev, image: data.url }));
+          } else {
+            setError(data.message || 'Rasm yuklashda xatolik yuz berdi');
+          }
+        } catch (uploadErr) {
+          setError('Rasm serverga yuklanmadi: ' + uploadErr.message);
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      reader.onerror = () => {
+        setError('Faylni o\'qishda xatolik!');
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setError('Xatolik: ' + err.message);
+      setIsUploading(false);
+    }
+  };
 
   const handleSelectPreset = (preset) => {
     setForm((prev) => ({
@@ -168,12 +208,52 @@ export default function AddDishModal({ isOpen, onClose, categories = [], onProdu
             </div>
           </div>
 
-          {/* Preset Taom Fotosuratlari */}
+          {/* Taom Fotosurati: Fayldan tanlash yoki Preset/URL */}
           <div>
             <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
               <span>Taom fotosurati</span>
-              <span className="text-[11px] font-normal text-slate-400">Namunadan tanlang yoki URL kiriting</span>
+              <span className="text-[11px] font-normal text-slate-400">Kompyuterdan rasm tanlang yoki URL kiriting</span>
             </label>
+
+            {/* Fayldan yuklash tugmasi */}
+            <div className="flex items-center gap-3 mb-2.5">
+              <label className="cursor-pointer flex-1 flex items-center justify-center gap-2 p-2.5 bg-orange-50 hover:bg-orange-100 border-2 border-dashed border-orange-300 hover:border-orange-400 rounded-xl transition text-xs font-bold text-orange-700">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  disabled={isUploading}
+                />
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-orange-600" />
+                    <span>Rasm yuklanmoqda...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4 text-orange-600" />
+                    <span>📁 Kompyuterdan rasm tanlash (Fayl)</span>
+                  </>
+                )}
+              </label>
+
+              {form.image && (
+                <div className="relative w-12 h-12 rounded-xl border border-slate-300 overflow-hidden shrink-0 group">
+                  <img src={form.image} alt="Preview" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, image: '' })}
+                    className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                    title="Rasmni o'chirish"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-300" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Preset Taom Fotosuratlari */}
             <div className="grid grid-cols-6 gap-2 mb-2">
               {PRESET_IMAGES.map((preset, idx) => (
                 <button
@@ -198,9 +278,10 @@ export default function AddDishModal({ isOpen, onClose, categories = [], onProdu
                 </button>
               ))}
             </div>
+
             <input
-              type="url"
-              placeholder="Rasm havolasi (https://...)"
+              type="text"
+              placeholder="Rasm havolasi (yoki yuqoridagi tugmadan fayl tanlang)"
               value={form.image}
               onChange={(e) => setForm({ ...form, image: e.target.value })}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 focus:outline-none focus:border-[#ea580c]"

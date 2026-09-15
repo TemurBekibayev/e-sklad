@@ -496,6 +496,8 @@ export default function App() {
             onOpenAddDish={() => setIsAddDishModalOpen(true)}
             onSaveProduct={handleSaveProduct}
             onDeleteProduct={handleDeleteProduct}
+            onSaveCategory={handleSaveCategory}
+            onDeleteCategory={handleDeleteCategory}
             currentUser={currentUser}
           />
         )}

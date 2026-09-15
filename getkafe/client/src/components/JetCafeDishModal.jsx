@@ -21,6 +21,39 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: reader.result, filename: file.name }),
+          });
+          const data = await res.json();
+          if (data.success && data.url) {
+            setForm((prev) => ({ ...prev, image: data.url }));
+          } else {
+            alert(data.message || 'Ошибка загрузки фото');
+          }
+        } catch (err) {
+          alert('Ошибка сервера: ' + err.message);
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      alert('Ошибка при чтении файла: ' + err.message);
+      setIsUploading(false);
+    }
+  };
 
   const getNumericCatId = (val) => {
     if (typeof val === 'number') return val;
@@ -66,7 +99,7 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
         workshop: 'Кухня',
         modifiers: '',
         comment: '',
-        image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+        image: '',
         mxik_code: '10701001001000000',
         package_code: '796',
         vat_percent: 12,
@@ -292,28 +325,52 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
 
               {/* Right Column: Dish Image Preview (5 cols) */}
               <div className="md:col-span-5 flex flex-col items-center justify-between bg-white border border-[#b8c2d1] rounded p-2.5 shadow-inner">
-                <div className="w-full h-40 bg-slate-50 border border-dashed border-slate-300 rounded flex items-center justify-center overflow-hidden relative group">
+                <div className="w-full h-36 bg-slate-50 border border-dashed border-slate-300 rounded flex items-center justify-center overflow-hidden relative group">
                   {form.image ? (
-                    <img
-                      src={form.image}
-                      alt={form.name}
-                      className="w-full h-full object-contain p-2 hover:scale-105 transition duration-200"
-                    />
+                    <>
+                      <img
+                        src={form.image}
+                        alt={form.name}
+                        className="w-full h-full object-contain p-2 hover:scale-105 transition duration-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, image: '' })}
+                        className="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs shadow transition"
+                        title="Удалить фото"
+                      >
+                        ✕
+                      </button>
+                    </>
                   ) : (
-                    <div className="text-center text-slate-400 text-xs">
+                    <div className="text-center text-slate-400 text-xs flex flex-col items-center gap-1">
+                      <span className="text-2xl opacity-40">📷</span>
                       <span>Нет фото</span>
                     </div>
                   )}
                 </div>
+
                 <div className="w-full mt-2 space-y-1.5">
+                  {/* Local File Upload Button */}
+                  <label className="w-full cursor-pointer py-1.5 px-2 bg-gradient-to-b from-[#f0f4f9] to-[#d8e2ef] hover:from-white hover:to-[#cad7ea] border border-[#a2b0c4] rounded text-blue-800 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm active:translate-y-[1px] transition">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      disabled={isUploading}
+                    />
+                    <span>{isUploading ? '⏳ Загрузка...' : '📁 Выбрать фото из файла (Компьютер)'}</span>
+                  </label>
+
                   <input
                     type="text"
-                    placeholder="URL фото блюда..."
+                    placeholder="Или вставьте URL фото..."
                     value={form.image}
                     onChange={(e) => setForm({ ...form, image: e.target.value })}
                     className="w-full px-2 py-1 text-[11px] bg-white border border-[#b8c2d1] rounded focus:outline-none"
                   />
-                  <p className="text-[10px] text-slate-500 text-center">Unsplash yoki internet rasmi havolasini kiriting</p>
+                  <p className="text-[10px] text-slate-500 text-center">Fayldan tanlang yoki URL kiriting</p>
                 </div>
               </div>
             </div>

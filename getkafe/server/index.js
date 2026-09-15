@@ -23,7 +23,15 @@ const backendSync = require('./backendSync');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Static directory for uploaded images
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 // Mobile API v2.0 compatibility: rewrite /api/v1/... to /api/...
 app.use((req, res, next) => {
@@ -97,6 +105,73 @@ function getLocalIp() {
   }
   return '127.0.0.1';
 }
+
+// Mobil ilovalar va veb-kassa uchun rasm URL-manzilini to'liq formatlash
+function resolveImageUrl(req, img) {
+  if (!img) return '';
+  if (img.startsWith('http://') || img.startsWith('https://')) return img;
+  const host = (req && req.get && req.get('host')) || `${getLocalIp()}:4000`;
+  const protocol = (req && req.protocol) || 'http';
+  const clean = img.startsWith('/') ? img : `/${img}`;
+  return `${protocol}://${host}${clean}`;
+}
+
+// ----------------------------------------------------
+// FAYL VA RASM YUKLASH (IMAGE UPLOAD API)
+// ----------------------------------------------------
+app.post(['/api/upload', '/api/upload-image', '/api/products/upload'], async (req, res) => {
+  try {
+    const { image, imageBase64, data, filename = 'dish.jpg' } = req.body || {};
+    const rawPayload = image || imageBase64 || data;
+
+    if (!rawPayload) {
+      return res.status(400).json({ success: false, message: "Rasm ma'lumotlari topilmadi (Base64 formatda yuboring)" });
+    }
+
+    let base64Data = rawPayload;
+    let ext = '.jpg';
+
+    // Data URL formatini tekshirish: data:image/png;base64,...
+    const matches = typeof rawPayload === 'string' && rawPayload.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (matches) {
+      const mimeSubtype = matches[1].toLowerCase();
+      ext = mimeSubtype === 'jpeg' || mimeSubtype === 'jpg' ? '.jpg' 
+          : mimeSubtype === 'png' ? '.png'
+          : mimeSubtype === 'webp' ? '.webp'
+          : mimeSubtype === 'gif' ? '.gif' : '.jpg';
+      base64Data = matches[2];
+    } else if (filename) {
+      const parsedExt = path.extname(filename).toLowerCase();
+      if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(parsedExt)) {
+        ext = parsedExt === '.jpeg' ? '.jpg' : parsedExt;
+      }
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+    if (buffer.length === 0) {
+      return res.status(400).json({ success: false, message: "Yaroqsiz rasm ma'lumotlari" });
+    }
+
+    const uniqueName = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+    const filePath = path.join(uploadsDir, uniqueName);
+
+    await fs.promises.writeFile(filePath, buffer);
+
+    const relativeUrl = `/uploads/${uniqueName}`;
+    const fullUrl = resolveImageUrl(req, relativeUrl);
+
+    res.json({
+      success: true,
+      url: relativeUrl,
+      fullUrl,
+      filename: uniqueName,
+      size: buffer.length
+    });
+  } catch (err) {
+    console.error('[Upload Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // ----------------------------------------------------
 // API ROUTES
@@ -732,7 +807,8 @@ app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) =
       name: c.name,
       slug: c.slug,
       icon: c.icon,
-      image: c.image || '',
+      image: resolveImageUrl(req, c.image),
+      image_path: c.image || '',
       order_index: c.order_index || 0,
     }));
 
@@ -750,7 +826,8 @@ app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) =
       product_type: p.product_type || 'Товар',
       category: categoryMap[p.category_id] || 'Boshqa',
       category_id: p.category_id,
-      image: p.image,
+      image: resolveImageUrl(req, p.image),
+      image_path: p.image || '',
       mxik_code: p.mxik_code || '10701001001000000',
       package_code: p.package_code || '796',
       vat_percent: p.vat_percent !== undefined ? p.vat_percent : 12,
@@ -771,7 +848,12 @@ app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) =
 app.get('/api/categories', async (req, res) => {
   try {
     const categories = await all(`SELECT * FROM categories ORDER BY order_index ASC`);
-    res.json({ success: true, categories });
+    const formatted = categories.map((c) => ({
+      ...c,
+      image: resolveImageUrl(req, c.image),
+      image_path: c.image || '',
+    }));
+    res.json({ success: true, categories: formatted });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -787,6 +869,9 @@ app.post('/api/categories', async (req, res) => {
       [name.trim(), slug, icon || '🍽️', image || '', order_index || 0]
     );
     const newCat = await get(`SELECT * FROM categories WHERE id = ?`, [result.lastID]);
+    if (newCat) {
+      newCat.image = resolveImageUrl(req, newCat.image);
+    }
     broadcast('CATEGORY_ADDED', newCat);
     res.json({ success: true, category: newCat });
   } catch (err) {
@@ -803,6 +888,9 @@ app.put('/api/categories/:id', async (req, res) => {
       [name, image || '', order_index !== undefined ? Number(order_index) : 0, icon || '🍽️', id]
     );
     const updated = await get(`SELECT * FROM categories WHERE id = ?`, [id]);
+    if (updated) {
+      updated.image = resolveImageUrl(req, updated.image);
+    }
     broadcast('CATEGORY_UPDATED', updated);
     res.json({ success: true, category: updated });
   } catch (err) {
@@ -860,7 +948,7 @@ app.post('/api/products', async (req, res) => {
         min_stock_alert !== undefined ? Number(min_stock_alert) : 5,
         workshop || 'Кухня',
         product_type || 'Товар',
-        image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+        image || '',
         mxik_code || '10701001001000000',
         package_code || '796',
         vat_percent !== undefined ? Number(vat_percent) : 12,
@@ -885,6 +973,7 @@ app.post('/api/products', async (req, res) => {
       newProduct.is_available = newProduct.is_available === 1;
       newProduct.product_id = `prod_${newProduct.id}`;
       newProduct.rawId = newProduct.id;
+      newProduct.image = resolveImageUrl(req, newProduct.image);
     }
     broadcast('PRODUCT_ADDED', newProduct);
     res.json({ success: true, product: newProduct });
@@ -918,7 +1007,7 @@ app.put('/api/products/:id', async (req, res) => {
         min_stock_alert !== undefined ? Number(min_stock_alert) : (existing.min_stock_alert || 5),
         workshop || 'Кухня',
         product_type || 'Товар',
-        image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+        image !== undefined ? image : (existing.image || ''),
         mxik_code || '10701001001000000',
         package_code || '796',
         vat_percent !== undefined ? Number(vat_percent) : 12,
@@ -935,6 +1024,7 @@ app.put('/api/products/:id', async (req, res) => {
       updated.is_available = updated.is_available === 1;
       updated.product_id = `prod_${updated.id}`;
       updated.rawId = updated.id;
+      updated.image = resolveImageUrl(req, updated.image);
     }
     broadcast('PRODUCT_UPDATED', updated);
     res.json({ success: true, product: updated });
