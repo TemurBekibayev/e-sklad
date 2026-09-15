@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from decimal import Decimal
 from django.utils import timezone
 from django.db import transaction
@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from apps.core.permissions import IsTenantActive, IsManagerOrAdmin
+from apps.core.permissions import IsTenantActive, IsManager
 from apps.cafe.models import Hall, Table, TableStatus, Order, OrderStatus, OrderItem, Shift
 from apps.cafe.serializers import (
     HallSerializer, TableSerializer, OrderSerializer,
