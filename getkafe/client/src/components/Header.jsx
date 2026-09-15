@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Wifi, 
   WifiOff, 
@@ -15,7 +15,9 @@ import {
   Package,
   Users,
   Building2,
-  Printer
+  Printer,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 
@@ -33,6 +35,33 @@ export default function Header({
   onOpenPrinterSettings
 }) {
   const { t } = useLanguage();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   const getRoleDisplay = (role) => {
     if (!role) return t('cashier_default', 'Kassir');
@@ -225,6 +254,20 @@ export default function Header({
         >
           <Printer className="w-4 h-4 text-amber-400" />
           <span>Printer</span>
+        </button>
+
+        {/* Kiosk Fullscreen Mode Button */}
+        <button
+          onClick={toggleFullscreen}
+          title={isFullscreen ? "Oyna rejimiga qaytish (F11)" : "To'liq Ekran / Kiosk Kassa Rejimi (F11)"}
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-700 text-slate-200 hover:text-cyan-400 font-semibold text-xs border border-slate-700/80 active:scale-95 transition-all shadow-sm"
+        >
+          {isFullscreen ? (
+            <Minimize2 className="w-4 h-4 text-cyan-400" />
+          ) : (
+            <Maximize2 className="w-4 h-4 text-cyan-400" />
+          )}
+          <span>{isFullscreen ? 'Oyna' : 'Kiosk'}</span>
         </button>
 
         {/* Admin/Manager Quick Add Dish Button */}

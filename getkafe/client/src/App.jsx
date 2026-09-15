@@ -63,7 +63,30 @@ export default function App() {
       osc.connect(gain);
       gain.connect(audioCtx.destination);
 
-      if (type === 'kitchen') {
+      if (type === 'paid') {
+        // Kash-ching cash register triumphant chord (C5 -> E5 -> G5 -> C6)
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g);
+          g.connect(audioCtx.destination);
+          o.type = 'triangle';
+          o.frequency.setValueAtTime(freq, audioCtx.currentTime + i * 0.08);
+          g.gain.setValueAtTime(0.25, audioCtx.currentTime + i * 0.08);
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.08 + 0.45);
+          o.start(audioCtx.currentTime + i * 0.08);
+          o.stop(audioCtx.currentTime + i * 0.08 + 0.45);
+        });
+        return;
+      } else if (type === 'click') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(750, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.04);
+        return;
+      } else if (type === 'kitchen') {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
         osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15); // A5
@@ -320,6 +343,7 @@ export default function App() {
     });
     const data = await res.json();
     if (data.success) {
+      playSoundAlert('paid');
       setCurrentReceipt(data.receipt);
       setSelectedTable(null);
       setActiveOrder(null);
