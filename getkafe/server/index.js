@@ -1042,13 +1042,23 @@ app.put('/api/products/:id', async (req, res) => {
 });
 
 // Taomni o'chirish (DELETE /api/products/:id)
-app.delete('/api/products/:id', async (req, res) => {
+app.delete(['/api/products/:id', '/products/:id'], async (req, res) => {
   try {
     const { id } = req.params;
-    await run(`DELETE FROM products WHERE id = ?`, [id]);
-    broadcast('PRODUCT_DELETED', { id: Number(id) });
-    res.json({ success: true });
+    const numericId = parseInt(String(id).replace(/\D/g, ''), 10);
+    const targetId = !isNaN(numericId) && numericId > 0 ? numericId : id;
+
+    // 1. Foreign Key cheklovlarini tozalash (stock_movements jadvalidan tozalash)
+    await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ?`, [targetId, id]);
+
+    // 2. Mahsulotni o'chirish
+    await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
+
+    broadcast('PRODUCT_DELETED', { id: targetId, rawId: targetId });
+    broadcast('PRODUCTS_UPDATED', {});
+    res.json({ success: true, message: 'Taom muvaffaqiyatli o\'chirildi' });
   } catch (err) {
+    console.error('Delete product error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

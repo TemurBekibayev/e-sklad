@@ -1249,6 +1249,20 @@ export default function JetCafePosView({
                       <div className="text-center font-bold text-[11px] text-slate-900 uppercase tracking-tight truncate border-t border-slate-100 pt-1">
                         {tr(dish.name)}
                       </div>
+
+                      {/* Quick Edit / Delete button on hover */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingDish(dish);
+                          setIsDishModalOpen(true);
+                        }}
+                        className="absolute bottom-7 right-1.5 w-6 h-6 rounded-full bg-white/95 hover:bg-blue-600 hover:text-white text-slate-600 shadow-md border border-slate-300 flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition duration-150 z-10"
+                        title="Tahrirlash yoki O'chirish"
+                      >
+                        ✏️
+                      </button>
                     </div>
                   ))}
                 </div>

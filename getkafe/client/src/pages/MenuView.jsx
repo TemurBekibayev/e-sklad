@@ -58,7 +58,11 @@ export default function MenuView({
     e.stopPropagation();
     if (window.confirm(`Haqiqatan ham "${prod.name}" taomini o'chirmoqchimisiz?`)) {
       if (onDeleteProduct) {
-        await onDeleteProduct(prod.id);
+        const prodId =
+          prod.rawId ||
+          (typeof prod.id === 'number' ? prod.id : parseInt(String(prod.id).replace(/\D/g, ''), 10)) ||
+          prod.id;
+        await onDeleteProduct(prodId);
       }
     }
   };

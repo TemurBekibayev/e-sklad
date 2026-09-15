@@ -236,9 +236,29 @@ export default function App() {
           } else if (ev === 'PRODUCT_ADDED') {
             setProducts((prev) => [data, ...prev]);
           } else if (ev === 'PRODUCT_DELETED') {
-            if (data && data.id) {
-              setProducts((prev) => prev.filter((p) => Number(p.id) !== Number(data.id)));
+            const delId = data?.id;
+            const numDelId = parseInt(String(delId).replace(/\D/g, ''), 10);
+            if (delId !== undefined) {
+              setProducts((prev) =>
+                prev.filter(
+                  (p) =>
+                    Number(p.id) !== Number(numDelId) &&
+                    Number(p.rawId) !== Number(numDelId) &&
+                    p.id !== delId &&
+                    p.product_id !== delId &&
+                    p.id !== numDelId
+                )
+              );
             }
+          } else if (ev === 'PRODUCTS_UPDATED') {
+            fetch('/api/menu')
+              .then((r) => r.json())
+              .then((res) => {
+                if (res.success && Array.isArray(res.products)) {
+                  setProducts(res.products);
+                }
+              })
+              .catch(() => {});
           } else if (ev === 'CATEGORY_DELETED') {
             const delId = data?.id;
             if (delId !== undefined) {
@@ -419,12 +439,27 @@ export default function App() {
 
   // Delete Product
   const handleDeleteProduct = async (id) => {
-    const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-      setProducts((prev) => prev.filter((p) => p.id !== id));
+    try {
+      const numericId = parseInt(String(id).replace(/\D/g, ''), 10) || id;
+      const res = await fetch(`/api/products/${numericId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setProducts((prev) =>
+          prev.filter(
+            (p) =>
+              Number(p.id) !== Number(numericId) &&
+              Number(p.rawId) !== Number(numericId) &&
+              p.id !== id &&
+              p.product_id !== id &&
+              p.id !== numericId
+          )
+        );
+      }
+      return data;
+    } catch (err) {
+      console.error('Delete product error:', err);
+      return { success: false, error: err.message };
     }
-    return data;
   };
 
   // Save Category

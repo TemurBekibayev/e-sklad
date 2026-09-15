@@ -485,15 +485,34 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
             {dish && onDelete && (
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm(`Вы действительно хотите удалить "${dish.name}"?`)) {
-                    onDelete(dish.id);
-                    onClose();
+                disabled={isSaving}
+                onClick={async () => {
+                  if (window.confirm(`Вы действительно хотите удалить "${dish.name}"?`)) {
+                    setIsSaving(true);
+                    try {
+                      const prodId =
+                        dish.rawId ||
+                        (typeof dish.id === 'number'
+                          ? dish.id
+                          : parseInt(String(dish.id).replace(/\D/g, ''), 10)) ||
+                        dish.id;
+                      const res = await onDelete(prodId);
+                      if (res && res.success === false) {
+                        alert('Ошибка при удалении: ' + (res.error || res.message || 'Не удалось удалить'));
+                      } else {
+                        onClose();
+                      }
+                    } catch (err) {
+                      alert('Ошибка: ' + err.message);
+                    } finally {
+                      setIsSaving(false);
+                    }
                   }
                 }}
-                className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded font-semibold transition"
+                className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-300 rounded font-bold transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
               >
-                🗑 Удалить блюдо
+                <span>🗑️</span>
+                <span>Удалить блюдо</span>
               </button>
             )}
           </div>
