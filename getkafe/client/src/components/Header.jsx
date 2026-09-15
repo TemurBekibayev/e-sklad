@@ -14,7 +14,8 @@ import {
   PlusCircle,
   Package,
   Users,
-  Building2
+  Building2,
+  Printer
 } from 'lucide-react';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 
@@ -28,7 +29,8 @@ export default function Header({
   onFlushSync,
   onOpenAddDish,
   onOpenStaffModal,
-  onOpenTableManageModal
+  onOpenTableManageModal,
+  onOpenPrinterSettings
 }) {
   const { t } = useLanguage();
 
@@ -214,6 +216,16 @@ export default function Header({
             )}
           </div>
         </div>
+
+        {/* Printer & Receipt Settings Button */}
+        <button
+          onClick={onOpenPrinterSettings}
+          title="Chek va Printer Sozlamalari (80mm / 58mm termal kassa printeri)"
+          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-700 text-slate-200 hover:text-amber-400 font-semibold text-xs border border-slate-700/80 active:scale-95 transition-all shadow-sm"
+        >
+          <Printer className="w-4 h-4 text-amber-400" />
+          <span>Printer</span>
+        </button>
 
         {/* Admin/Manager Quick Add Dish Button */}
         {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (

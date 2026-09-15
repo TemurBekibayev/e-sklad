@@ -249,6 +249,31 @@ async function initDB() {
     )
   `);
 
+  // 14. Thermal & Kitchen Printer Settings
+  await run(`
+    CREATE TABLE IF NOT EXISTS printer_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      receipt_printer TEXT DEFAULT '',
+      kitchen_printer TEXT DEFAULT '',
+      paper_width TEXT DEFAULT '80mm',
+      auto_print INTEGER DEFAULT 1,
+      cash_drawer INTEGER DEFAULT 1,
+      header_title TEXT DEFAULT 'KAFE "MILLIY TAOMLAR" MCHJ',
+      header_address TEXT DEFAULT 'Toshkent sh., Chilonzor tumani, 9-mavze',
+      inn TEXT DEFAULT '307849201',
+      fm TEXT DEFAULT 'FM99882211',
+      footer_text TEXT DEFAULT 'Haridingiz uchun rahmat! Xush kelibsiz!',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  try {
+    await run(`
+      INSERT OR IGNORE INTO printer_settings (id, receipt_printer, kitchen_printer, paper_width, auto_print, cash_drawer)
+      VALUES (1, '', '', '80mm', 1, 1)
+    `);
+  } catch (e) {}
+
   // Seed default data if empty
   await seedInitialData();
 }

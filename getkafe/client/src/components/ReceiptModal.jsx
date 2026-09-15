@@ -1,12 +1,39 @@
-import React from 'react';
-import { Printer, CheckCircle, X, ExternalLink, ShieldCheck, AlertTriangle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Printer, CheckCircle, X, ExternalLink, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
 export default function ReceiptModal({ receipt, onClose }) {
   const { t, tr } = useLanguage();
+  const [printing, setPrinting] = useState(false);
+  const [printStatus, setPrintStatus] = useState(null);
+
   if (!receipt) return null;
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
+    setPrinting(true);
+    setPrintStatus(null);
+    try {
+      const res = await fetch('/api/printers/print-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(receipt),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPrintStatus({ success: true, message: "Chek printerga muvaffaqiyatli yuborildi!" });
+      } else {
+        setPrintStatus({ success: false, message: data.error || "Printerda xatolik yuz berdi" });
+        // Brauzer fallback
+        window.print();
+      }
+    } catch (err) {
+      window.print();
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handleBrowserPrint = () => {
     window.print();
   };
 
@@ -162,6 +189,20 @@ export default function ReceiptModal({ receipt, onClose }) {
           </div>
         </div>
 
+        {/* Print Feedback Status */}
+        {printStatus && (
+          <div
+            className={`mx-6 mb-2 p-2.5 rounded-xl border flex items-center space-x-2 text-xs ${
+              printStatus.success
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            {printStatus.success ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+            <span>{printStatus.message}</span>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="p-4 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3">
           <a
@@ -176,11 +217,24 @@ export default function ReceiptModal({ receipt, onClose }) {
 
           <div className="flex items-center space-x-2">
             <button
-              onClick={handlePrint}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+              onClick={handleBrowserPrint}
+              title="Brauzer dialogi orqali chop etish / PDF saqlash"
+              className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
             >
               <Printer className="w-4 h-4" />
-              <span>{t('receipt_print', 'Chop etish')} (80mm)</span>
+            </button>
+
+            <button
+              onClick={handlePrint}
+              disabled={printing}
+              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/20 active:scale-95 transition-all disabled:opacity-50"
+            >
+              {printing ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Printer className="w-4 h-4" />
+              )}
+              <span>{printing ? 'Yuborilmoqda...' : `${t('receipt_print', 'Chop etish')} (Termal)`}</span>
             </button>
 
             <button

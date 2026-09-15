@@ -5,6 +5,7 @@ import ReceiptModal from './components/ReceiptModal';
 import AddDishModal from './components/AddDishModal';
 import StaffManagementModal from './components/StaffManagementModal';
 import TableHallManagementModal from './components/TableHallManagementModal';
+import PrinterSettingsModal from './components/PrinterSettingsModal';
 import JetCafePosView from './pages/JetCafePosView';
 import CashierView from './pages/CashierView';
 import WaiterView from './pages/WaiterView';
@@ -20,6 +21,7 @@ export default function App() {
   const [isPinModalOpen, setIsPinModalOpen] = useState(true);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isTableManageModalOpen, setIsTableManageModalOpen] = useState(false);
+  const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
 
   // Clear any legacy mock sessions on mount
   useEffect(() => {
@@ -430,6 +432,7 @@ export default function App() {
         onOpenAddDish={() => setIsAddDishModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
         onOpenTableManageModal={() => setIsTableManageModalOpen(true)}
+        onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
       />
 
       {/* Main Role Content Views */}
@@ -450,6 +453,7 @@ export default function App() {
             onCompletePayment={handleCompletePayment}
             onLogout={handleLogout}
             onOpenSettings={() => setCurrentTab('mxik')}
+            onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
             onSaveProduct={handleSaveProduct}
             onDeleteProduct={handleDeleteProduct}
             onSaveCategory={handleSaveCategory}
@@ -552,6 +556,12 @@ export default function App() {
           onClose={() => setCurrentReceipt(null)}
         />
       )}
+
+      {/* Printer & Receipt Settings Modal */}
+      <PrinterSettingsModal
+        isOpen={isPrinterModalOpen}
+        onClose={() => setIsPrinterModalOpen(false)}
+      />
     </div>
   );
 }

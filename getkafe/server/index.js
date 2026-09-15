@@ -17,7 +17,8 @@ const {
   generateFiscalSign,
   COMPANY_INFO,
 } = require('./soliq');
-const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = require('./printer');
+const printerService = require('./printer');
+const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = printerService;
 const telegram = require('./telegram');
 const backendSync = require('./backendSync');
 
@@ -2116,6 +2117,20 @@ app.post('/api/payments', async (req, res) => {
       }
     }).catch((e) => console.warn('[BackendSync] Sale sync warning:', e.message));
 
+    // Avtomatik ravishda termal chek chiqarish (agar sozlangan bo'lsa)
+    try {
+      const pSettings = await printerService.getPrinterSettings();
+      if (pSettings && pSettings.auto_print) {
+        printerService.printThermalReceipt({
+          ...receiptData,
+          tableNumber: updatedTable ? updatedTable.number : tableId,
+          waiterName: order.waiter_name,
+        }).catch(err => console.warn('[AutoPrint] Chek chiqarish xatosi:', err.message));
+      }
+    } catch (e) {
+      console.warn('[AutoPrint] Xatolik:', e.message);
+    }
+
     res.json({
       success: true,
       message: "To'lov muvaffaqiyatli amalga oshirildi va Soliq QR fiskallashtirildi",
@@ -2141,6 +2156,64 @@ app.post('/api/payments', async (req, res) => {
     });
   } catch (err) {
     console.error('Payment error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 8.0. THERMAL RECEIPT PRINTER API
+// ==========================================
+
+// O'rnatilgan printerlar va joriy sozlamalarni olish
+app.get('/api/printers', async (req, res) => {
+  try {
+    const installedPrinters = await printerService.getInstalledPrinters();
+    const settings = await printerService.getPrinterSettings();
+    res.json({
+      success: true,
+      installedPrinters,
+      settings,
+    });
+  } catch (err) {
+    console.error('[Printer API] getPrinters error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Printer sozlamalarini saqlash
+app.post('/api/printers/settings', async (req, res) => {
+  try {
+    const updated = await printerService.updatePrinterSettings(req.body);
+    res.json({
+      success: true,
+      message: 'Printer sozlamalari muvaffaqiyatli saqlandi',
+      settings: updated,
+    });
+  } catch (err) {
+    console.error('[Printer API] updateSettings error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// To'g'ridan-to'g'ri termal chek chop etish
+app.post('/api/printers/print-receipt', async (req, res) => {
+  try {
+    const result = await printerService.printThermalReceipt(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[Printer API] printReceipt error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Sinov chekini chiqarish
+app.post('/api/printers/test', async (req, res) => {
+  try {
+    const { printerName, paperWidth } = req.body;
+    const result = await printerService.testPrint(printerName, paperWidth);
+    res.json(result);
+  } catch (err) {
+    console.error('[Printer API] testPrint error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

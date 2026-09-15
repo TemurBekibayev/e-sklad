@@ -266,19 +266,52 @@ namespace KafePOS
             }
         }
 
+        private string FindBrowserExecutable()
+        {
+            string[] searchPaths = new string[]
+            {
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Google\Chrome\Application\chrome.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Google\Chrome\Application\chrome.exe"),
+            };
+
+            foreach (string p in searchPaths)
+            {
+                if (File.Exists(p)) return p;
+            }
+            return "msedge.exe";
+        }
+
         private void LaunchDesktopWindow()
         {
             try
             {
-                // Standalone Desktop App (Kiosk/App) rejimida ochish
-                ProcessStartInfo psi = new ProcessStartInfo("msedge.exe", "--app=http://127.0.0.1:4000 --window-size=1280,850");
+                string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string userDataDir = Path.Combine(localAppData, "KafePOS", "Data");
+                if (!Directory.Exists(userDataDir))
+                {
+                    Directory.CreateDirectory(userDataDir);
+                }
+
+                string browserExe = FindBrowserExecutable();
+                string arguments = string.Format(
+                    "--app=\"http://127.0.0.1:4000\" --user-data-dir=\"{0}\" --kiosk-printing --no-first-run --no-default-browser-check --disable-translate --disable-features=Translate,OptimizationHints,MediaRouter --start-maximized",
+                    userDataDir
+                );
+
+                ProcessStartInfo psi = new ProcessStartInfo(browserExe, arguments);
                 psi.UseShellExecute = true;
                 Process.Start(psi);
             }
             catch
             {
                 // Fallback to default browser
-                Process.Start("http://127.0.0.1:4000");
+                try
+                {
+                    Process.Start("http://127.0.0.1:4000");
+                }
+                catch { }
             }
 
             CloseForm();

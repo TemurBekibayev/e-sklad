@@ -25,6 +25,7 @@ export default function JetCafePosView({
   onCompletePayment,
   onLogout,
   onOpenSettings,
+  onOpenPrinterSettings,
   onSaveProduct,
   onDeleteProduct,
   onSaveCategory,
@@ -528,6 +529,16 @@ export default function JetCafePosView({
             )}
           </button>
 
+          {/* Quick Printer Button */}
+          <button
+            onClick={onOpenPrinterSettings}
+            title="Chek va Printer Sozlamalari (80mm / 58mm)"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition"
+          >
+            <span>🖨️</span>
+            <span>Printer</span>
+          </button>
+
           {/* Settings cascading menu matching step2_frame_82.jpg */}
           <div className="relative">
             <button
@@ -620,6 +631,24 @@ export default function JetCafePosView({
                       <span>Server & Backend API</span>
                     </div>
                     <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
+                  </button>
+                </div>
+
+                {/* Chek va Printer Sozlamalari */}
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSettingsMenuOpen(false);
+                      if (onOpenPrinterSettings) onOpenPrinterSettings();
+                    }}
+                    className="w-full text-left px-3 py-1.5 bg-amber-50/60 hover:bg-amber-100 flex items-center justify-between text-amber-950 font-bold"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-600 text-sm">🖨️</span>
+                      <span>Chek Printer Sozlamalari</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded font-bold">80mm</span>
                   </button>
                 </div>
 
