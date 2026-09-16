@@ -1,7 +1,7 @@
 export const translations = {
   uz: {
     // Auth & Login
-    loginTitle: "SotuvPro",
+    loginTitle: "GetPOS",
     loginSubtitle: "Tizimga kirish uchun ma'lumotlarni kiriting",
     emailLabel: "Elektron pochta",
     passwordLabel: "Parol",
@@ -225,7 +225,7 @@ export const translations = {
   },
   ru: {
     // Auth & Login
-    loginTitle: "SotuvPro",
+    loginTitle: "GetPOS",
     loginSubtitle: "Введите данные для входа в систему",
     emailLabel: "Электронная почта",
     passwordLabel: "Пароль",
