@@ -426,9 +426,13 @@ class ApiService {
       return true;
     }
 
-    final payload = {
-      'table': order.tableId,
-      'tableId': order.tableId,
+    final tableNumDigits = order.tableName.replaceAll(RegExp(r'\D'), '');
+    final cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
+        _tableNumberToCloudUuid[order.tableId] ??
+        (order.tableId.contains('-') ? order.tableId : null);
+
+    final cloudPayload = {
+      'table': cloudTableId ?? order.tableId,
       'guests_count': order.guestCount,
       'notes': '',
       'items': order.items.map((i) {
@@ -442,9 +446,28 @@ class ApiService {
       }).toList(),
     };
 
+    final localPayload = {
+      'table': order.tableId,
+      'tableId': order.tableId,
+      'tableNumber': tableNumDigits.isNotEmpty ? tableNumDigits : order.tableId,
+      'table_number': tableNumDigits.isNotEmpty ? tableNumDigits : order.tableId,
+      'guests_count': order.guestCount,
+      'waiter_name': order.waiterName,
+      'notes': '',
+      'items': order.items.map((i) {
+        return {
+          'product_id': i.productId,
+          'product_name': i.productName,
+          'quantity': i.quantity,
+          'price': i.itemPrice,
+          'comment': i.comment ?? '',
+        };
+      }).toList(),
+    };
+
     final res = await _requestWithFailover(
-      cloudCall: (dio) => dio.post('orders/', data: payload),
-      localCall: (dio) => dio.post('orders', data: payload),
+      cloudCall: (dio) => dio.post('orders/', data: cloudPayload),
+      localCall: (dio) => dio.post('orders', data: localPayload),
     );
 
     return res != null && (res.statusCode == 200 || res.statusCode == 201);

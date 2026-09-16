@@ -499,7 +499,7 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
       }
       if (!activeOrder && t.id) {
         activeOrder = await get(
-          `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
+          `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
           [t.id]
         );
       }
