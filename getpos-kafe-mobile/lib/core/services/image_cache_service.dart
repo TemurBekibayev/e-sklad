@@ -16,25 +16,40 @@ class ImageCacheService {
     if (rawUrl == null || rawUrl.trim().isEmpty) return null;
     final url = rawUrl.trim();
 
-    // Already full HTTP/HTTPS URL
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return url;
+    var rootLocal = localKassaUrl.trim();
+    if (rootLocal.endsWith('/api')) {
+      rootLocal = rootLocal.substring(0, rootLocal.length - 4);
+    } else if (rootLocal.endsWith('/api/')) {
+      rootLocal = rootLocal.substring(0, rootLocal.length - 5);
+    }
+    if (rootLocal.endsWith('/')) {
+      rootLocal = rootLocal.substring(0, rootLocal.length - 1);
+    }
+    if (!rootLocal.startsWith('http://') && !rootLocal.startsWith('https://')) {
+      rootLocal = 'http://$rootLocal';
     }
 
-    // Local Kassa uploads: e.g. /uploads/img_123.jpg or uploads/img_123.jpg
+    // 1. If url contains uploads/ or media/
     if (url.contains('uploads/') || url.contains('media/')) {
-      var rootLocal = localKassaUrl.trim();
-      if (rootLocal.endsWith('/api')) {
-        rootLocal = rootLocal.substring(0, rootLocal.length - 4);
-      } else if (rootLocal.endsWith('/api/')) {
-        rootLocal = rootLocal.substring(0, rootLocal.length - 5);
+      final match = RegExp(r'(uploads\/[^\s\?]+|media\/[^\s\?]+)').firstMatch(url);
+      if (match != null) {
+        return '$rootLocal/${match.group(1)}';
       }
-      if (rootLocal.endsWith('/')) {
-        rootLocal = rootLocal.substring(0, rootLocal.length - 1);
-      }
-
       final cleanPath = url.startsWith('/') ? url : '/$url';
       return '$rootLocal$cleanPath';
+    }
+
+    // 2. If it is localhost / 127.0.0.1
+    if (url.contains('localhost') || url.contains('127.0.0.1')) {
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        return '$rootLocal${uri.path}';
+      }
+    }
+
+    // 3. Already full HTTP/HTTPS URL
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
     }
 
     final clean = url.startsWith('/') ? url : '/$url';
@@ -72,14 +87,20 @@ class ImageCacheService {
           continue;
         }
 
-        // Download and store in local phone storage
-        final file = await _cacheManager.getSingleFile(resolvedUrl);
+        // Download and store in local phone storage with 5s timeout
+        final file = await _cacheManager.getSingleFile(resolvedUrl).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw TimeoutException('Image download timeout: $resolvedUrl'),
+        );
         if (file.existsSync()) {
           successCount++;
         } else {
           errorCount++;
         }
       } catch (e) {
+        if (kDebugMode) {
+          print('[ImageCacheService] Failed downloading: $resolvedUrl ($e)');
+        }
         errorCount++;
       }
     }

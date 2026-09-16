@@ -295,16 +295,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.image_outlined, color: AppColors.primary, size: 22),
-                          SizedBox(width: 8),
-                          Text(
-                            'Taom Rasmlari (Wi-Fi Kesh)',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ],
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(Icons.image_outlined, color: AppColors.primary, size: 22),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Taom Rasmlari (Wi-Fi Kesh)',
+                                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -381,9 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                               try {
                                 final menuProv = context.read<MenuProvider>();
-                                if (menuProv.allProducts.isEmpty) {
-                                  await menuProv.init();
-                                }
+                                await menuProv.refresh();
                                 final products = menuProv.allProducts;
                                 final result = await ImageCacheService().preloadProductImages(products);
                                 final cached = result['cached'] ?? 0;
