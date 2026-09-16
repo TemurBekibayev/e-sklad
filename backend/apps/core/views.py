@@ -155,6 +155,14 @@ class TenantViewSet(viewsets.ModelViewSet):
             day = min(today.day, calendar.monthrange(year, month)[1])
             initial_paid_until = date(year, month, day)
 
+            business_type = request.data.get('business_type')
+            if not business_type:
+                name_lower = (name or '').lower()
+                if any(k in name_lower for k in ['kafe', 'cafe', 'restoran', 'restaurant', 'oshxona', 'qahvaxona', 'choyxona', 'bar', 'pub', 'fastfood', 'fast food', 'lavash', 'doner']):
+                    business_type = 'cafe'
+                else:
+                    business_type = 'retail'
+
             with dj_transaction.atomic():
                 from decimal import Decimal
                 tenant = Tenant.objects.create(
@@ -166,6 +174,7 @@ class TenantViewSet(viewsets.ModelViewSet):
                     last_payment_date=timezone.now(),
                     last_payment_amount=Decimal(str(subscription_fee)) * subscription_months,
                     settings={
+                        'business_type': business_type,
                         'max_worker_finalize_amount': 1000000.0,
                         'allow_negative_stock': False,
                         'auto_sms_enabled': False

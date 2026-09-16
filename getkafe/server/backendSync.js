@@ -276,7 +276,10 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
     payload.login = extraLogin;
   }
 
-  if (cfg.tenant_id) {
+  // Only constrain to tenant_id if this is a pure numeric PIN/user_id login without an email/phone
+  const loginStr = String(payload.login || userIdOrLogin || '');
+  const isEmailOrPhone = loginStr.includes('@') || /^\+?\d{7,}$/.test(loginStr);
+  if (cfg.tenant_id && !isEmailOrPhone) {
     payload.tenant_id = cfg.tenant_id;
   }
 

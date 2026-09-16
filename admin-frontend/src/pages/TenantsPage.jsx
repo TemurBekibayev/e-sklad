@@ -7,6 +7,7 @@ import { apiFetch } from '../utils/api';
 export default function TenantsPage({ tenants, setTenants, onSelectTenant, loading, refreshTenants }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedTenantForPayment, setSelectedTenantForPayment] = useState(null);
@@ -61,6 +62,18 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
     }
   };
 
+  const getBusinessType = (tenant) => {
+    if (tenant.business_type) return tenant.business_type;
+    if (tenant.settings && typeof tenant.settings === 'object' && tenant.settings.business_type) {
+      return tenant.settings.business_type;
+    }
+    const nameLower = (tenant.name || '').toLowerCase();
+    if (/kafe|cafe|restoran|restaurant|oshxona|qahvaxona|choyxona|bar|pub|fastfood|fast food|lavash|doner/i.test(nameLower)) {
+      return 'cafe';
+    }
+    return 'retail';
+  };
+
   const filteredTenants = (Array.isArray(tenants) ? tenants : []).filter((tenant) => {
     const name = tenant.name || '';
     const address = tenant.address || '';
@@ -76,11 +89,53 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
       matchesStatus = tenant.days_left !== undefined && tenant.days_left < 0;
     }
 
-    return matchesSearch && matchesStatus;
+    let matchesCategory = true;
+    const bType = getBusinessType(tenant);
+    if (categoryFilter === 'retail') {
+      matchesCategory = bType === 'retail';
+    } else if (categoryFilter === 'cafe') {
+      matchesCategory = bType === 'cafe';
+    }
+
+    return matchesSearch && matchesStatus && matchesCategory;
   });
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Category Tabs */}
+      <div className="flex items-center space-x-2 bg-slate-100/80 p-1.5 rounded-2xl w-fit border border-slate-200/60">
+        <button
+          onClick={() => setCategoryFilter('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'all'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Barcha ob'yektlar ({tenants?.length || 0})
+        </button>
+        <button
+          onClick={() => setCategoryFilter('retail')}
+          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'retail'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>🛍️ Do'konlar</span>
+        </button>
+        <button
+          onClick={() => setCategoryFilter('cafe')}
+          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'cafe'
+              ? 'bg-amber-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>☕ Kafe & Restoranlar</span>
+        </button>
+      </div>
+
       {/* Top action row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-4 flex-1 max-w-xl">
@@ -91,7 +146,7 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Do'kon qidirish..."
+              placeholder="Nomi yoki manzili bo'yicha qidirish..."
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200/90 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
             />
           </div>
@@ -104,10 +159,10 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3.5 py-2.5 bg-white border border-slate-200/90 rounded-xl text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
             >
-              <option value="all">Barcha do'konlar</option>
+              <option value="all">Barchasi</option>
               <option value="active">Faol</option>
               <option value="inactive">Muzlatilgan</option>
-              <option value="overdue">To'lov muddati o'tganlar</option>
+              <option value="overdue">Muddati o'tganlar</option>
             </select>
           </div>
         </div>
@@ -118,7 +173,7 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
           className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-600/20 active:scale-95 transition"
         >
           <Plus className="w-4 h-4" />
-          <span>Yangi do'kon qo'shish</span>
+          <span>Yangi filial qo'shish</span>
         </button>
       </div>
 
@@ -128,7 +183,7 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-4 px-6">NOMI</th>
+                <th className="py-4 px-6">NOMI VA TURI</th>
                 <th className="py-4 px-6">MANZIL</th>
                 <th className="py-4 px-6">TO'LOV MUDDATI (HOLATI)</th>
                 <th className="py-4 px-6">XODIMLAR</th>
@@ -140,6 +195,7 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
               {filteredTenants.map((row) => {
                 const isPaid = row.paid_until && row.days_left >= 0;
                 const isOverdue = row.paid_until && row.days_left < 0;
+                const bType = getBusinessType(row);
 
                 return (
                   <tr
@@ -148,10 +204,21 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
                     className="hover:bg-slate-50/70 transition cursor-pointer group"
                   >
                     <td className="py-4 px-6">
-                      <div className="flex flex-col items-start gap-1">
-                        <span className="font-bold text-slate-900 group-hover:text-blue-600 transition">
-                          {row.name}
-                        </span>
+                      <div className="flex flex-col items-start gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 group-hover:text-blue-600 transition">
+                            {row.name}
+                          </span>
+                          {bType === 'cafe' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              ☕ Kafe / Restoran
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              🛍️ Savdo / Do'kon
+                            </span>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={(e) => handleCopyId(e, row.id)}

@@ -49,15 +49,24 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             users_qs = User.objects.filter(is_active=True)
             if user_id_val:
                 users_qs = users_qs.filter(id=user_id_val)
-            elif tenant_id:
+            elif tenant_id and not login_val:
                 users_qs = users_qs.filter(tenant_id=tenant_id)
+            
             if login_val:
-                users_qs = users_qs.filter(
+                matched = users_qs.filter(
                     models.Q(name__iexact=login_val) |
                     models.Q(email__iexact=login_val) |
                     models.Q(email__istartswith=f"{login_val}@") |
                     models.Q(phone_number=login_val)
                 )
+                if not matched.exists() and tenant_id:
+                    matched = User.objects.filter(is_active=True).filter(
+                        models.Q(name__iexact=login_val) |
+                        models.Q(email__iexact=login_val) |
+                        models.Q(email__istartswith=f"{login_val}@") |
+                        models.Q(phone_number=login_val)
+                    )
+                users_qs = matched
 
             check_val = pin_val or password_val
             found_user = None
@@ -80,7 +89,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                     if target_u:
                         target_u.register_failed_attempt()
                 raise serializers.ValidationError({
-                    'detail': _('Noto\'g\'ri PIN kod yoki foydalanuvchi topilmadi.')
+                    'detail': _('Noto\'g\'ri login yoki parol!')
                 })
 
         # 2. Email + Parol orqali kirish (Admin Panel / Manager Web)
@@ -153,11 +162,13 @@ class TenantSerializer(serializers.ModelSerializer):
     total_debts = serializers.SerializerMethodField()
     is_subscription_active = serializers.BooleanField(read_only=True)
     days_left = serializers.IntegerField(read_only=True)
+    business_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Tenant
         fields = [
             'id', 'name', 'address', 'status', 'settings',
+            'business_type',
             'subscription_monthly_fee', 'sms_price_per_unit',
             'paid_until', 'auto_freeze_on_expiry', 'last_payment_date',
             'last_payment_amount', 'freeze_reason',
@@ -165,7 +176,17 @@ class TenantSerializer(serializers.ModelSerializer):
             'users_count', 'products_count', 'today_sales', 'total_debts',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'is_subscription_active', 'days_left']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_subscription_active', 'days_left', 'business_type']
+
+    def get_business_type(self, obj):
+        if obj.settings and isinstance(obj.settings, dict):
+            b_type = obj.settings.get('business_type')
+            if b_type:
+                return b_type
+        name_lower = (obj.name or '').lower()
+        if any(k in name_lower for k in ['kafe', 'cafe', 'restoran', 'restaurant', 'oshxona', 'qahvaxona', 'choyxona', 'bar', 'pub', 'fastfood', 'fast food', 'lavash', 'doner']):
+            return 'cafe'
+        return 'retail'
 
     def get_products_count(self, obj):
         try:
