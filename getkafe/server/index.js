@@ -306,36 +306,47 @@ app.post('/api/config/backend/tenant', async (req, res) => {
 app.get('/api/auth/users', async (req, res) => {
   try {
     const cfg = await backendSync.getConfig();
-    const tenantId = req.query.tenantId || cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+    const tenantId = req.query.tenantId || cfg.tenant_id || '';
 
-    // 1. Fetch live staff from getpos.uz and merge into local SQLite if missing
-    try {
-      const staffRes = await backendSync.fetchStaffForTenant(tenantId);
-      if (staffRes.users && staffRes.users.length > 0) {
-        for (const u of staffRes.users) {
-          const uCode = u.id || u.user_code;
-          const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
-          const localExists = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [uCode, u.name]);
-          if (!localExists) {
-            await run(
-              `INSERT INTO users (name, role, pin, phone, status, is_shift_open, user_code, tenant_id)
-               VALUES (?, ?, ?, ?, 'active', 1, ?, ?)`,
-              [u.name, mappedRole, u.pin || '1111', u.phone || '', uCode, tenantId]
-            );
+    // 1. Fetch live staff from getpos.uz if tenantId is configured
+    if (tenantId) {
+      try {
+        const staffRes = await backendSync.fetchStaffForTenant(tenantId);
+        if (staffRes.users && staffRes.users.length > 0) {
+          for (const u of staffRes.users) {
+            const uCode = u.id || u.user_code;
+            const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
+            const localExists = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [uCode, u.name]);
+            if (!localExists) {
+              await run(
+                `INSERT INTO users (name, role, pin, phone, status, is_shift_open, user_code, tenant_id)
+                 VALUES (?, ?, ?, ?, 'active', 1, ?, ?)`,
+                [u.name, mappedRole, u.pin || '1111', u.phone || '', uCode, tenantId]
+              );
+            }
           }
         }
+      } catch (e) {
+        console.warn('[Users] Live fetchStaffForTenant sync error:', e.message);
       }
-    } catch (e) {
-      console.warn('[Users] Live fetchStaffForTenant sync error:', e.message);
     }
 
     // 2. Return all local active users belonging to this tenant
-    const users = await all(
-      `SELECT id, user_code, name, role, status, tenant_id FROM users 
-       WHERE (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND (status = 'active' OR status IS NULL)
-       ORDER BY id ASC`,
-      [tenantId]
-    );
+    let users = [];
+    if (tenantId) {
+      users = await all(
+        `SELECT id, user_code, name, role, status, tenant_id FROM users 
+         WHERE (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND (status = 'active' OR status IS NULL)
+         ORDER BY id ASC`,
+        [tenantId]
+      );
+    } else {
+      users = await all(
+        `SELECT id, user_code, name, role, status, tenant_id FROM users 
+         WHERE status = 'active' OR status IS NULL
+         ORDER BY id ASC`
+      );
+    }
 
     const formatted = users.map((u) => ({
       id: u.user_code || `usr_${u.id}`,

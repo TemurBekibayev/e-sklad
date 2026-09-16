@@ -325,27 +325,13 @@ async function seedInitialData() {
     await run(`ALTER TABLE users ADD COLUMN password TEXT DEFAULT ''`);
   } catch (e) {}
 
-  // Real users from getpos.uz backend for Test Kafe (Only active tenant!)
-  const currentStoreUsers = [
-    { name: 'Kafee', role: 'admin', pin: '3333', code: 'b58d74f3-3541-4341-acf8-ff00c13964c7', tenant_id: '90e04abf-246d-4683-91eb-1ac34d7b2ee7' },
-  ];
-
-  // Remove any legacy users from other stores/tenants
-  await run(`
-    DELETE FROM users 
-    WHERE name IN ('John', 'Ali (Xodim)', 'Rustam', 'Sardor Karimov')
-       OR (tenant_id IS NOT NULL AND tenant_id != '90e04abf-246d-4683-91eb-1ac34d7b2ee7' AND user_code NOT LIKE '%-%-%')
-  `);
-
-  for (const ru of currentStoreUsers) {
-    const existing = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [ru.code, ru.name]);
-    if (!existing) {
-      await run(`INSERT INTO users (name, role, pin, is_shift_open, status, user_code, tenant_id) VALUES (?, ?, ?, 1, 'active', ?, ?)`, [
-        ru.name, ru.role, ru.pin, ru.code, ru.tenant_id
-      ]);
-    } else {
-      await run(`UPDATE users SET user_code = ?, tenant_id = ?, status = 'active' WHERE id = ?`, [ru.code, ru.tenant_id, existing.id]);
-    }
+  // Ensure at least one clean default Administrator exists
+  const existingUsers = await all(`SELECT id, name, pin, role FROM users WHERE status = 'active' OR status IS NULL`);
+  if (!existingUsers || existingUsers.length === 0) {
+    await run(
+      `INSERT INTO users (name, role, login, password, pin, phone, is_shift_open, status, user_code)
+       VALUES ('Admin', 'admin', 'admin', '1111', '1111', '', 1, 'active', 'usr_admin')`
+    );
   }
 
   // Check halls

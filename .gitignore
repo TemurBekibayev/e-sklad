@@ -52,4 +52,5 @@ build/
 # Binaries
 getkafe/node.exe
 getkafe/installer/payload.zip
+getkafe/installer/payload_stage/
 getkafe/dist_installer/KafePOS_Offline_Files.zip
