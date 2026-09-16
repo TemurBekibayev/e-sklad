@@ -1206,13 +1206,17 @@ async function pushActiveOrderToCloud({ tableId, tableName, waiterName, items, g
     tableId: remoteTableId,
     guests_count: guestCount || 2,
     notes: '',
-    items: (items || []).map(i => ({
-      product_id: i.product_id || i.productId,
-      product_name: i.product_name || i.productName || i.name || 'Taom',
-      quantity: i.quantity || i.qty || 1,
-      price: i.price || i.unit_price || 0,
-      comment: i.comment || '',
-    }))
+    items: (items || []).map(i => {
+      const rawPid = i.product_id || i.productId;
+      const numPid = rawPid ? parseInt(String(rawPid).replace(/\D/g, ''), 10) : null;
+      return {
+        ...(numPid && numPid > 0 ? { product_id: numPid } : {}),
+        product_name: i.product_name || i.productName || i.name || 'Taom',
+        quantity: i.quantity || i.qty || 1,
+        price: i.price || i.unit_price || 0,
+        comment: i.comment || '',
+      };
+    })
   };
 
   try {

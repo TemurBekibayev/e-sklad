@@ -484,8 +484,9 @@ class ApiService {
       'guests_count': order.guestCount,
       'notes': '',
       'items': order.items.map((i) {
+        final numericId = int.tryParse(i.productId.replaceAll(RegExp(r'\D'), ''));
         return {
-          'product_id': i.productId,
+          if (numericId != null && numericId > 0) 'product_id': numericId,
           'product_name': i.productName,
           'quantity': i.quantity,
           'price': i.itemPrice,
@@ -503,8 +504,9 @@ class ApiService {
       'waiter_name': order.waiterName,
       'notes': '',
       'items': order.items.map((i) {
+        final numericId = int.tryParse(i.productId.replaceAll(RegExp(r'\D'), ''));
         return {
-          'product_id': i.productId,
+          'product_id': numericId ?? i.productId,
           'product_name': i.productName,
           'quantity': i.quantity,
           'price': i.itemPrice,

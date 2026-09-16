@@ -450,14 +450,23 @@ class OrderCartSheet extends StatelessWidget {
                           ? null
                           : () async {
                               final success = await orderProv.sendToKitchen(tablesProv);
-                              if (success && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Buyurtma oshxonaga yuborildi!'),
-                                    backgroundColor: AppColors.success,
-                                  ),
-                                );
-                                Navigator.pop(context);
+                              if (context.mounted) {
+                                if (success) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Buyurtma oshxonaga yuborildi!'),
+                                      backgroundColor: AppColors.success,
+                                    ),
+                                  );
+                                  Navigator.pop(context);
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Buyurtmani yuborishda xatolik yuz berdi. Server aloqasini tekshiring.'),
+                                      backgroundColor: AppColors.error,
+                                    ),
+                                  );
+                                }
                               }
                             },
                       style: ElevatedButton.styleFrom(
