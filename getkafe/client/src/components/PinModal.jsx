@@ -123,12 +123,12 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         </h2>
 
         {/* User Prompt / Hint */}
-        <p className="text-xs text-slate-400 mb-5">
-          {t('pin_hint_default', 'Tizimga kirish uchun 4 xonali PIN-kodingizni kiriting')}
+        <p className="text-xs text-slate-400 mb-4">
+          {t('pin_hint_default', 'Kassani faollashtirish uchun 4 xonali PIN-kodni tering')}
         </p>
 
         {/* PIN display dots */}
-        <div className="flex justify-center space-x-3.5 mb-6">
+        <div className="flex justify-center space-x-3.5 mb-5">
           {[0, 1, 2, 3].map((idx) => (
             <div
               key={idx}
@@ -149,13 +149,13 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         )}
 
         {/* Big Touch-screen Numeric Keypad */}
-        <div className="grid grid-cols-3 gap-2.5 mb-5">
+        <div className="grid grid-cols-3 gap-2.5 mb-4">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
             <button
               key={num}
               type="button"
               onClick={() => handleNumber(num.toString())}
-              className="h-14 rounded-2xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-2xl font-black text-slate-100 transition-all active:scale-95 shadow-md flex items-center justify-center border border-slate-700/60"
+              className="h-13 rounded-2xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-2xl font-black text-slate-100 transition-all active:scale-95 shadow-md flex items-center justify-center border border-slate-700/60"
             >
               {num}
             </button>
@@ -163,7 +163,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           <button
             type="button"
             onClick={handleClear}
-            className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-800 text-rose-400 font-black text-xl active:scale-95 transition-all flex items-center justify-center border border-slate-700/60"
+            className="h-13 rounded-2xl bg-slate-800/60 hover:bg-slate-800 text-rose-400 font-black text-xl active:scale-95 transition-all flex items-center justify-center border border-slate-700/60"
             title="Tozalash"
           >
             C
@@ -171,29 +171,49 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           <button
             type="button"
             onClick={() => handleNumber('0')}
-            className="h-14 rounded-2xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-2xl font-black text-slate-100 transition-all active:scale-95 shadow-md flex items-center justify-center border border-slate-700/60"
+            className="h-13 rounded-2xl bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-2xl font-black text-slate-100 transition-all active:scale-95 shadow-md flex items-center justify-center border border-slate-700/60"
           >
             0
           </button>
           <button
             type="button"
             onClick={handleDelete}
-            className="h-14 rounded-2xl bg-slate-800/60 hover:bg-slate-800 text-slate-400 active:scale-95 transition-all flex items-center justify-center border border-slate-700/60"
+            className="h-13 rounded-2xl bg-slate-800/60 hover:bg-slate-800 text-slate-400 active:scale-95 transition-all flex items-center justify-center border border-slate-700/60"
             title="Orqaga o'chirish"
           >
             <Delete className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Login Action Button */}
+        {/* Unlock Action Button */}
         <button
           type="button"
           onClick={() => handleSubmit()}
           disabled={loading || pin.length === 0}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-40 text-slate-950 font-black text-base uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all active:scale-[0.98]"
+          className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-40 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg shadow-amber-500/25 transition-all active:scale-[0.98]"
         >
-          {loading ? t('pin_checking', 'Tekshirilmoqda...') : t('pin_login_btn', 'TIZIMGA KIRISH')}
+          {loading ? t('pin_checking', 'Tekshirilmoqda...') : t('pin_unlock_btn', 'QULFDAN CHIQARISH (PIN)')}
         </button>
+
+        {/* Full Logout Button */}
+        <div className="mt-3 pt-3 border-t border-slate-800">
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Tizimdan to'liq chiqmoqchimisiz? (Keyingi safar Login va Parol so'raladi)")) {
+                if (roleHint && typeof roleHint === 'function') {
+                  roleHint(); // or onFullLogout
+                } else if (onLogin && typeof onLogin === 'function') {
+                  localStorage.removeItem('getpos_user');
+                  window.location.reload();
+                }
+              }
+            }}
+            className="text-xs text-slate-400 hover:text-rose-400 transition font-medium underline-offset-4 hover:underline"
+          >
+            🚪 {t('full_logout_btn', 'Tizimdan to\'liq chiqish (Login & Parol)')}
+          </button>
+        </div>
       </div>
     </div>
   );

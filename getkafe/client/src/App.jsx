@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
+import LoginModal from './components/LoginModal';
 import PinModal from './components/PinModal';
 import ReceiptModal from './components/ReceiptModal';
 import AddDishModal from './components/AddDishModal';
@@ -34,20 +35,43 @@ function isProductMatch(p, targetId) {
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
-  // Always enforce PIN modal on app launch
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isPinModalOpen, setIsPinModalOpen] = useState(true);
+  
+  // Initial session from localStorage
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('getpos_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isTableManageModalOpen, setIsTableManageModalOpen] = useState(false);
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
 
-  // Clear any legacy mock sessions on mount
+  // 15-minute Inactivity Auto-Lock timer
+  const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
   useEffect(() => {
-    try {
-      localStorage.removeItem('kafepos_user');
-      sessionStorage.removeItem('kafepos_user');
-    } catch (e) {}
-  }, []);
+    if (!currentUser || isScreenLocked) return;
+    let idleTimer = null;
+    const resetTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        setIsScreenLocked(true);
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keypress', 'keydown', 'scroll', 'touchstart', 'click'];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer));
+    resetTimer();
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+  }, [currentUser, isScreenLocked]);
   const [isAddDishModalOpen, setIsAddDishModalOpen] = useState(false);
   const [staffUsers, setStaffUsers] = useState([]);
 
@@ -513,10 +537,10 @@ export default function App() {
     }
   };
 
-  // Auth login handler
-  const handleLogin = (user) => {
+  // Auth login handler (Full Login via Login + Parol)
+  const handleFullLogin = (user) => {
     setCurrentUser(user);
-    setIsPinModalOpen(false);
+    setIsScreenLocked(false);
     if (user.role === 'waiter') {
       setCurrentTab('waiter');
     } else if (user.role === 'cook') {
@@ -526,10 +550,24 @@ export default function App() {
     }
   };
 
-  // Logout handler
-  const handleLogout = () => {
+  // Fast PIN Unlock handler (Unlock from 15-min inactivity or quick lock)
+  const handlePinUnlock = (user) => {
+    if (user) setCurrentUser(user);
+    setIsScreenLocked(false);
+  };
+
+  // Quick Lock Screen handler (Cashier clicks [🔒 Qulf])
+  const handleQuickLock = () => {
+    setIsScreenLocked(true);
+  };
+
+  // Full Logout handler (Returns to Login + Parol)
+  const handleFullLogout = () => {
+    try {
+      localStorage.removeItem('getpos_user');
+    } catch (e) {}
     setCurrentUser(null);
-    setIsPinModalOpen(true);
+    setIsScreenLocked(false);
     setSelectedTable(null);
     setActiveOrder(null);
   };
@@ -544,7 +582,7 @@ export default function App() {
           currentTab={currentTab}
           setCurrentTab={setCurrentTab}
           currentUser={currentUser}
-          onLogout={handleLogout}
+          onLogout={handleFullLogout}
           syncState={syncState}
           onToggleInternet={handleToggleInternet}
           onFlushSync={handleFlushSync}
@@ -571,7 +609,8 @@ export default function App() {
             onSelectTable={(tbl) => setSelectedTable(tbl)}
             onSubmitOrder={handleSubmitOrder}
             onCompletePayment={handleCompletePayment}
-            onLogout={handleLogout}
+            onLogout={handleFullLogout}
+            onLockScreen={handleQuickLock}
             onOpenSettings={() => setCurrentTab('mxik')}
             onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
             onOpenStaffModal={() => setIsStaffModalOpen(true)}
@@ -664,10 +703,18 @@ export default function App() {
         }}
       />
 
-      {/* PIN Login Modal */}
-      {isPinModalOpen && (
+      {/* 1. Full Login Modal (Login + Parol) when no active user session */}
+      {!currentUser && (
+        <LoginModal
+          onLoginSuccess={handleFullLogin}
+        />
+      )}
+
+      {/* 2. Fast PIN Lock Screen (15-min Inactivity or Quick Lock) */}
+      {currentUser && isScreenLocked && (
         <PinModal
-          onLogin={handleLogin}
+          onLogin={handlePinUnlock}
+          roleHint={handleFullLogout}
         />
       )}
 

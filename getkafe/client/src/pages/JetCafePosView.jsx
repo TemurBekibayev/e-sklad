@@ -25,6 +25,7 @@ export default function JetCafePosView({
   onSubmitOrder,
   onCompletePayment,
   onLogout,
+  onLockScreen,
   onOpenSettings,
   onOpenPrinterSettings,
   onOpenStaffModal,
@@ -508,12 +509,23 @@ export default function JetCafePosView({
             <span className="text-amber-600 font-black text-sm hidden sm:inline">Kafe</span>
           </div>
 
+          {/* [🔒] Qulflash (Tezkor PIN) button */}
+          <button
+            type="button"
+            onClick={onLockScreen}
+            className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
+            title="Kassani vaqtincha PIN bilan qulflash (Fast Lock)"
+          >
+            <span className="text-xs">🔒</span>
+            <span className="text-xs">{t('lock_screen', 'Qulf')}</span>
+          </button>
+
           {/* [X] Chiqish button */}
           <button
             type="button"
             onClick={onLogout}
             className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
-            title="Dasturdan chiqish / PIN-kod oynasi"
+            title="Tizimdan to'liq chiqish (Login & Parol)"
           >
             <span className="w-4 h-4 bg-rose-600 text-white rounded flex items-center justify-center text-[10px] font-black">
               ✕
