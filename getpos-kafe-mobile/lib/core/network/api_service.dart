@@ -18,6 +18,7 @@ class ApiService {
 
   Dio? _cloudDio;
   Dio? _localDio;
+  final Map<String, String> _tableNumberToCloudUuid = {};
 
   final ValueNotifier<ServerConnectionType> connectionStatusNotifier =
       ValueNotifier<ServerConnectionType>(ServerConnectionType.cloud);
@@ -303,6 +304,24 @@ class ApiService {
             ? res.data['results']
             : (res.data['tables'] ?? (res.data is List ? res.data : []));
         if (list.isNotEmpty) {
+          for (final raw in list) {
+            if (raw is Map) {
+              final rawId = raw['id']?.toString();
+              final rawRemoteId = raw['remote_id']?.toString() ?? raw['remoteId']?.toString();
+              final rawNum = raw['number']?.toString();
+              final rawName = raw['name']?.toString();
+              final effectiveUuid = (rawId != null && rawId.contains('-'))
+                  ? rawId
+                  : (rawRemoteId != null && rawRemoteId.contains('-') ? rawRemoteId : null);
+              if (effectiveUuid != null) {
+                if (rawNum != null && rawNum.isNotEmpty) _tableNumberToCloudUuid[rawNum] = effectiveUuid;
+                if (rawName != null && rawName.isNotEmpty) {
+                  final digits = rawName.replaceAll(RegExp(r'\D'), '');
+                  if (digits.isNotEmpty) _tableNumberToCloudUuid[digits] = effectiveUuid;
+                }
+              }
+            }
+          }
           final tables = list.map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>)).toList();
           if (hallName != null && hallName != 'Barchasi') {
             return tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
@@ -427,9 +446,38 @@ class ApiService {
     }
 
     final tableNumDigits = order.tableName.replaceAll(RegExp(r'\D'), '');
-    final cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
+    var cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
         _tableNumberToCloudUuid[order.tableId] ??
         (order.tableId.contains('-') ? order.tableId : null);
+
+    if (cloudTableId == null) {
+      try {
+        final cloudDio = await _getCloudDio();
+        final tRes = await cloudDio.get('tables/');
+        if (tRes.statusCode == 200 && tRes.data != null) {
+          final List list = (tRes.data is Map && tRes.data['results'] != null)
+              ? tRes.data['results']
+              : (tRes.data['tables'] ?? (tRes.data is List ? tRes.data : []));
+          for (final raw in list) {
+            if (raw is Map) {
+              final rawId = raw['id']?.toString();
+              final rawNum = raw['number']?.toString();
+              final rawName = raw['name']?.toString();
+              if (rawId != null && rawId.contains('-')) {
+                if (rawNum != null && rawNum.isNotEmpty) _tableNumberToCloudUuid[rawNum] = rawId;
+                if (rawName != null && rawName.isNotEmpty) {
+                  final digits = rawName.replaceAll(RegExp(r'\D'), '');
+                  if (digits.isNotEmpty) _tableNumberToCloudUuid[digits] = rawId;
+                }
+              }
+            }
+          }
+          cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
+              _tableNumberToCloudUuid[order.tableId] ??
+              (order.tableId.contains('-') ? order.tableId : null);
+        }
+      } catch (_) {}
+    }
 
     final cloudPayload = {
       'table': cloudTableId ?? order.tableId,

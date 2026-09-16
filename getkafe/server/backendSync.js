@@ -842,6 +842,11 @@ async function pollCloudBillRequests() {
         if (localTable) {
           let tableChanged = false;
 
+          // Always associate cloud UUID (remote_id) with local table
+          if (t.id && localTable.remote_id !== t.id) {
+            await run(`UPDATE tables SET remote_id = ? WHERE id = ?`, [t.id, localTable.id]);
+          }
+
           if (t.status === 'bill_requested' || t.status === 'busy') {
             if (localTable.status !== t.status) {
               await run(`UPDATE tables SET status = ? WHERE id = ?`, [t.status, localTable.id]);
@@ -861,7 +866,9 @@ async function pollCloudBillRequests() {
                 );
               }
 
+              let currentEffectiveOrderId = orderId;
               if (localOrder) {
+                currentEffectiveOrderId = localOrder.id;
                 await run(
                   `UPDATE orders SET status = ?, total_amount = ?, waiter_name = ? WHERE id = ?`,
                   [t.status, orderTotal, waiterName, localOrder.id]
@@ -872,12 +879,33 @@ async function pollCloudBillRequests() {
                 }
               } else {
                 const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
+                currentEffectiveOrderId = newOrderId;
                 await run(
                   `INSERT INTO orders (id, table_id, waiter_name, status, total_amount, guest_count) VALUES (?, ?, ?, ?, ?, ?)`,
                   [newOrderId, localTable.id, waiterName, t.status, orderTotal, t.active_order.guests_count || 4]
                 );
                 await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [newOrderId, localTable.id]);
                 tableChanged = true;
+              }
+
+              // Sync order items from Cloud to local SQLite for Desktop POS display
+              const cloudItems = t.active_order.items || [];
+              if (cloudItems.length > 0 && currentEffectiveOrderId) {
+                const existingItems = await all(`SELECT id FROM order_items WHERE order_id = ?`, [currentEffectiveOrderId]);
+                if (existingItems.length === 0) {
+                  for (const ci of cloudItems) {
+                    const ciName = ci.product_name || ci.name || 'Taom';
+                    const ciQty = Number(ci.quantity || 1);
+                    const ciPrice = Number(ci.price || ci.unit_price || 0);
+                    const ciComment = ci.comment || '';
+                    await run(
+                      `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status, waiter_name)
+                       VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)`,
+                      [currentEffectiveOrderId, ci.product_id || ci.product || 1, ciName, ciQty, ciPrice, ciComment, waiterName]
+                    );
+                  }
+                  tableChanged = true;
+                }
               }
 
               // Pre-chek termal printerga chiqarish (agar hali chop etilmagan bo'lsa)

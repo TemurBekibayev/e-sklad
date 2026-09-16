@@ -513,6 +513,8 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
 
       return {
         id: t.id,
+        remote_id: t.remote_id || null,
+        remoteId: t.remote_id || null,
         number: t.number,
         name: t.name || `STOL - ${t.number}`,
         hall: t.hall || 'Asosiy Zal',
