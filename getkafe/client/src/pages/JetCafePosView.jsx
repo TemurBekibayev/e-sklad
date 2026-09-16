@@ -8,7 +8,8 @@ import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
 import JetCafeMobileBasketsModal from '../components/JetCafeMobileBasketsModal';
 import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
-import { useLanguage } from '../i18n/LanguageContext';
+import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
+import { Maximize2, Minimize2 } from 'lucide-react';
 
 export default function JetCafePosView({
   tables = [],
@@ -26,6 +27,8 @@ export default function JetCafePosView({
   onLogout,
   onOpenSettings,
   onOpenPrinterSettings,
+  onOpenStaffModal,
+  onNavigateTab,
   onSaveProduct,
   onDeleteProduct,
   onSaveCategory,
@@ -282,7 +285,20 @@ export default function JetCafePosView({
     });
   };
 
-  const serviceFeePercent = 10; // JetCafe 10% service fee as seen in video
+  const [serviceFeePercent, setServiceFeePercent] = useState(10); // Dynamic service fee percent
+
+  // Load configured service fee % from printer settings
+  useEffect(() => {
+    fetch('/api/printers')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.settings && typeof data.settings.service_fee_percent === 'number') {
+          setServiceFeePercent(data.settings.service_fee_percent);
+        }
+      })
+      .catch((err) => console.warn('Could not load printer settings:', err));
+  }, []);
+
   const serviceFee = Math.round((subtotal * serviceFeePercent) / 100);
   const totalAmount = subtotal + serviceFee;
 
@@ -464,276 +480,267 @@ export default function JetCafePosView({
     }
   };
 
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
   // Format price helper
   const formatUZS = (val) => (val || 0).toLocaleString('ru-RU');
 
   return (
-    <div className="flex flex-col h-full w-full flex-1 bg-[#dce1e8] text-slate-800 select-none overflow-hidden font-sans text-xs">
+    <div className="flex flex-col h-screen w-screen bg-[#dce1e8] text-slate-800 select-none overflow-hidden font-sans text-xs">
       
-      {/* 1. TOP TITLEBAR matching JetCafe desktop interface */}
-      <header className="h-10 bg-[#e4e8ef] border-b border-[#b0b9c7] flex items-center justify-between px-3 shadow-sm shrink-0">
+      {/* 1. TOP TITLEBAR - Clean, compact single bar without clutter */}
+      <header className="h-11 bg-[#e4e8ef] border-b border-[#b0b9c7] flex items-center justify-between px-3 shadow-sm shrink-0 select-none z-20">
         {/* Left top controls */}
         <div className="flex items-center gap-2">
-          {/* [X] Выход button */}
+          {/* GetPOS Kafe Brand */}
+          <div className="flex items-center gap-1.5 pr-2 border-r border-[#b0b9c7]">
+            <span className="w-6 h-6 rounded bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 text-slate-900 font-black flex items-center justify-center text-xs shadow-sm">
+              GP
+            </span>
+            <span className="font-black text-slate-800 text-sm tracking-tight hidden sm:inline">GetPOS</span>
+            <span className="text-amber-600 font-black text-sm hidden sm:inline">Kafe</span>
+          </div>
+
+          {/* [X] Chiqish button */}
           <button
+            type="button"
             onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:translate-y-[1px] transition"
+            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
+            title="Dasturdan chiqish / PIN-kod oynasi"
           >
             <span className="w-4 h-4 bg-rose-600 text-white rounded flex items-center justify-center text-[10px] font-black">
               ✕
             </span>
-            <span className="text-xs">Выход</span>
+            <span className="text-xs">{t('logout', 'Chiqish')}</span>
           </button>
 
-          {/* (←) Столы button */}
+          {/* (←) Stollar button */}
           <button
+            type="button"
             onClick={() => setIsTableModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:translate-y-[1px] transition"
+            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
+            title="Stollar xaritasini ochish"
           >
             <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold">
               ←
             </span>
-            <span className="text-xs">Столы</span>
+            <span className="text-xs">{t('pos_tables', 'Stollar')}</span>
           </button>
 
           {/* Table Indicator badge */}
-          <div className="bg-white border border-[#b8c2d1] px-2.5 py-1 rounded text-xs font-bold text-slate-700 shadow-inner flex items-center gap-1.5">
+          <div className="bg-white border border-[#b8c2d1] px-3 py-1 rounded text-xs font-bold text-slate-700 shadow-inner flex items-center gap-2">
             <span
               className={`w-2.5 h-2.5 rounded-full ${
-                currentTable.status === 'free' ? 'bg-emerald-500' : 'bg-rose-500'
+                currentTable.status === 'free' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
               }`}
             ></span>
             <span>STOL - {currentTable.number}</span>
           </div>
-        </div>
 
-        {/* Center: Terminal Name */}
-        <div className="font-bold text-slate-700 text-sm tracking-wide">
-          Касса 1
+          <span className="text-xs font-bold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded border border-slate-300">
+            Касса 1
+          </span>
         </div>
 
         {/* Right top controls */}
         <div className="flex items-center gap-2">
+          {/* Language Switcher */}
+          <div className="scale-90 origin-right">
+            <LanguageSwitcher />
+          </div>
+
+          {/* Fullscreen F11 */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="p-1.5 bg-white hover:bg-slate-100 border border-[#a2afc2] rounded text-slate-700 shadow-sm transition active:scale-95"
+            title="To'liq ekran (Fullscreen / F11)"
+          >
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+
           {/* Quick Add Dish button */}
           <button
+            type="button"
             onClick={() => {
               setEditingDish(null);
               setIsDishModalOpen(true);
             }}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-semibold text-blue-700 shadow-sm transition"
+            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-blue-700 shadow-sm transition active:scale-95"
           >
             <span>➕</span>
-            <span>Блюдо</span>
+            <span>{t('pos_dish', 'Taom')}</span>
           </button>
 
           {/* Quick Categories button */}
           <button
+            type="button"
             onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-semibold text-slate-700 shadow-sm transition"
+            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-slate-700 shadow-sm transition active:scale-95"
           >
             <span>📂</span>
-            <span>Категории</span>
-          </button>
-
-          {/* Quick JetBot Button matching JetCafe Video */}
-          <button
-            type="button"
-            onClick={() => setIsTelegramModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded text-xs font-semibold text-sky-800 shadow-sm transition active:scale-95"
-            title="JetBot - Telegram Bot sozlamalari"
-          >
-            <span>✈️</span>
-            <span>JetBot</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          </button>
-
-          {/* Mobil Savat Button (Backend v2.0 - Kassaga Uzatish) */}
-          <button
-            type="button"
-            onClick={() => setIsMobileBasketsModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-bold shadow-sm transition active:scale-95 border ${
-              mobileBaskets.length > 0
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700 animate-pulse'
-                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
-            }`}
-            title="Mobil ilovadan (ofitsiant/xodimlar) yuborilgan savatlarni chekka yuklash"
-          >
-            <span>📥</span>
-            <span>Mobil Savat</span>
-            {mobileBaskets.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-white text-emerald-800 text-[10px] font-black shadow">
-                {mobileBaskets.length}
-              </span>
-            )}
+            <span>{t('pos_categories', 'Toifalar')}</span>
           </button>
 
           {/* Quick Printer Button */}
           <button
+            type="button"
             onClick={onOpenPrinterSettings}
             title="Chek va Printer Sozlamalari (80mm / 58mm)"
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition active:scale-95"
           >
             <span>🖨️</span>
-            <span>Printer</span>
+            <span>{t('printer', 'Printer')}</span>
           </button>
 
-          {/* Settings cascading menu matching step2_frame_82.jpg */}
+          {/* Settings Menu Dropdown */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setIsSettingsMenuOpen(!isSettingsMenuOpen)}
-              className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-semibold text-slate-700 shadow-sm transition"
+              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded text-xs font-bold text-slate-800 shadow-sm transition active:scale-95"
             >
               <span className="text-blue-600 text-sm">⚙</span>
-              <span>Настройка</span>
+              <span>{t('settings', 'Sozlamalar')}</span>
             </button>
 
             {isSettingsMenuOpen && (
               <div
-                className="absolute right-0 top-full mt-1 w-60 bg-white border border-[#a8b4c5] rounded-md shadow-2xl py-1 z-50 text-xs text-slate-800 divide-y divide-slate-100"
+                className="absolute right-0 top-full mt-1 w-64 bg-white border border-[#a8b4c5] rounded-md shadow-2xl py-1 z-50 text-xs text-slate-800 divide-y divide-slate-100"
                 onClick={() => setIsSettingsMenuOpen(false)}
               >
                 <div className="py-1">
                   <button
                     type="button"
-                    onClick={() => alert('Кассовая смена открыта')}
-                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2"
-                  >
-                    <span>👤</span>
-                    <span>Кассовая смена</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => alert('Раздел Склад: учет ингредиентов и остатков')}
-                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2"
-                  >
-                    <span>📦</span>
-                    <span>Склад</span>
-                  </button>
-                </div>
-
-                <div className="py-1">
-                  {/* Отчет по заказам matching step2_frame_82.jpg */}
-                  <button
-                    type="button"
                     onClick={() => setIsOrdersJournalOpen(true)}
-                    className="w-full text-left px-3 py-1.5 bg-blue-50/60 hover:bg-blue-100 font-bold text-blue-900 flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between font-bold text-blue-900"
                   >
                     <div className="flex items-center gap-2">
                       <span>📋</span>
-                      <span>Отчет по заказам</span>
+                      <span>{t('pos_orders_journal', 'Buyurtmalar jurnali')}</span>
                     </div>
                     <span className="text-[10px] text-blue-600">▶</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => alert('Отчет по проданным товарам')}
-                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2"
-                  >
-                    <span>📊</span>
-                    <span>Отчет по товарам</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => alert('Продажи по официантам')}
-                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2"
+                    onClick={() => {
+                      if (onOpenStaffModal) onOpenStaffModal();
+                      else if (onNavigateTab) onNavigateTab('staff');
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
                   >
                     <span>👥</span>
-                    <span>Продажи по официантам</span>
+                    <span>{t('staff_management', 'Xodimlar va PIN-kodlar')}</span>
                   </button>
                 </div>
 
-                {/* JetBot Telegram Integration Option */}
                 <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileBasketsModalOpen(true)}
+                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center justify-between font-medium text-emerald-900"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>📥</span>
+                      <span>Mobil Savatlar (Ofitsiant)</span>
+                    </div>
+                    {mobileBaskets.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black">
+                        {mobileBaskets.length}
+                      </span>
+                    )}
+                  </button>
                   <button
                     type="button"
                     onClick={() => setIsTelegramModalOpen(true)}
-                    className="w-full text-left px-3 py-1.5 bg-sky-50/50 hover:bg-sky-100 flex items-center justify-between text-sky-950 font-bold"
+                    className="w-full text-left px-3 py-2 hover:bg-sky-50 flex items-center justify-between font-medium text-sky-950"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-sky-600 text-sm">✈️</span>
-                      <span>Telegram Bot (JetBot)</span>
+                      <span>✈️</span>
+                      <span>JetBot (Telegram Bot)</span>
                     </div>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Faol</span>
+                    <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-bold">Faol</span>
                   </button>
                 </div>
 
-                {/* Backend Developer API Integration Option */}
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => setIsBackendModalOpen(true)}
-                    className="w-full text-left px-3 py-1.5 bg-emerald-50/50 hover:bg-emerald-100 flex items-center justify-between text-emerald-950 font-bold"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-emerald-600 text-sm">🌐</span>
-                      <span>Server & Backend API</span>
-                    </div>
-                    <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
-                  </button>
-                </div>
-
-                {/* Chek va Printer Sozlamalari */}
                 <div className="py-1">
                   <button
                     type="button"
                     onClick={() => {
-                      setIsSettingsMenuOpen(false);
                       if (onOpenPrinterSettings) onOpenPrinterSettings();
                     }}
-                    className="w-full text-left px-3 py-1.5 bg-amber-50/60 hover:bg-amber-100 flex items-center justify-between text-amber-950 font-bold"
+                    className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-medium text-amber-950"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-amber-600 text-sm">🖨️</span>
-                      <span>Chek Printer Sozlamalari</span>
+                      <span>🖨️</span>
+                      <span>Chek & Printer Sozlamalari</span>
                     </div>
-                    <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.5 rounded font-bold">80mm</span>
+                    <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                      {serviceFeePercent}% xizmat
+                    </span>
                   </button>
-                </div>
-
-                <div className="py-1">
                   <button
                     type="button"
                     onClick={onOpenSettings}
-                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 flex items-center gap-2"
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
                   >
-                    <span>⚙</span>
-                    <span>Soliq MXIK sozlamalari</span>
+                    <span>⚙️</span>
+                    <span>Soliq MXIK & Kassa Sozlamalari</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsBackendModalOpen(true)}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between font-medium text-slate-700"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>🌐</span>
+                      <span>Server & Backend API</span>
+                    </div>
+                    <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* JetCafe Logo */}
-          <div className="flex items-center gap-1 pl-2 border-l border-slate-300">
-            <span className="font-black text-slate-800 text-sm tracking-tight">jet</span>
-            <span className="text-cyan-600 font-black text-sm">cafe</span>
-            <span className="text-cyan-500 text-xs font-bold">❖</span>
+          {/* User profile */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-300 font-bold text-slate-700">
+            <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs shadow-inner">
+              👤
+            </span>
+            <span className="text-xs">{currentUser?.name || 'Kafe'}</span>
           </div>
         </div>
       </header>
 
-      {/* 2. MAIN 2-COLUMN POS LAYOUT matching jetcafe_frame_1.jpg */}
-      <div className="flex-1 flex overflow-hidden p-1.5 gap-1.5">
+      {/* 2. MAIN 2-COLUMN POS LAYOUT (Fit 100% viewport without window scrollbar) */}
+      <div className="flex-1 flex overflow-hidden p-1.5 gap-1.5 min-h-0">
         
         {/* ============================================================== */}
-        {/* LEFT COLUMN: ORDER TABLE, TOOLBAR & KEYPAD (~38% of screen) */}
+        {/* LEFT COLUMN: ORDER TABLE, TOOLBAR & TOUCH KEYPAD (~440px) */}
         {/* ============================================================== */}
-        <div className="w-[400px] xl:w-[440px] flex flex-col bg-[#e9edf3] border border-[#a8b3c4] rounded shadow-sm overflow-hidden shrink-0">
+        <div className="w-[420px] xl:w-[460px] flex flex-col bg-[#e9edf3] border border-[#a8b3c4] rounded shadow-sm overflow-hidden shrink-0 h-full">
           
           {/* Table info bar */}
-          <div className="bg-[#dfe5ee] border-b border-[#b0b9c7] px-2.5 py-1.5 font-bold text-slate-700 text-xs truncate flex items-center justify-between">
+          <div className="bg-[#dfe5ee] border-b border-[#b0b9c7] px-3 py-1.5 font-bold text-slate-700 text-xs truncate flex items-center justify-between shrink-0">
             <span>
               {t('pos_table', 'Stol')} №{currentTable.number} ({tr(currentTable.hall || currentTable.name)}).{' '}
               {currentTable.current_order_id ? `${t('pos_order_number', 'Buyurtma №')}${currentTable.current_order_id.slice(-4)}` : t('pos_new_order', 'Yangi buyurtma')}
             </span>
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[11px] bg-white px-2 py-0.5 rounded border border-slate-300 text-slate-600 font-bold">
               {orderItems.length} {t('pcs', 'ta')}
             </span>
           </div>
 
-          {/* Order Items Table Grid */}
-          <div className="flex-1 bg-white border-b border-[#b0b9c7] overflow-y-auto flex flex-col shadow-inner">
+          {/* Order Items Table Grid - Auto flex-1 scrollable table */}
+          <div className="flex-1 min-h-[120px] bg-white border-b border-[#b0b9c7] overflow-y-auto flex flex-col shadow-inner">
             {/* Table Header Row */}
             <div className="grid grid-cols-12 bg-[#eef2f7] border-b border-[#b8c2d1] font-bold text-slate-700 py-1.5 px-2 text-[11px] sticky top-0 z-10 select-none">
               <span className="col-span-1 text-center">№</span>
@@ -746,9 +753,9 @@ export default function JetCafePosView({
             <div className="flex-1 divide-y divide-slate-100 text-xs">
               {orderItems.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 select-none">
-                  <div className="text-2xl mb-1 opacity-40">🍽️</div>
-                  <p>{t('pos_cart_empty', 'Buyurtma bo\'sh')}</p>
-                  <p className="text-[11px] mt-0.5 text-slate-400">{t('pos_cart_hint', 'Menyudan taomlarni tanlang')}</p>
+                  <div className="text-3xl mb-1 opacity-40">🍽️</div>
+                  <p className="font-bold text-slate-500">{t('pos_cart_empty', 'Buyurtma bo\'sh')}</p>
+                  <p className="text-[11px] mt-0.5 text-slate-400">{t('pos_cart_hint', 'O\'ng tomondan taomlarni tanlang')}</p>
                 </div>
               ) : (
                 orderItems.map((item, index) => {
@@ -765,7 +772,7 @@ export default function JetCafePosView({
                         setSelectedItemIndex(index);
                         setIsOrderItemEditModalOpen(true);
                       }}
-                      title="Tahrirlash (soni/narxi) uchun ikki marta bosing"
+                      title="Tahrirlash (soni/narxi) uchun bosing"
                       className={`grid grid-cols-12 py-1.5 px-2 cursor-pointer transition items-center ${
                         isSelected
                           ? 'bg-[#1e56a0] text-white font-semibold shadow-inner'
@@ -817,30 +824,34 @@ export default function JetCafePosView({
             </div>
           </div>
 
-          {/* Function Buttons + Numpad Grid matching jetcafe_frame_1.jpg */}
-          <div className="p-2 bg-[#e2e7ef] border-b border-[#b0b9c7] flex gap-2 select-none">
+          {/* LOWER CONTROLS & TOUCH KEYPAD (Fixed at bottom, No Scrolling) */}
+          <div className="bg-[#dfe5ee] border-t border-[#b0b9c7] p-2 flex flex-col gap-2 shrink-0 select-none">
             
-            {/* Left 2 columns: Action Buttons matching the video */}
-            <div className="grid grid-cols-2 gap-1.5 w-44">
-              {/* Row 1 */}
+            {/* Action Buttons Row */}
+            <div className="grid grid-cols-5 gap-1.5">
+              {/* Prechek */}
               <button
                 type="button"
                 onClick={handlePrintPrecheck}
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-bold text-slate-700 shadow-sm active:translate-y-[1px]"
+                className="h-11 bg-gradient-to-b from-[#ffffff] to-[#e1e7f0] hover:from-white hover:to-[#d0dbe8] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-black text-slate-800 shadow-sm active:scale-95 transition"
+                title="Mijozga prechek chiqarish"
               >
-                <span className="text-xs">🖨</span>
-                <span>Пречек</span>
+                <span className="text-sm">🖨️</span>
+                <span>Prechek</span>
               </button>
 
+              {/* Oshxona / Saqlash */}
               <button
                 type="button"
                 onClick={handleSaveOrder}
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-xs font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
+                className="h-11 bg-gradient-to-b from-[#ffffff] to-[#e1e7f0] hover:from-white hover:to-[#d0dbe8] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-black text-blue-700 shadow-sm active:scale-95 transition"
+                title="Buyurtmani oshxonaga yuborish (Бегунок)"
               >
-                <span className="text-base">💾</span>
+                <span className="text-sm">👨‍🍳</span>
+                <span>Oshxona</span>
               </button>
 
-              {/* Row 2 */}
+              {/* Izoh */}
               <button
                 type="button"
                 onClick={() => {
@@ -851,13 +862,14 @@ export default function JetCafePosView({
                     alert('Izoh qo\'shish uchun ro\'yxatdan taomni tanlang!');
                   }
                 }}
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-bold text-slate-700 shadow-sm active:translate-y-[1px]"
+                className="h-11 bg-gradient-to-b from-[#ffffff] to-[#e1e7f0] hover:from-white hover:to-[#d0dbe8] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-black text-amber-700 shadow-sm active:scale-95 transition"
+                title="Taomga izoh qo'shish"
               >
-                <span className="text-xs text-amber-500">📑</span>
-                <span>Комментарии</span>
+                <span className="text-sm">💬</span>
+                <span>Izoh</span>
               </button>
 
-              {/* ↩ Button (Отмена / Возврат блюда) matching Video 2 */}
+              {/* Bekor qilish / Qaytarish */}
               <button
                 type="button"
                 onClick={() => {
@@ -867,38 +879,14 @@ export default function JetCafePosView({
                     alert('Qaytarish / Bekor qilish uchun ro\'yxatdan taomni tanlang!');
                   }
                 }}
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex items-center justify-center text-sm font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
-                title="Отмена / Возврат блюда"
+                className="h-11 bg-gradient-to-b from-[#ffffff] to-[#e1e7f0] hover:from-white hover:to-[#d0dbe8] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-black text-rose-700 shadow-sm active:scale-95 transition"
+                title="Taomni bekor qilish yoki qaytarish (Возврат)"
               >
-                ↩
+                <span className="text-sm">↩️</span>
+                <span>Bekor</span>
               </button>
 
-              {/* Row 3 */}
-              <button
-                type="button"
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex items-center justify-center text-[10px] font-bold text-slate-700 shadow-sm active:translate-y-[1px]"
-              >
-                <span>Клиент ...</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePrintPrecheck}
-                className="h-10 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex items-center justify-center text-xs font-bold text-emerald-700 shadow-sm active:translate-y-[1px]"
-              >
-                🖨💲
-              </button>
-
-              {/* Row 4: Big Green Оплата + Edit Pencil */}
-              <button
-                type="button"
-                onClick={() => setIsPaymentModalOpen(true)}
-                className="h-11 px-1 bg-gradient-to-b from-[#34a853] to-[#1e8e3e] hover:from-[#3bbb5c] hover:to-[#1a7f37] text-white border border-[#187532] rounded flex items-center justify-center gap-1 text-xs font-black shadow-md active:translate-y-[1px]"
-              >
-                <span className="text-sm">✓</span>
-                <span>{t('pos_pay_cash', 'To\'lov')}</span>
-              </button>
-
+              {/* Tahrir */}
               <button
                 type="button"
                 onClick={() => {
@@ -908,117 +896,132 @@ export default function JetCafePosView({
                     alert(t('pos_select_item_hint', 'Tahrirlash uchun ro\'yxatdan taomni tanlang!'));
                   }
                 }}
-                className="h-11 px-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:from-white hover:to-[#ccd6e3] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-xs font-bold text-blue-700 shadow-sm active:translate-y-[1px]"
-                title={t('pos_order_items_edit', 'Tanlangan taom soni yoki narxini tahrirlash')}
+                className="h-11 bg-gradient-to-b from-[#ffffff] to-[#e1e7f0] hover:from-white hover:to-[#d0dbe8] border border-[#a6b2c4] rounded flex flex-col items-center justify-center text-[10px] font-black text-indigo-700 shadow-sm active:scale-95 transition"
+                title="Soni yoki narxini o'zgartirish"
               >
-                <span className="text-base">✏️</span>
+                <span className="text-sm">✏️</span>
+                <span>Tahrir</span>
               </button>
             </div>
 
-            {/* Column: Delete and Clear */}
-            <div className="flex flex-col gap-1.5 w-10">
-              <button
-                type="button"
-                onClick={handleDeleteSelectedItem}
-                className="flex-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:bg-rose-100 border border-[#a6b2c4] rounded flex items-center justify-center text-base font-bold text-rose-600 shadow-sm active:translate-y-[1px]"
-              >
-                ✕
-              </button>
-              <button
-                type="button"
-                onClick={() => handleNumpadPress('C')}
-                className="flex-1 bg-gradient-to-b from-[#f7f9fa] to-[#d8e0ea] hover:bg-slate-200 border border-[#a6b2c4] rounded flex items-center justify-center text-sm font-bold text-slate-700 shadow-sm active:translate-y-[1px]"
-              >
-                🧹
-              </button>
-            </div>
-
-            {/* Right: Touch Numeric Numpad matching jetcafe_frame_1.jpg */}
-            <div className="flex-1 grid grid-cols-3 gap-1.5">
-              {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((n) => (
+            {/* Numpad and Quick Actions */}
+            <div className="flex gap-2">
+              {/* Delete / Clear vertical buttons */}
+              <div className="flex flex-col gap-1.5 w-12 shrink-0">
                 <button
-                  key={n}
                   type="button"
-                  onClick={() => handleNumpadPress(n)}
-                  className="h-10 bg-gradient-to-b from-[#ffffff] to-[#e4e9f0] hover:from-[#ffffff] hover:to-[#d6dfea] border border-[#a8b4c5] rounded text-base font-black text-slate-800 shadow-sm flex items-center justify-center active:translate-y-[1px]"
+                  onClick={handleDeleteSelectedItem}
+                  className="flex-1 min-h-[42px] bg-rose-50 hover:bg-rose-100 border border-rose-300 rounded flex flex-col items-center justify-center text-rose-700 font-black shadow-sm active:scale-95 transition"
+                  title="Tanlangan taomni ro'yxatdan o'chirish"
                 >
-                  {n}
+                  <span className="text-base leading-none">✕</span>
+                  <span className="text-[9px]">{t('delete', 'O\'chirish')}</span>
                 </button>
-              ))}
-              {/* 0 (double span) and . */}
-              <button
-                type="button"
-                onClick={() => handleNumpadPress('0')}
-                className="col-span-2 h-10 bg-gradient-to-b from-[#ffffff] to-[#e4e9f0] hover:from-[#ffffff] hover:to-[#d6dfea] border border-[#a8b4c5] rounded text-base font-black text-slate-800 shadow-sm flex items-center justify-center active:translate-y-[1px]"
-              >
-                0
-              </button>
-              <button
-                type="button"
-                onClick={() => handleNumpadPress('.')}
-                className="h-10 bg-gradient-to-b from-[#ffffff] to-[#e4e9f0] hover:from-[#ffffff] hover:to-[#d6dfea] border border-[#a8b4c5] rounded text-base font-black text-slate-800 shadow-sm flex items-center justify-center active:translate-y-[1px]"
-              >
-                .
-              </button>
-            </div>
-          </div>
-
-          {/* Waiter & Totals Breakdown matching jetcafe_frame_1.jpg */}
-          <div className="p-2.5 bg-[#dfe5ee] flex flex-col gap-1.5 select-none">
-            {/* Waiter Dropdown */}
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] font-semibold text-slate-600 w-16">{t('pos_waiter', 'Ofitsiant:')}</label>
-              <select
-                value={selectedWaiter}
-                onChange={(e) => setSelectedWaiter(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs bg-white border border-[#b8c2d1] rounded focus:outline-none shadow-inner font-medium text-slate-800"
-              >
-                {staffUsers && staffUsers.length > 0 ? (
-                  staffUsers.map((u) => (
-                    <option key={u.id} value={u.name}>
-                      {u.name} ({u.role === 'admin' || u.role === 'manager' ? t('role_manager', 'Boshqaruvchi') : u.role === 'waiter' || u.role === 'worker' ? t('role_waiter', 'Ofitsiant') : u.role === 'cook' ? t('role_cook', 'Oshpaz') : t('role_cashier', 'Kassir')})
-                    </option>
-                  ))
-                ) : (
-                  <option value={currentUser?.name || t('role_waiter', 'Ofitsiant')}>{currentUser?.name || t('role_waiter', 'Ofitsiant')}</option>
-                )}
-              </select>
-            </div>
-
-            {/* Breakdown lines + Total */}
-            <div className="flex items-end justify-between pt-1">
-              {/* Left: Time and Subtotals */}
-              <div className="space-y-0.5 text-[11px] text-slate-600">
-                <div className="flex gap-2">
-                  <span className="w-20">{t('kds_time', 'Vaqti:')}</span>
-                  <span className="font-semibold text-slate-800">
-                    {currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="w-20">{t('pos_subtotal', 'Oraliq summa:')}</span>
-                  <span className="font-semibold text-slate-800">{formatUZS(subtotal)}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="w-20">{t('pos_service_fee', 'Xizmat haqi:')}</span>
-                  <span className="font-semibold text-slate-800">{formatUZS(serviceFee)}</span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleNumpadPress('C')}
+                  className="flex-1 min-h-[42px] bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded flex flex-col items-center justify-center text-slate-700 font-black shadow-sm active:scale-95 transition"
+                  title="Tozalash"
+                >
+                  <span className="text-sm leading-none">🧹</span>
+                  <span className="text-[9px]">C</span>
+                </button>
               </div>
 
-              {/* Right: Big Total Amount */}
-              <div className="text-right">
-                <div className="text-[11px] font-bold text-slate-600">{t('pos_total', 'Jami to\'lov:')}</div>
-                <div className="text-2xl font-black text-slate-900 tracking-tight">
-                  {formatUZS(totalAmount)}
+              {/* Touch Numeric Numpad */}
+              <div className="flex-1 grid grid-cols-3 gap-1.5">
+                {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => handleNumpadPress(n)}
+                    className="h-10 bg-white hover:bg-slate-100 border border-[#a8b4c5] rounded text-lg font-black text-slate-800 shadow-sm flex items-center justify-center active:scale-95 transition"
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => handleNumpadPress('0')}
+                  className="col-span-2 h-10 bg-white hover:bg-slate-100 border border-[#a8b4c5] rounded text-lg font-black text-slate-800 shadow-sm flex items-center justify-center active:scale-95 transition"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNumpadPress('⌫')}
+                  className="h-10 bg-white hover:bg-slate-100 border border-[#a8b4c5] rounded text-base font-black text-slate-700 shadow-sm flex items-center justify-center active:scale-95 transition"
+                  title="Orqaga o'chirish"
+                >
+                  ⌫
+                </button>
+              </div>
+            </div>
+
+            {/* Waiter & Totals Breakdown */}
+            <div className="bg-white/80 border border-[#b8c2d1] rounded p-2 flex flex-col gap-1">
+              {/* Waiter selector */}
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-bold text-slate-600 w-16">{t('pos_waiter', 'Ofitsiant:')}</label>
+                <select
+                  value={selectedWaiter}
+                  onChange={(e) => setSelectedWaiter(e.target.value)}
+                  className="flex-1 px-2 py-0.5 text-xs bg-white border border-[#b8c2d1] rounded focus:outline-none shadow-inner font-semibold text-slate-800"
+                >
+                  {staffUsers && staffUsers.length > 0 ? (
+                    staffUsers.map((u) => (
+                      <option key={u.id} value={u.name}>
+                        {u.name} ({u.role === 'admin' || u.role === 'manager' ? t('role_manager', 'Boshqaruvchi') : u.role === 'waiter' || u.role === 'worker' ? t('role_waiter', 'Ofitsiant') : u.role === 'cook' ? t('role_cook', 'Oshpaz') : t('role_cashier', 'Kassir')})
+                      </option>
+                    ))
+                  ) : (
+                    <option value={currentUser?.name || t('role_waiter', 'Ofitsiant')}>{currentUser?.name || t('role_waiter', 'Ofitsiant')}</option>
+                  )}
+                </select>
+              </div>
+
+              {/* Subtotal, Service fee %, Total */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                <div className="space-y-0.5 text-[11px] text-slate-600">
+                  <div className="flex gap-2">
+                    <span className="w-24 font-medium">{t('pos_subtotal', 'Oraliq summa:')}</span>
+                    <span className="font-bold text-slate-800">{formatUZS(subtotal)}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="w-24 font-medium">{t('pos_service_fee', 'Xizmat haqi')} ({serviceFeePercent}%):</span>
+                    <span className="font-bold text-amber-700">{formatUZS(serviceFee)}</span>
+                  </div>
+                </div>
+
+                {/* Big Total */}
+                <div className="text-right">
+                  <div className="text-[10px] uppercase font-black text-slate-500">{t('pos_total', 'Jami to\'lov')}</div>
+                  <div className="text-2xl font-black text-slate-900 tracking-tight font-mono">
+                    {formatUZS(totalAmount)}
+                  </div>
                 </div>
               </div>
             </div>
+
+            {/* Giant Green To'lov Button */}
+            <button
+              type="button"
+              onClick={() => setIsPaymentModalOpen(true)}
+              className="h-13 py-2.5 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-700 hover:from-emerald-500 hover:to-green-600 text-white font-black text-base uppercase rounded-lg shadow-md active:scale-98 transition flex items-center justify-center gap-2 border border-emerald-700"
+            >
+              <span className="text-xl">💵</span>
+              <span>{t('pos_pay_cash', 'To\'lov (Hisobni yopish)')}</span>
+              <span className="text-sm font-mono bg-white/20 px-2 py-0.5 rounded ml-1">
+                {formatUZS(totalAmount)}
+              </span>
+            </button>
+
           </div>
 
         </div>
 
         {/* ============================================================== */}
-        {/* RIGHT COLUMN: SEARCH, CATEGORIES & DISHES GRID (~62% screen) */}
+        {/* RIGHT COLUMN: SEARCH, CATEGORIES & DISHES GRID (~60% screen) */}
         {/* ============================================================== */}
         <div className="flex-1 flex flex-col bg-[#e9edf3] border border-[#a8b3c4] rounded shadow-sm overflow-hidden min-w-0">
           

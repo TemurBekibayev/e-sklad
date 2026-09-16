@@ -538,23 +538,25 @@ export default function App() {
     <div className={`min-h-screen w-full flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 ${
       currentTab === 'kitchen' || currentTab === 'mxik' ? 'bg-slate-950 text-slate-100' : 'bg-[#f1f5f9] text-slate-900'
     }`}>
-      {/* Top Header */}
-      <Header
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        syncState={syncState}
-        onToggleInternet={handleToggleInternet}
-        onFlushSync={handleFlushSync}
-        onOpenAddDish={() => setIsAddDishModalOpen(true)}
-        onOpenStaffModal={() => setIsStaffModalOpen(true)}
-        onOpenTableManageModal={() => setIsTableManageModalOpen(true)}
-        onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
-      />
+      {/* Top Header - Rendered on manager/waiter/kitchen/inventory/mxik tabs */}
+      {currentTab !== 'cashier' && (
+        <Header
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          syncState={syncState}
+          onToggleInternet={handleToggleInternet}
+          onFlushSync={handleFlushSync}
+          onOpenAddDish={() => setIsAddDishModalOpen(true)}
+          onOpenStaffModal={() => setIsStaffModalOpen(true)}
+          onOpenTableManageModal={() => setIsTableManageModalOpen(true)}
+          onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
+        />
+      )}
 
       {/* Main Role Content Views */}
-      <main className="flex-1 w-full flex flex-col overflow-y-auto min-h-0">
+      <main className="flex-1 w-full flex flex-col overflow-hidden min-h-0">
         {currentTab === 'cashier' && (
           <JetCafePosView
             tables={tables}
@@ -572,6 +574,8 @@ export default function App() {
             onLogout={handleLogout}
             onOpenSettings={() => setCurrentTab('mxik')}
             onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
+            onOpenStaffModal={() => setIsStaffModalOpen(true)}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
             onSaveProduct={handleSaveProduct}
             onDeleteProduct={handleDeleteProduct}
             onSaveCategory={handleSaveCategory}

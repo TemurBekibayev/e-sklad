@@ -258,6 +258,7 @@ async function initDB() {
       paper_width TEXT DEFAULT '80mm',
       auto_print INTEGER DEFAULT 1,
       cash_drawer INTEGER DEFAULT 1,
+      service_fee_percent REAL DEFAULT 10,
       header_title TEXT DEFAULT 'KAFE "MILLIY TAOMLAR" MCHJ',
       header_address TEXT DEFAULT 'Toshkent sh., Chilonzor tumani, 9-mavze',
       inn TEXT DEFAULT '307849201',
@@ -269,8 +270,8 @@ async function initDB() {
 
   try {
     await run(`
-      INSERT OR IGNORE INTO printer_settings (id, receipt_printer, kitchen_printer, paper_width, auto_print, cash_drawer)
-      VALUES (1, '', '', '80mm', 1, 1)
+      INSERT OR IGNORE INTO printer_settings (id, receipt_printer, kitchen_printer, paper_width, auto_print, cash_drawer, service_fee_percent)
+      VALUES (1, '', '', '80mm', 1, 1, 10)
     `);
   } catch (e) {}
 
@@ -279,6 +280,11 @@ async function initDB() {
 }
 
 async function seedInitialData() {
+  // Check printer settings service fee
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN service_fee_percent REAL DEFAULT 10`);
+  } catch (e) {}
+
   // Check products columns for inventory
   try {
     await run(`ALTER TABLE products ADD COLUMN remote_id TEXT`);

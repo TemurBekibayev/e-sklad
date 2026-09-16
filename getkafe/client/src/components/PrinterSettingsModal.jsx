@@ -27,7 +27,7 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
     kitchen_printer: '',
     paper_width: '80mm',
     auto_print: 1,
-    cash_drawer: 1,
+    service_fee_percent: 10,
     header_title: 'KAFE "MILLIY TAOMLAR" MCHJ',
     header_address: 'Toshkent sh., Chilonzor tumani, 9-mavze',
     inn: '307849201',
@@ -56,6 +56,7 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
             paper_width: data.settings.paper_width || '80mm',
             auto_print: data.settings.auto_print !== undefined ? data.settings.auto_print : 1,
             cash_drawer: data.settings.cash_drawer !== undefined ? data.settings.cash_drawer : 1,
+            service_fee_percent: data.settings.service_fee_percent !== undefined ? Number(data.settings.service_fee_percent) : 10,
             header_title: data.settings.header_title || 'KAFE "MILLIY TAOMLAR" MCHJ',
             header_address: data.settings.header_address || 'Toshkent sh., Chilonzor tumani, 9-mavze',
             inn: data.settings.inn || '307849201',
@@ -271,6 +272,50 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
                       Chek chiqqanda kassa tortmasini avtomatik ochish (Cash Drawer)
                     </span>
                   </label>
+                </div>
+              </div>
+
+              {/* Service Fee Percentage Settings */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-2">
+                    <DollarSign className="w-4 h-4" />
+                    <span>Xizmat Haqi Foizi (Обслуживание %)</span>
+                  </h3>
+                  <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {form.service_fee_percent || 0}%
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Har bir buyurtma va hisob-kitobda mijoz hisobiga qo'shiladigan xizmat foizi:
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {[0, 5, 10, 12, 15, 20].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setForm({ ...form, service_fee_percent: pct })}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        Number(form.service_fee_percent) === pct
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md scale-105'
+                          : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800'
+                      }`}
+                    >
+                      {pct === 0 ? '0% (Xizmatsiz)' : `${pct}%`}
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="text-xs text-slate-400">Boshqa:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={form.service_fee_percent}
+                      onChange={(e) => setForm({ ...form, service_fee_percent: Number(e.target.value) || 0 })}
+                      className="w-16 bg-slate-950 border border-slate-700 rounded-xl px-2 py-1 text-xs text-white font-bold text-center focus:outline-none focus:border-amber-500"
+                    />
+                    <span className="text-xs font-bold text-slate-400">%</span>
+                  </div>
                 </div>
               </div>
 
