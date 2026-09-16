@@ -96,9 +96,14 @@ export default function LoginModal({ onLoginSuccess }) {
 
         {/* Brand Header */}
         <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 text-slate-950 rounded-2xl mx-auto flex items-center justify-center mb-3 shadow-lg shadow-amber-500/20 font-black text-2xl">
-            GP
-          </div>
+          <img 
+            src="/getpos-kafe-logo.png" 
+            alt="GetPOS Kafe" 
+            className="w-16 h-16 rounded-2xl mx-auto mb-3 shadow-lg shadow-amber-500/20 bg-slate-800 p-1.5 border border-slate-700 object-contain" 
+            onError={(e) => {
+              e.target.style.display = 'none';
+            }}
+          />
           <h1 className="text-2xl font-black text-white tracking-tight">
             {currentStore.name && currentStore.name !== 'GetPOS Kafe' ? currentStore.name : 'GetPOS Kafe'}
           </h1>

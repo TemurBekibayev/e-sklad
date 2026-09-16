@@ -214,9 +214,9 @@ ESKIZ_IS_TEST = env.bool('ESKIZ_IS_TEST', default=True)
 
 # OpenAPI / Swagger Documentation
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'SotuvPro API',
-    'DESCRIPTION': 'SotuvPro ko\'p-tenantli sklad, savdo va qarz nazorati tizimi REST & WebSocket API',
-    'VERSION': '1.0.0',
+    'TITLE': 'GetPOS API',
+    'DESCRIPTION': 'GetPOS ko\'p-tenantli sklad, savdo, kafe va qarz nazorati tizimi REST & WebSocket API',
+    'VERSION': '2.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
 

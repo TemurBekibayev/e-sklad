@@ -20,11 +20,19 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }) {
   return (
     <aside className="w-64 bg-[#0B132B] text-slate-300 min-h-screen flex flex-col flex-shrink-0 border-r border-slate-800">
       {/* Logo */}
-      <div className="px-6 py-6 flex items-center space-x-3">
-        <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-          <TrendingUp className="w-5 h-5" />
+      <div className="px-5 py-5 flex items-center space-x-3">
+        <img 
+          src="/getpos-logo.png" 
+          alt="GetPOS" 
+          className="h-10 w-10 rounded-xl object-contain bg-white/10 p-1 shadow-md shadow-blue-500/20"
+          onError={(e) => {
+            e.target.style.display = 'none';
+          }}
+        />
+        <div className="flex flex-col">
+          <span className="text-xl font-black text-white tracking-tight leading-none">Get<span className="text-blue-500">POS</span></span>
+          <span className="text-[10px] text-blue-400 font-semibold tracking-wider uppercase mt-0.5">Savdo & Ombor</span>
         </div>
-        <span className="text-xl font-bold text-white tracking-tight">SotuvPro</span>
       </div>
 
       {/* Nav Menu */}
@@ -65,8 +73,8 @@ export default function Sidebar({ activeTab, setActiveTab, onLogout }) {
       )}
 
       {/* Footer Info */}
-      <div className="p-4 border-t border-slate-800/80 text-xs text-slate-400 text-center">
-        SotuvPro Admin v2.0
+      <div className="p-4 border-t border-slate-800/80 text-xs text-slate-400 text-center font-medium">
+        GetPOS Admin v3.0
       </div>
     </aside>
   );

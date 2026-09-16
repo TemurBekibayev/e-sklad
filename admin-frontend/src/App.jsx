@@ -57,10 +57,13 @@ function Login({ onLoginSuccess, onBackToHome }) {
 
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 border border-slate-100 animate-in fade-in zoom-in duration-150">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white mb-3 shadow-lg shadow-blue-500/20">
-            <Zap className="w-6 h-6 fill-white text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900">GetPOS</h2>
+          <img 
+            src="/getpos-logo.png" 
+            alt="GetPOS Logo" 
+            className="w-16 h-16 rounded-2xl object-contain mb-3 shadow-lg shadow-blue-500/20 bg-slate-50 p-1 border border-slate-100" 
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Get<span className="text-blue-600">POS</span></h2>
           <p className="text-sm text-slate-500 mt-1">Platforma Super Admin Paneli</p>
         </div>
 
@@ -78,7 +81,7 @@ function Login({ onLoginSuccess, onBackToHome }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@sotuvpro.uz"
+              placeholder="admin@getpos.uz"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
             />
           </div>

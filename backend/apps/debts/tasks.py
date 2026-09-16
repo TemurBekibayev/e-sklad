@@ -65,7 +65,7 @@ def send_debt_reminders_task():
         if debt.last_sms_sent_at and (timezone.now() - debt.last_sms_sent_at).total_seconds() < 86400:
             continue
 
-        store_name = debt.tenant.name if debt.tenant else "SotuvPro"
+        store_name = debt.tenant.name if debt.tenant else "GetPOS"
         amount_formatted = f"{debt.remaining_debt:,.0f}".replace(',', ' ')
         due_date_str = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else "belgilanmagan"
 

@@ -68,9 +68,14 @@ export default function Header({
     <header className="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between gap-3 sticky top-0 z-30 shadow-md">
       {/* Brand & Logo */}
       <div className="flex items-center space-x-2.5 cursor-pointer" onClick={() => setCurrentTab('cashier')}>
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center font-black text-sm text-white shadow-md shadow-orange-500/20 shrink-0">
-          GP
-        </div>
+        <img 
+          src="/getpos-kafe-logo.png" 
+          alt="GetPOS Kafe" 
+          className="h-9 w-9 rounded-xl object-contain bg-slate-800 p-0.5 border border-slate-700 shadow-md shadow-amber-500/10 shrink-0" 
+          onError={(e) => {
+            e.target.style.display = 'none';
+          }}
+        />
         <div className="flex items-center space-x-1.5">
           <h1 className="text-base font-bold text-white tracking-wide whitespace-nowrap">GetPOS <span className="text-amber-400 font-normal">Kafe</span></h1>
         </div>

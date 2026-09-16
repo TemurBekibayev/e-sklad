@@ -502,9 +502,14 @@ export default function JetCafePosView({
         <div className="flex items-center gap-2">
           {/* GetPOS Kafe Brand */}
           <div className="flex items-center gap-1.5 pr-2 border-r border-[#b0b9c7]">
-            <span className="w-6 h-6 rounded bg-gradient-to-tr from-amber-600 via-amber-500 to-yellow-400 text-slate-900 font-black flex items-center justify-center text-xs shadow-sm">
-              GP
-            </span>
+            <img 
+              src="/getpos-kafe-logo.png" 
+              alt="GetPOS Kafe" 
+              className="w-7 h-7 rounded-md object-contain bg-slate-900 p-0.5 shadow-xs border border-slate-700" 
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+            />
             <span className="font-black text-slate-800 text-sm tracking-tight hidden sm:inline">GetPOS</span>
             <span className="text-amber-600 font-black text-sm hidden sm:inline">Kafe</span>
           </div>
