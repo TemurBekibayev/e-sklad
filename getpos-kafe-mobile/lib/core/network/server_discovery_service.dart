@@ -64,35 +64,25 @@ class ServerDiscoveryService {
   Future<DiscoveredServer> autoDiscoverBestServer({bool forceRescan = false}) async {
     final savedUrl = await AppPreferences.getServerUrl();
 
-    // 1. Odamlar kafeda Wi-Fi ulanishida bo'lganda avval har doim lokal Kassa IP-sini tekshirish!
-    final isDefaultHealthy = await _pingServer(ApiConstants.defaultBaseUrl, timeoutMs: 1200);
-    if (isDefaultHealthy) {
-      await AppPreferences.setServerUrl(ApiConstants.defaultBaseUrl);
-      return DiscoveredServer(
-        url: ApiConstants.defaultBaseUrl,
-        type: ServerConnectionType.local,
-        label: 'Kafedagi Kassa (Wi-Fi Faol)',
-      );
-    }
-
-    // 2. Agar avval saqlangan lokal IP ishlayotgan bo'lsa
+    // 1. Agar avval saqlangan lokal IP ishlayotgan bo'lsa (va forceRescan bo'lmasa)
     if (!forceRescan && savedUrl.isNotEmpty) {
-      final isLocal = savedUrl.contains('192.168.') || savedUrl.contains('10.') || savedUrl.contains('localhost') || savedUrl.contains('127.0.0.1');
-      if (isLocal) {
-        final isSavedHealthy = await _pingServer(savedUrl, timeoutMs: 1500);
-        if (isSavedHealthy) {
-          return DiscoveredServer(
-            url: savedUrl,
-            type: ServerConnectionType.local,
-            label: 'Kafedagi Kassa (Faol)',
-          );
-        }
+      final isSavedHealthy = await _pingServer(savedUrl, timeoutMs: 1200);
+      if (isSavedHealthy) {
+        final isLocal = savedUrl.contains('192.168.') || savedUrl.contains('10.') || savedUrl.contains('localhost') || savedUrl.contains('127.0.0.1');
+        return DiscoveredServer(
+          url: savedUrl,
+          type: isLocal ? ServerConnectionType.local : ServerConnectionType.cloud,
+          label: isLocal ? 'Kafedagi Kassa ($savedUrl)' : 'Online Bulut Serveri',
+        );
       }
     }
 
-    // 2. Lokal Wi-Fi tarmog'idagi ehtimoliy Kassa IP-larini tezkor tekshirish
+    // 2. Lokal Wi-Fi tarmog'idagi ehtimoliy Kassa IP-larini tezkor tekshirish (Local First)
     final candidateUrls = [
-      ApiConstants.defaultBaseUrl, // 'http://192.168.1.12:4000/api'
+      'http://192.168.1.8:4000/api', // Joriy kompyuter Wi-Fi IP manzili
+      'http://10.0.2.2:4000/api',    // Android Emulyator
+      'http://localhost:4000/api',   // Lokal Desktop
+      'http://192.168.1.12:4000/api',
       'http://192.168.1.5:4000/api',
       'http://192.168.1.10:4000/api',
       'http://192.168.1.2:4000/api',
@@ -100,14 +90,11 @@ class ServerDiscoveryService {
       'http://192.168.1.4:4000/api',
       'http://192.168.1.6:4000/api',
       'http://192.168.1.7:4000/api',
-      'http://192.168.1.8:4000/api',
       'http://192.168.1.9:4000/api',
       'http://192.168.1.11:4000/api',
       'http://192.168.1.14:4000/api',
       'http://192.168.1.15:4000/api',
       'http://192.168.1.20:4000/api',
-      'http://10.0.2.2:4000/api', // Android Emulator
-      'http://localhost:4000/api',
     ];
 
     // Birinchi bo'lib javob bergan lokal serverni tanlab olish
@@ -115,7 +102,7 @@ class ServerDiscoveryService {
     int pending = candidateUrls.length;
 
     for (final url in candidateUrls) {
-      _pingServer(url, timeoutMs: 1800).then((isOk) {
+      _pingServer(url, timeoutMs: 1500).then((isOk) {
         if (isOk && !localServerCompleter.isCompleted) {
           localServerCompleter.complete(url);
         } else {
