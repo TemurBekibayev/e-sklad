@@ -1773,6 +1773,32 @@ app.post('/api/orders/:id/bill-request', async (req, res) => {
       totalAmount: updatedTable?.total_amount || order.total_amount || 0,
     }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
 
+    // Pre-chekni avtomatik termal printerga chiqarish
+    try {
+      const activeItems = await all(
+        `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+        [id]
+      );
+      const subtotal = activeItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+      const servicePercent = 10;
+      const serviceFee = Math.round((subtotal * servicePercent) / 100);
+      const totalAmount = subtotal + serviceFee;
+
+      const printRes = await printerService.printPrecheckReceipt({
+        orderId: id,
+        tableNumber: updatedTable ? updatedTable.number : order.table_id,
+        waiterName: updatedTable?.waiter_name || order.waiter_name || 'Ofitsiant',
+        items: activeItems,
+        subtotal,
+        serviceFeePercent: servicePercent,
+        serviceFee,
+        totalAmount,
+      });
+      console.log('[Bill-Request] Pre-chek chop etish natijasi:', printRes);
+    } catch (printErr) {
+      console.error('[Bill-Request] Pre-chek chop etishda xatolik:', printErr.message);
+    }
+
     res.json({ success: true, table: updatedTable });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -2270,7 +2296,36 @@ app.post('/api/printers/print-receipt', async (req, res) => {
 // Pre-chek (Hisob-kitob / Pre-bill) chop etish
 app.post(['/api/printers/print-precheck', '/api/orders/:id/print-precheck'], async (req, res) => {
   try {
-    const result = await printerService.printPrecheckReceipt(req.body);
+    let payload = { ...req.body };
+    const orderId = req.params.id || req.body.orderId;
+    if (orderId && (!payload.items || payload.items.length === 0)) {
+      const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+      if (order) {
+        const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+        const items = await all(
+          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+          [orderId]
+        );
+        const subtotal = items.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+        const servicePercent = 10;
+        const serviceFee = Math.round((subtotal * servicePercent) / 100);
+        const totalAmount = subtotal + serviceFee;
+
+        payload = {
+          orderId,
+          tableNumber: table ? table.number : order.table_id,
+          waiterName: table?.waiter_name || order.waiter_name || 'Ofitsiant',
+          items,
+          subtotal,
+          serviceFeePercent: servicePercent,
+          serviceFee,
+          totalAmount,
+          ...req.body,
+        };
+      }
+    }
+
+    const result = await printerService.printPrecheckReceipt(payload);
     res.json(result);
   } catch (err) {
     console.error('[Printer API] printPrecheck error:', err);
