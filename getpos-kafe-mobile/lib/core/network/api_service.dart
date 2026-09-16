@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:dio/dio.dart';
 import '../storage/app_preferences.dart';
@@ -331,7 +332,7 @@ class ApiService {
     return null;
   }
 
-  // 5. Taomlar Menyusi va Kategoriyalar - Cloud First
+  // 5. Taomlar Menyusi va Kategoriyalar - Cloud First with Persistent Cache Fallback
   Future<Map<String, dynamic>> getMenu() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
@@ -345,30 +346,69 @@ class ApiService {
             ? res.data['results']
             : (res.data['products'] ?? (res.data is List ? res.data : []));
 
-        List<Category> categories = [];
-        if (res.data is Map && res.data['categories'] != null && res.data['categories'] is List) {
-          final catList = res.data['categories'] as List;
-          categories = [
-            Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-            ...catList.map((c) => Category.fromJson(c as Map<String, dynamic>)),
-          ];
-        } else {
-          categories = [
-            Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-            Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
-            Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
-            Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
-          ];
-        }
+        if (prodList.isNotEmpty) {
+          // Save valid menu to local storage for offline / mobile data use
+          try {
+            await AppPreferences.setCachedMenuJson(jsonEncode(res.data));
+          } catch (_) {}
 
-        final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
+          List<Category> categories = [];
+          if (res.data is Map && res.data['categories'] != null && res.data['categories'] is List) {
+            final catList = res.data['categories'] as List;
+            categories = [
+              Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+              ...catList.map((c) => Category.fromJson(c as Map<String, dynamic>)),
+            ];
+          } else {
+            categories = [
+              Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+              Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
+              Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
+              Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
+            ];
+          }
 
-        if (products.isNotEmpty) {
+          final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
           return {
             'categories': categories,
             'products': products,
           };
         }
+      }
+
+      // Offline / Mobile Data fallback: load from persistent phone storage
+      final cachedJsonStr = await AppPreferences.getCachedMenuJson();
+      if (cachedJsonStr != null && cachedJsonStr.isNotEmpty) {
+        try {
+          final cachedData = jsonDecode(cachedJsonStr);
+          final List prodList = (cachedData is Map && cachedData['results'] != null)
+              ? cachedData['results']
+              : (cachedData['products'] ?? (cachedData is List ? cachedData : []));
+
+          if (prodList.isNotEmpty) {
+            List<Category> categories = [];
+            if (cachedData is Map && cachedData['categories'] != null && cachedData['categories'] is List) {
+              final catList = cachedData['categories'] as List;
+              categories = [
+                Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+                ...catList.map((c) => Category.fromJson(c as Map<String, dynamic>)),
+              ];
+            } else {
+              categories = [
+                Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+                Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
+                Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
+                Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
+              ];
+            }
+
+            final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
+            return {
+              'categories': categories,
+              'products': products,
+            };
+          }
+        } catch (_) {}
       }
     }
 

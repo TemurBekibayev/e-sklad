@@ -113,6 +113,18 @@ class AppPreferences {
     await prefs.remove(_keyWaiterRole);
   }
 
+  static const String _keyCachedMenuJson = 'pos_cached_menu_json';
+
+  static Future<String?> getCachedMenuJson() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyCachedMenuJson);
+  }
+
+  static Future<void> setCachedMenuJson(String jsonStr) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyCachedMenuJson, jsonStr);
+  }
+
   static Future<bool> isUsingMockData() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_keyUseMockData) ?? false;

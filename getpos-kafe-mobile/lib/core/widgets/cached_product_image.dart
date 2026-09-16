@@ -31,6 +31,7 @@ class CachedProductImage extends StatelessWidget {
 
     final localUrl = context.select<SettingsProvider, String>((s) => s.localKassaUrl);
     final targetUrl = ImageCacheService.resolveProductImageUrl(imageUrl, localUrl);
+    final cacheKey = ImageCacheService.getCacheKey(imageUrl);
 
     if (targetUrl == null || targetUrl.isEmpty) {
       return _buildFallback();
@@ -40,6 +41,7 @@ class CachedProductImage extends StatelessWidget {
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
         imageUrl: targetUrl,
+        cacheKey: cacheKey,
         width: width,
         height: height,
         fit: fit,

@@ -11,6 +11,17 @@ class ImageCacheService {
 
   final BaseCacheManager _cacheManager = DefaultCacheManager();
 
+  /// Extract unified cache key from image URL so disk cache matches offline & online
+  static String? getCacheKey(String? rawUrl) {
+    if (rawUrl == null || rawUrl.trim().isEmpty) return null;
+    final url = rawUrl.trim();
+    final match = RegExp(r'(dish_[^\s\?\/]+|uploads\/[^\s\?]+|[^\/\s\?]+\.(jpg|jpeg|png|webp))', caseSensitive: false).firstMatch(url);
+    if (match != null) {
+      return match.group(1);
+    }
+    return url;
+  }
+
   /// Resolve product image URL based on local Wi-Fi Kassa or Cloud
   static String? resolveProductImageUrl(String? rawUrl, String localKassaUrl) {
     if (rawUrl == null || rawUrl.trim().isEmpty) return null;
@@ -53,13 +64,13 @@ class ImageCacheService {
     }
 
     final clean = url.startsWith('/') ? url : '/$url';
-    return 'https://getpos.uz$clean';
+    return '$rootLocal$clean';
   }
 
   /// Check if image is already cached on local phone disk
-  Future<bool> isImageCached(String url) async {
+  Future<bool> isImageCached(String urlOrKey) async {
     try {
-      final fileInfo = await _cacheManager.getFileFromCache(url);
+      final fileInfo = await _cacheManager.getFileFromCache(urlOrKey);
       return fileInfo != null && fileInfo.file.existsSync();
     } catch (_) {
       return false;
@@ -80,15 +91,17 @@ class ImageCacheService {
         continue;
       }
 
+      final key = getCacheKey(product.imageUrl) ?? resolvedUrl;
+
       try {
-        final isCached = await isImageCached(resolvedUrl);
+        final isCached = await isImageCached(key) || await isImageCached(resolvedUrl);
         if (isCached) {
           successCount++;
           continue;
         }
 
-        // Download and store in local phone storage with 5s timeout
-        final file = await _cacheManager.getSingleFile(resolvedUrl).timeout(
+        // Download and store in local phone storage with 5s timeout using key
+        final file = await _cacheManager.getSingleFile(resolvedUrl, key: key).timeout(
           const Duration(seconds: 5),
           onTimeout: () => throw TimeoutException('Image download timeout: $resolvedUrl'),
         );
@@ -106,7 +119,7 @@ class ImageCacheService {
     }
 
     if (kDebugMode) {
-      print('[ImageCacheService] Preload completed:  cached,  without image,  errors');
+      print('[ImageCacheService] Preload completed: $successCount cached, $skippedCount without image, $errorCount errors');
     }
 
     return {

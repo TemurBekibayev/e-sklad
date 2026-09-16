@@ -764,17 +764,98 @@ async function syncToBackend() {
   return { pushed: pushedCount, remaining: pendingRows.length - pushedCount };
 }
 
+const lastPrintedCloudOrders = new Set();
+let cloudPollTimer = null;
+
+// Poll getpos.uz for tables in 'bill_requested' status to print pre-checks even when waiter is on mobile cellular data (Wi-Fi OFF)
+async function pollCloudBillRequests() {
+  try {
+    const cfg = await getConfig();
+    if (!cfg.is_external_active || !cfg.api_url) return;
+    const baseUrl = cfg.api_url.replace(/\/+$/, '');
+    const token = await ensureAuthToken();
+    if (!token) return;
+
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/tables/`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+      timeoutMs: 4000,
+    });
+
+    if (res.status === 200 && res.data) {
+      const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
+      for (const t of tables) {
+        if (t.status === 'bill_requested' && t.active_order) {
+          const orderId = t.active_order.id || t.active_order_id;
+          const printKey = `${orderId}_${t.number || t.id}`;
+
+          if (orderId && !lastPrintedCloudOrders.has(printKey)) {
+            lastPrintedCloudOrders.add(printKey);
+            if (lastPrintedCloudOrders.size > 200) {
+              const firstKey = lastPrintedCloudOrders.values().next().value;
+              lastPrintedCloudOrders.delete(firstKey);
+            }
+
+            console.log(`[BackendSync] Bulutdan (Mobile Data) hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
+            
+            const rawItems = t.active_order.items || [];
+            const activeItems = rawItems.map(i => ({
+              product_name: i.product_name || i.name || 'Taom',
+              quantity: Number(i.quantity || 1),
+              price: Number(i.price || i.unit_price || 0),
+            }));
+
+            const subtotal = activeItems.reduce((s, it) => s + (it.price * it.quantity), 0);
+            const servicePercent = 10;
+            const serviceFee = Math.round((subtotal * servicePercent) / 100);
+            const totalAmount = subtotal + serviceFee;
+
+            const printerService = require('./printer');
+            const printRes = await printerService.printPrecheckReceipt({
+              orderId,
+              tableNumber: String(t.number || t.name || '1'),
+              waiterName: t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant',
+              items: activeItems,
+              subtotal,
+              serviceFeePercent: servicePercent,
+              serviceFee,
+              totalAmount,
+            });
+            console.log('[BackendSync Cloud Pre-check] Chop etildi:', printRes);
+          }
+        } else if (t.status === 'free' || t.status === 'completed') {
+          if (t.active_order_id) {
+            lastPrintedCloudOrders.delete(`${t.active_order_id}_${t.number || t.id}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // Silent catch for network hiccups
+  }
+}
+
 function startPeriodicSync(intervalSeconds = 30) {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(async () => {
     await syncToBackend();
   }, intervalSeconds * 1000);
+
+  if (cloudPollTimer) clearInterval(cloudPollTimer);
+  cloudPollTimer = setInterval(async () => {
+    await pollCloudBillRequests();
+  }, 4000); // Har 4 soniyada bulutdagi yangi hisob so'rovlarini tekshirib darhol chop etadi
 }
 
 function stopPeriodicSync() {
   if (syncTimer) {
     clearInterval(syncTimer);
     syncTimer = null;
+  }
+  if (cloudPollTimer) {
+    clearInterval(cloudPollTimer);
+    cloudPollTimer = null;
   }
 }
 
