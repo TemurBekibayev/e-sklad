@@ -170,7 +170,26 @@ class OrderProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final success = await _apiService.requestPreBill(orderId: _currentOrder!.id);
+      final itemsPayload = _currentOrder!.items
+          .where((i) => i.status != OrderItemStatus.cancelled && i.quantity > 0)
+          .map((i) => {
+                'product_name': i.productName,
+                'quantity': i.quantity,
+                'price': i.unitPrice,
+                'total_price': i.totalPrice,
+              })
+          .toList();
+
+      final success = await _apiService.requestPreBill(
+        orderId: _currentOrder!.id,
+        tableId: _currentTable!.id,
+        tableNumber: _currentTable!.number,
+        waiterName: _currentOrder!.waiterName,
+        items: itemsPayload,
+        subtotal: _currentOrder!.subtotal,
+        serviceFee: _currentOrder!.serviceAmount,
+        totalAmount: _currentOrder!.grandTotal,
+      );
       if (success) {
         tablesProvider.setTableBillRequested(_currentTable!.id);
         _currentTable!.status = TableStatus.billRequested;

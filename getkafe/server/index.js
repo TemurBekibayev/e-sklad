@@ -1745,49 +1745,77 @@ app.post([
 });
 
 // 7. Ofitsiant "Hisob so'raldi" tugmasini bosishi (POST /api/orders/:id/bill-request)
-app.post('/api/orders/:id/bill-request', async (req, res) => {
+app.post(['/api/orders/:id/bill-request', '/api/orders/bill-request'], async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
-    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+    const bodyOrderId = req.body.orderId;
+    const searchId = id || bodyOrderId;
 
-    // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
-    await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [id]);
-    await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
+    let order = null;
+    if (searchId) {
+      order = await get(`SELECT * FROM orders WHERE id = ?`, [searchId]);
+      if (!order) {
+        order = await get(
+          `SELECT * FROM orders WHERE table_id = ? OR table_id = (SELECT id FROM tables WHERE number = ?) ORDER BY id DESC LIMIT 1`,
+          [searchId, searchId]
+        );
+      }
+    }
 
-    backendSync.pushBillRequestToCloud(id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
+    const tableId = order ? order.table_id : (req.body.tableId || req.body.tableNumber || searchId);
+    let updatedTable = null;
 
-    const updatedTable = await get(`
-      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
-      FROM tables t
-      LEFT JOIN orders o ON t.current_order_id = o.id
-      WHERE t.id = ?
-    `, [order.table_id]);
+    if (order) {
+      // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
+      await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [order.id]);
+      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
+      backendSync.pushBillRequestToCloud(order.id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
 
-    broadcast('TABLE_UPDATED', updatedTable);
-    broadcast('BILL_REQUESTED', { tableId: order.table_id, tableNumber: updatedTable.number });
+      updatedTable = await get(`
+        SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+        FROM tables t
+        LEFT JOIN orders o ON t.current_order_id = o.id
+        WHERE t.id = ?
+      `, [order.table_id]);
+    } else if (tableId) {
+      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ? OR number = ?`, [tableId, tableId]);
+      updatedTable = await get(`SELECT * FROM tables WHERE id = ? OR number = ? LIMIT 1`, [tableId, tableId]);
+    }
 
-    telegram.notifyBillRequested({
-      tableTitle: updatedTable?.name || `${updatedTable?.number}-stol`,
-      waiterName: updatedTable?.waiter_name || order.waiter_name || 'Ofitsiant',
-      totalAmount: updatedTable?.total_amount || order.total_amount || 0,
-    }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
+    if (updatedTable) {
+      broadcast('TABLE_UPDATED', updatedTable);
+      broadcast('BILL_REQUESTED', { tableId: updatedTable.id, tableNumber: updatedTable.number });
+      telegram.notifyBillRequested({
+        tableTitle: updatedTable?.name || `${updatedTable?.number}-stol`,
+        waiterName: updatedTable?.waiter_name || req.body.waiterName || order?.waiter_name || 'Ofitsiant',
+        totalAmount: updatedTable?.total_amount || req.body.totalAmount || order?.total_amount || 0,
+      }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
+    }
 
     // Pre-chekni avtomatik termal printerga chiqarish
     try {
-      const activeItems = await all(
-        `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
-        [id]
-      );
-      const subtotal = activeItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+      let activeItems = [];
+      if (order) {
+        activeItems = await all(
+          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+          [order.id]
+        );
+      }
+      if ((!activeItems || activeItems.length === 0) && Array.isArray(req.body.items) && req.body.items.length > 0) {
+        activeItems = req.body.items;
+      }
+
+      const subtotal = req.body.subtotal !== undefined
+        ? Number(req.body.subtotal)
+        : activeItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice || 0) * Number(item.quantity || 1)), 0);
       const servicePercent = 10;
-      const serviceFee = Math.round((subtotal * servicePercent) / 100);
-      const totalAmount = subtotal + serviceFee;
+      const serviceFee = req.body.serviceFee !== undefined ? Number(req.body.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+      const totalAmount = req.body.totalAmount !== undefined ? Number(req.body.totalAmount) : (subtotal + serviceFee);
 
       const printRes = await printerService.printPrecheckReceipt({
-        orderId: id,
-        tableNumber: updatedTable ? updatedTable.number : order.table_id,
-        waiterName: updatedTable?.waiter_name || order.waiter_name || 'Ofitsiant',
+        orderId: (order && order.id) || searchId || 'ord_1',
+        tableNumber: updatedTable ? updatedTable.number : (req.body.tableNumber || tableId || '1'),
+        waiterName: req.body.waiterName || updatedTable?.waiter_name || order?.waiter_name || 'Ofitsiant',
         items: activeItems,
         subtotal,
         serviceFeePercent: servicePercent,
@@ -1801,6 +1829,7 @@ app.post('/api/orders/:id/bill-request', async (req, res) => {
 
     res.json({ success: true, table: updatedTable });
   } catch (err) {
+    console.error('[Bill-Request] Xatolik:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

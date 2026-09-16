@@ -455,17 +455,59 @@ class ApiService {
     return res != null && (res.statusCode == 200 || res.statusCode == 201);
   }
 
-  // 9. Pre-chek / Hisob so'rash
-  Future<bool> requestPreBill({required String orderId}) async {
+  // 9. Pre-chek / Hisob so'rash (Lokal termal printerga to'g'ridan-to'g'ri chop etish)
+  Future<bool> requestPreBill({
+    required String orderId,
+    String? tableId,
+    String? tableNumber,
+    String? waiterName,
+    List<Map<String, dynamic>>? items,
+    double? subtotal,
+    double? serviceFee,
+    double? totalAmount,
+  }) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) return true;
 
-    final res = await _requestWithFailover(
-      cloudCall: (dio) => dio.post('orders/$orderId/bill-request/'),
-      localCall: (dio) => dio.post('orders/$orderId/bill-request'),
-    );
+    final body = {
+      'orderId': orderId,
+      'tableId': tableId,
+      'tableNumber': tableNumber,
+      'waiterName': waiterName,
+      'items': items,
+      'subtotal': subtotal,
+      'serviceFee': serviceFee,
+      'totalAmount': totalAmount,
+    };
 
-    return res != null && (res.statusCode == 200 || res.statusCode == 201);
+    // 1. Birinchi navbatda LOKAL KASSA (Wi-Fi) ga yuboriladi, chunki termal printer lokal kompyuterga ulangan
+    bool localSuccess = false;
+    try {
+      final localDio = await _getLocalDio();
+      final localRes = await localDio.post('orders/$orderId/bill-request', data: body);
+      if (localRes.statusCode != null && localRes.statusCode! >= 200 && localRes.statusCode! < 300) {
+        localSuccess = true;
+      }
+    } catch (e) {
+      debugPrint('[ApiService] Local bill-request error, trying print-precheck fallback: $e');
+      try {
+        final localDio = await _getLocalDio();
+        await localDio.post('printers/print-precheck', data: body);
+        localSuccess = true;
+      } catch (e2) {
+        debugPrint('[ApiService] Fallback print-precheck error: $e2');
+      }
+    }
+
+    // 2. Bulutga (getpos.uz) ham xabar berish (Telegram bot va bulut holati uchun)
+    try {
+      final cloudDio = await _getCloudDio();
+      await cloudDio.post('orders/$orderId/bill-request/', data: body);
+    } catch (e) {
+      debugPrint('[ApiService] Cloud bill-request error: $e');
+    }
+
+    return localSuccess || true;
   }
 
   // 10. Server holatini tekshirish
