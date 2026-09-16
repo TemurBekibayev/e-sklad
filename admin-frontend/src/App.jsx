@@ -12,8 +12,8 @@ import { apiFetch } from './utils/api';
 import { ArrowLeft, Zap } from 'lucide-react';
 
 function Login({ onLoginSuccess, onBackToHome }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@getpos.uz');
+  const [password, setPassword] = useState('getpos4321');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
