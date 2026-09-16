@@ -520,29 +520,41 @@ class ApiService {
       'totalAmount': totalAmount,
     };
 
-    // 1. Birinchi navbatda LOKAL KASSA (Wi-Fi) ga yuboriladi, chunki termal printer lokal kompyuterga ulangan
+    // 1. Agar Wi-Fi orqali lokal serverga ulanish imkoni bo'lsa, lokal kassa printeriga yuboriladi
     bool localSuccess = false;
     try {
       final localDio = await _getLocalDio();
-      final localRes = await localDio.post('orders/$orderId/bill-request', data: body);
+      final localRes = await localDio.post(
+        'orders/$orderId/bill-request',
+        data: body,
+        options: Options(
+          sendTimeout: const Duration(milliseconds: 1200),
+          receiveTimeout: const Duration(milliseconds: 1200),
+        ),
+      );
       if (localRes.statusCode != null && localRes.statusCode! >= 200 && localRes.statusCode! < 300) {
         localSuccess = true;
       }
-    } catch (e) {
-      debugPrint('[ApiService] Local bill-request error, trying print-precheck fallback: $e');
+    } catch (_) {
       try {
         final localDio = await _getLocalDio();
-        await localDio.post('printers/print-precheck', data: body);
+        await localDio.post(
+          'printers/print-precheck',
+          data: body,
+          options: Options(
+            sendTimeout: const Duration(milliseconds: 800),
+            receiveTimeout: const Duration(milliseconds: 800),
+          ),
+        );
         localSuccess = true;
-      } catch (e2) {
-        debugPrint('[ApiService] Fallback print-precheck error: $e2');
-      }
+      } catch (_) {}
     }
 
-    // 2. Bulutga (getpos.uz) ham xabar berish (Telegram bot va bulut holati uchun)
+    // 2. Bulutga (getpos.uz) har doim yuboriladi (mobil internetda kassa serveri bulutdan olib avtomatik chop etadi)
     try {
       final cloudDio = await _getCloudDio();
-      await cloudDio.post('orders/$orderId/bill-request/', data: body);
+      final cloudRes = await cloudDio.post('orders/$orderId/bill-request/', data: body);
+      debugPrint('[ApiService] Cloud bill-request response: ${cloudRes.statusCode}');
     } catch (e) {
       debugPrint('[ApiService] Cloud bill-request error: $e');
     }

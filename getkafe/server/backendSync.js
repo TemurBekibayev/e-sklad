@@ -766,6 +766,8 @@ async function syncToBackend() {
 
 const lastPrintedCloudOrders = new Set();
 let cloudPollTimer = null;
+const serverStartTime = Date.now();
+let isInitialCloudScan = true;
 
 // Poll getpos.uz for tables in 'bill_requested' status to print pre-checks even when waiter is on mobile cellular data (Wi-Fi OFF)
 async function pollCloudBillRequests() {
@@ -785,10 +787,26 @@ async function pollCloudBillRequests() {
 
     if (res.status === 200 && res.data) {
       const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
+      
+      // If server just started, mark existing tables as already known so we don't spam print historical bills from yesterday
+      if (isInitialCloudScan) {
+        isInitialCloudScan = false;
+        for (const t of tables) {
+          if (t.active_order) {
+            const orderId = t.active_order.id || t.active_order_id;
+            const updatedTime = t.active_order.updated_at || t.active_order.created_at || '';
+            lastPrintedCloudOrders.add(`${orderId}_${updatedTime}`);
+          }
+        }
+        console.log(`[BackendSync] Dastlabki bulut holati yuklandi (${tables.length} ta stol)`);
+        return;
+      }
+
       for (const t of tables) {
         if (t.status === 'bill_requested' && t.active_order) {
           const orderId = t.active_order.id || t.active_order_id;
-          const printKey = `${orderId}_${t.number || t.id}`;
+          const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
+          const printKey = `${orderId}_${updatedTime}`;
 
           if (orderId && !lastPrintedCloudOrders.has(printKey)) {
             lastPrintedCloudOrders.add(printKey);
@@ -797,7 +815,7 @@ async function pollCloudBillRequests() {
               lastPrintedCloudOrders.delete(firstKey);
             }
 
-            console.log(`[BackendSync] Bulutdan (Mobile Data) hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
+            console.log(`[BackendSync] Bulutdan (Mobile Data) yangi hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
             
             const rawItems = t.active_order.items || [];
             const activeItems = rawItems.map(i => ({
@@ -823,10 +841,6 @@ async function pollCloudBillRequests() {
               totalAmount,
             });
             console.log('[BackendSync Cloud Pre-check] Chop etildi:', printRes);
-          }
-        } else if (t.status === 'free' || t.status === 'completed') {
-          if (t.active_order_id) {
-            lastPrintedCloudOrders.delete(`${t.active_order_id}_${t.number || t.id}`);
           }
         }
       }
