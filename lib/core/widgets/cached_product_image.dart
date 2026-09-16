@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 import '../constants/app_colors.dart';
+import '../../providers/settings_provider.dart';
+import '../services/image_cache_service.dart';
 
 class CachedProductImage extends StatelessWidget {
   final String? imageUrl;
@@ -26,10 +29,19 @@ class CachedProductImage extends StatelessWidget {
       return _buildFallback();
     }
 
+    final localUrl = context.select<SettingsProvider, String>((s) => s.localKassaUrl);
+    final targetUrl = ImageCacheService.resolveProductImageUrl(imageUrl, localUrl);
+    final cacheKey = ImageCacheService.getCacheKey(imageUrl);
+
+    if (targetUrl == null || targetUrl.isEmpty) {
+      return _buildFallback();
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
-        imageUrl: imageUrl!.trim(),
+        imageUrl: targetUrl,
+        cacheKey: cacheKey,
         width: width,
         height: height,
         fit: fit,

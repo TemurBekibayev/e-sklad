@@ -24,10 +24,14 @@ class OrderProvider extends ChangeNotifier {
   Future<void> openTableOrder(RestaurantTable table, String waiterName, String waiterId) async {
     _currentTable = table;
 
+    final tableNameStr = table.number.isNotEmpty
+        ? table.number
+        : 'Stol ${table.id}';
+
     _currentOrder = RestaurantOrder(
       id: table.activeOrderId ?? 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
       tableId: table.id,
-      tableName: table.number,
+      tableName: tableNameStr,
       waiterId: waiterId,
       waiterName: table.activeWaiterName ?? waiterName,
       guestCount: table.guestCount ?? (table.seats > 2 ? 2 : 1),
@@ -46,10 +50,15 @@ class OrderProvider extends ChangeNotifier {
       final liveOrder = await _apiService.getTableOrder(_currentTable!.id);
       if (liveOrder != null) {
         final draftItems = _currentOrder?.items.where((i) => i.status == OrderItemStatus.draft).toList() ?? [];
-        _currentOrder = liveOrder;
-        if (draftItems.isNotEmpty) {
-          _currentOrder!.items.addAll(draftItems);
-        }
+        final tableNameStr = _currentTable!.number.isNotEmpty
+            ? _currentTable!.number
+            : (liveOrder.tableName != 'Stol' ? liveOrder.tableName : 'Stol ${_currentTable!.id}');
+
+        _currentOrder = liveOrder.copyWith(
+          tableId: _currentTable!.id,
+          tableName: tableNameStr,
+          items: [...liveOrder.items, ...draftItems],
+        );
         notifyListeners();
       }
     } catch (_) {}
@@ -130,6 +139,14 @@ class OrderProvider extends ChangeNotifier {
   Future<bool> sendToKitchen(TablesProvider tablesProvider) async {
     if (_currentOrder == null || _currentTable == null) return false;
 
+    // Har doim stol UUID va stol nomini kafolatlash
+    if (_currentOrder!.tableId.isEmpty || !_currentOrder!.tableId.contains('-')) {
+      _currentOrder = _currentOrder!.copyWith(
+        tableId: _currentTable!.id,
+        tableName: _currentTable!.number.isNotEmpty ? _currentTable!.number : 'Stol ${_currentTable!.id}',
+      );
+    }
+
     final draftItems = _currentOrder!.items.where((i) => i.status == OrderItemStatus.draft).toList();
     if (draftItems.isEmpty && _currentOrder!.items.isEmpty) return false;
 
@@ -170,7 +187,26 @@ class OrderProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final success = await _apiService.requestPreBill(orderId: _currentOrder!.id);
+      final itemsPayload = _currentOrder!.items
+          .where((i) => i.status != OrderItemStatus.cancelled && i.quantity > 0)
+          .map((i) => {
+                'product_name': i.productName,
+                'quantity': i.quantity,
+                'price': i.unitPrice,
+                'total_price': i.totalPrice,
+              })
+          .toList();
+
+      final success = await _apiService.requestPreBill(
+        orderId: _currentOrder!.id,
+        tableId: _currentTable!.id,
+        tableNumber: _currentTable!.number,
+        waiterName: _currentOrder!.waiterName,
+        items: itemsPayload,
+        subtotal: _currentOrder!.subtotal,
+        serviceFee: _currentOrder!.serviceAmount,
+        totalAmount: _currentOrder!.grandTotal,
+      );
       if (success) {
         tablesProvider.setTableBillRequested(_currentTable!.id);
         _currentTable!.status = TableStatus.billRequested;

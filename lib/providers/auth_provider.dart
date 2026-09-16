@@ -78,7 +78,7 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       _isLoading = false;
-      _errorMessage = 'Server bilan aloqa uzildi. Kassa IP-sini tekshiring.';
+      _errorMessage = 'Internet aloqasini tekshiring yoki qayta urinib ko\'ring.';
       notifyListeners();
       return false;
     }

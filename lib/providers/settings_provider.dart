@@ -53,12 +53,10 @@ class SettingsProvider extends ChangeNotifier {
     final status = ApiService().connectionStatusNotifier.value;
     _connectionType = status;
 
-    if (status == ServerConnectionType.cloud) {
+    if (status == ServerConnectionType.cloud || _isServerOnline) {
       _serverStatusLabel = '☁️ Bulut Serveri (getpos.uz) — Online';
-    } else if (status == ServerConnectionType.local) {
-      _serverStatusLabel = '💻 Kafedagi Wi-Fi Kassa ($_localKassaUrl) — Faol';
     } else {
-      _serverStatusLabel = '⚠️ Oflayn rejim (Tarmoq yo\'q)';
+      _serverStatusLabel = '⚠️ Internet aloqasi yo\'q';
     }
 
     notifyListeners();
