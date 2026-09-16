@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' hide Category;
 import 'package:dio/dio.dart';
 import '../storage/app_preferences.dart';
 import '../constants/api_constants.dart';
@@ -7,22 +8,27 @@ import '../../models/category.dart';
 import '../../models/product.dart';
 import '../../models/order.dart';
 import '../utils/mock_data.dart';
+import 'server_discovery_service.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
 
-  Dio? _dio;
+  Dio? _cloudDio;
+  Dio? _localDio;
 
-  Future<Dio> _getDio() async {
-    if (_dio != null) return _dio!;
-    final baseUrl = await AppPreferences.getServerUrl();
-    _dio = Dio(
+  final ValueNotifier<ServerConnectionType> connectionStatusNotifier =
+      ValueNotifier<ServerConnectionType>(ServerConnectionType.cloud);
+
+  Future<Dio> _getCloudDio() async {
+    if (_cloudDio != null) return _cloudDio!;
+
+    _cloudDio = Dio(
       BaseOptions(
-        baseUrl: baseUrl,
-        connectTimeout: const Duration(seconds: 6),
-        receiveTimeout: const Duration(seconds: 6),
+        baseUrl: 'https://getpos.uz/api/v1/cafe/',
+        connectTimeout: const Duration(seconds: 4),
+        receiveTimeout: const Duration(seconds: 4),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -30,11 +36,11 @@ class ApiService {
       ),
     );
 
-    _dio!.interceptors.add(
+    _cloudDio!.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
           final token = await AppPreferences.getAuthToken();
-          if (token != null && token.isNotEmpty) {
+          if (token != null && token.isNotEmpty && !token.startsWith('offline_') && !token.startsWith('mock_')) {
             options.headers['Authorization'] = 'Bearer $token';
           }
           return handler.next(options);
@@ -42,51 +48,93 @@ class ApiService {
       ),
     );
 
-    return _dio!;
+    return _cloudDio!;
+  }
+
+  Future<Dio> _getLocalDio() async {
+    var localUrl = await AppPreferences.getLocalKassaUrl();
+    if (localUrl.isEmpty) {
+      localUrl = 'http://192.168.1.8:4000/api';
+    }
+    if (!localUrl.endsWith('/')) {
+      localUrl = '$localUrl/';
+    }
+
+    _localDio = Dio(
+      BaseOptions(
+        baseUrl: localUrl,
+        connectTimeout: const Duration(seconds: 3),
+        receiveTimeout: const Duration(seconds: 3),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    return _localDio!;
   }
 
   void resetDio() {
-    _dio = null;
+    _cloudDio = null;
+    _localDio = null;
   }
 
-  // 1. Tizimga kirish (Login & Password)
+  /// Cloud First Request Wrapper:
+  /// 1. Always attempt Cloud (https://getpos.uz).
+  /// 2. If network fails / times out, immediately route to Local Kassa Wi-Fi IP.
+  Future<Response<dynamic>?> _requestWithFailover({
+    required Future<Response<dynamic>> Function(Dio cloudDio) cloudCall,
+    required Future<Response<dynamic>> Function(Dio localDio) localCall,
+  }) async {
+    // 1. Try Cloud
+    try {
+      final cloudDio = await _getCloudDio();
+      final res = await cloudCall(cloudDio);
+      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 500) {
+        if (connectionStatusNotifier.value != ServerConnectionType.cloud) {
+          connectionStatusNotifier.value = ServerConnectionType.cloud;
+        }
+        return res;
+      }
+    } catch (e) {
+      // Cloud unreachable or timed out -> Fallback to Local Kassa Wi-Fi
+    }
+
+    // 2. Try Local Kassa Wi-Fi
+    try {
+      final localDio = await _getLocalDio();
+      final res = await localCall(localDio);
+      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 500) {
+        if (connectionStatusNotifier.value != ServerConnectionType.local) {
+          connectionStatusNotifier.value = ServerConnectionType.local;
+        }
+        return res;
+      }
+    } catch (e) {
+      // Both unreachable
+      if (connectionStatusNotifier.value != ServerConnectionType.offline) {
+        connectionStatusNotifier.value = ServerConnectionType.offline;
+      }
+    }
+
+    return null;
+  }
+
+  // 1. Tizimga kirish (Login & Password) - Cloud First
   Future<Map<String, dynamic>> loginWithCredentials({
     required String login,
     required String password,
   }) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      if ((login == 'bekzod' && password == 'mypassword123') ||
-          ((login == 'akbar' || login == 'akbar@getpos.uz') && (password == '3333' || password == '1234' || password == '123456')) ||
-          (login == 'demo' && password == '1234') ||
-          (password == '1234' || password == '123456' || password == '1111' || password == '2222' || password == '3333')) {
-        final waiter = Waiter(
-          id: 'usr_2',
-          name: login.isNotEmpty ? login : 'Bekzod Test',
-          role: 'waiter',
-          tenantId: '90e04abf-246d-4683-91eb-1ac34d7b2ee7',
-          tenantName: 'Test Kafe',
-          isShiftOpen: true,
-        );
-        await AppPreferences.setAuthToken('mock_jwt_token_bekzod');
-        await AppPreferences.setWaiterData(
-          id: waiter.id,
-          name: waiter.name,
-          role: waiter.role,
-          tenantId: waiter.tenantId,
-          tenantName: waiter.tenantName,
-          isShiftOpen: waiter.isShiftOpen,
-        );
-        await AppPreferences.setSavedLogin(login);
-        return {'success': true, 'waiter': waiter};
-      }
-      return {'success': false, 'message': 'Noto\'g\'ri login yoki parol!'};
+      return _mockLogin(login, password);
     }
 
+    // 1. Try Cloud Login
     try {
-      final dio = await _getDio();
-      final res = await dio.post(
+      final cloudDio = await _getCloudDio();
+      final res = await cloudDio.post(
         ApiConstants.login,
         data: {
           'login': login.trim(),
@@ -110,6 +158,7 @@ class ApiService {
           isShiftOpen: waiter.isShiftOpen,
         );
         await AppPreferences.setSavedLogin(login);
+        connectionStatusNotifier.value = ServerConnectionType.cloud;
 
         return {'success': true, 'waiter': waiter};
       }
@@ -122,14 +171,56 @@ class ApiService {
       }
     } catch (_) {}
 
-    // Fallback: Offline/Demo login
-    if (login == 'bekzod' || login == 'akbar' || login == 'akbar@getpos.uz' || login == 'demo' || password == '1234' || password == '123456') {
+    // 2. Try Local Kassa Login (Fallback)
+    try {
+      final localDio = await _getLocalDio();
+      final res = await localDio.post(
+        'auth/login',
+        data: {
+          'login': login.trim(),
+          'password': password.trim(),
+          'pin': password.trim(),
+        },
+      );
+
+      if (res.statusCode == 200 && res.data != null) {
+        final data = res.data;
+        final token = data['token'] ?? data['access'] ?? 'local_kassa_token';
+        final userData = data['user'] ?? data;
+        final waiter = Waiter.fromJson(userData);
+
+        await AppPreferences.setAuthToken(token.toString());
+        await AppPreferences.setWaiterData(
+          id: waiter.id,
+          name: waiter.name,
+          role: waiter.role,
+          tenantId: waiter.tenantId,
+          tenantName: waiter.tenantName,
+          isShiftOpen: waiter.isShiftOpen,
+        );
+        await AppPreferences.setSavedLogin(login);
+        connectionStatusNotifier.value = ServerConnectionType.local;
+
+        return {'success': true, 'waiter': waiter};
+      }
+    } catch (_) {}
+
+    // 3. Fallback: Offline/Demo PIN Login
+    if (password == '1111' ||
+        password == '2222' ||
+        password == '3333' ||
+        password == '1234' ||
+        password == '123456' ||
+        login == 'bekzod' ||
+        login == 'akbar' ||
+        login == 'kafee' ||
+        login == 'kafee@gmail.com') {
       final waiter = Waiter(
         id: 'usr_2',
-        name: login.isNotEmpty ? login : 'Bekzod Test',
+        name: login.isNotEmpty ? login : 'Ofitsiyant (Oflayn)',
         role: 'waiter',
         tenantId: '90e04abf-246d-4683-91eb-1ac34d7b2ee7',
-        tenantName: 'Test Kafe',
+        tenantName: 'GetPOS Kafe',
         isShiftOpen: true,
       );
       await AppPreferences.setAuthToken('offline_jwt_token');
@@ -140,31 +231,45 @@ class ApiService {
         tenantId: waiter.tenantId,
         tenantName: waiter.tenantName,
       );
+      await AppPreferences.setSavedLogin(login);
       return {'success': true, 'waiter': waiter};
     }
 
     return {'success': false, 'message': 'Serverga ulanib bo\'lmadi yoki login/parol noto\'g\'ri.'};
   }
 
-  // 2. Zallar / Xonalar Ro'yxati (GET /halls/)
+  Map<String, dynamic> _mockLogin(String login, String password) {
+    final waiter = Waiter(
+      id: 'usr_mock',
+      name: login.isNotEmpty ? login : 'Demo Ofitsiyant',
+      role: 'waiter',
+      tenantId: '90e04abf-246d-4683-91eb-1ac34d7b2ee7',
+      tenantName: 'Demo Kafe',
+      isShiftOpen: true,
+    );
+    return {'success': true, 'waiter': waiter};
+  }
+
+  // 2. Zallar / Xonalar Ro'yxati (GET /halls/) - Cloud First
   Future<List<Hall>> getHalls() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
-      try {
-        final dio = await _getDio();
-        final res = await dio.get(ApiConstants.halls);
-        if (res.statusCode == 200 && res.data != null) {
-          final List list = (res.data is Map && res.data['results'] != null)
-              ? res.data['results']
-              : (res.data['halls'] ?? (res.data is List ? res.data : []));
-          if (list.isNotEmpty) {
-            return [
-              Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
-              ...list.map((e) => Hall.fromJson(e as Map<String, dynamic>)),
-            ];
-          }
+      final res = await _requestWithFailover(
+        cloudCall: (dio) => dio.get('halls/'),
+        localCall: (dio) => dio.get('halls'),
+      );
+
+      if (res != null && res.statusCode == 200 && res.data != null) {
+        final List list = (res.data is Map && res.data['results'] != null)
+            ? res.data['results']
+            : (res.data['halls'] ?? (res.data is List ? res.data : []));
+        if (list.isNotEmpty) {
+          return [
+            Hall(id: 'Barchasi', name: 'Barchasi', orderIndex: 0),
+            ...list.map((e) => Hall.fromJson(e as Map<String, dynamic>)),
+          ];
         }
-      } catch (_) {}
+      }
     }
 
     return [
@@ -173,26 +278,27 @@ class ApiService {
     ];
   }
 
-  // 3. Stollar ro'yxati (GET /tables/)
+  // 3. Stollar ro'yxati (GET /tables/) - Cloud First
   Future<List<RestaurantTable>> getTables({String? hallName}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
-      try {
-        final dio = await _getDio();
-        final res = await dio.get(ApiConstants.tables);
-        if (res.statusCode == 200 && res.data != null) {
-          final List list = (res.data is Map && res.data['results'] != null)
-              ? res.data['results']
-              : (res.data['tables'] ?? (res.data is List ? res.data : []));
-          if (list.isNotEmpty) {
-            final tables = list.map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>)).toList();
-            if (hallName != null && hallName != 'Barchasi') {
-              return tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
-            }
-            return tables;
+      final res = await _requestWithFailover(
+        cloudCall: (dio) => dio.get('tables/'),
+        localCall: (dio) => dio.get('tables'),
+      );
+
+      if (res != null && res.statusCode == 200 && res.data != null) {
+        final List list = (res.data is Map && res.data['results'] != null)
+            ? res.data['results']
+            : (res.data['tables'] ?? (res.data is List ? res.data : []));
+        if (list.isNotEmpty) {
+          final tables = list.map((e) => RestaurantTable.fromJson(e as Map<String, dynamic>)).toList();
+          if (hallName != null && hallName != 'Barchasi') {
+            return tables.where((t) => t.hallName == hallName || t.hallId == hallName).toList();
           }
+          return tables;
         }
-      } catch (_) {}
+      }
     }
 
     if (hallName == null || hallName == 'Barchasi') return MockData.tables;
@@ -201,48 +307,50 @@ class ApiService {
 
   // 4. Stol bo'yicha faol buyurtmani ko'rish
   Future<RestaurantOrder?> getTableOrder(String tableId) async {
-    try {
-      final dio = await _getDio();
-      final res = await dio.get(ApiConstants.tableDetail(tableId));
-      if (res.statusCode == 200 && res.data != null) {
-        final orderData = res.data['active_order'] ?? res.data['order'] ?? res.data;
-        if (orderData != null && orderData is Map<String, dynamic>) {
-          return RestaurantOrder.fromJson(orderData);
-        }
+    final res = await _requestWithFailover(
+      cloudCall: (dio) => dio.get('tables/$tableId/'),
+      localCall: (dio) => dio.get('tables/$tableId'),
+    );
+
+    if (res != null && res.statusCode == 200 && res.data != null) {
+      final orderData = res.data['active_order'] ?? res.data['order'] ?? res.data;
+      if (orderData != null && orderData is Map<String, dynamic>) {
+        return RestaurantOrder.fromJson(orderData);
       }
-    } catch (_) {}
+    }
     return null;
   }
 
-  // 5. Taomlar Menyusi va Kategoriyalar (GET /api/v1/products/)
+  // 5. Taomlar Menyusi va Kategoriyalar - Cloud First
   Future<Map<String, dynamic>> getMenu() async {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
-      try {
-        final dio = await _getDio();
-        final res = await dio.get(ApiConstants.menu);
-        if (res.statusCode == 200 && res.data != null) {
-          final List prodList = (res.data is Map && res.data['results'] != null)
-              ? res.data['results']
-              : (res.data['products'] ?? (res.data is List ? res.data : []));
+      final res = await _requestWithFailover(
+        cloudCall: (dio) => dio.get('https://getpos.uz/api/v1/products/'),
+        localCall: (dio) => dio.get('products'),
+      );
 
-          final categories = [
-            Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-            Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
-            Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
-            Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
-          ];
+      if (res != null && res.statusCode == 200 && res.data != null) {
+        final List prodList = (res.data is Map && res.data['results'] != null)
+            ? res.data['results']
+            : (res.data['products'] ?? (res.data is List ? res.data : []));
 
-          final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
+        final categories = [
+          Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+          Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
+          Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
+          Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
+        ];
 
-          if (products.isNotEmpty) {
-            return {
-              'categories': categories,
-              'products': products,
-            };
-          }
+        final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
+
+        if (products.isNotEmpty) {
+          return {
+            'categories': categories,
+            'products': products,
+          };
         }
-      } catch (_) {}
+      }
     }
 
     return {
@@ -251,66 +359,60 @@ class ApiService {
     };
   }
 
-  // 6. Stolga Buyurtma Qo'shish (POST /orders/) - Cloud First
+  // 6. Stolga Buyurtma Qo'shish (POST /orders/) - Cloud First with Local Kassa Fallback
   Future<bool> sendOrderToKitchen({required RestaurantOrder order}) async {
     final useMock = await AppPreferences.isUsingMockData();
     if (useMock) {
-      await Future.delayed(const Duration(milliseconds: 400));
+      await Future.delayed(const Duration(milliseconds: 300));
       return true;
     }
 
-    try {
-      final dio = await _getDio();
+    final payload = {
+      'table': order.tableId,
+      'tableId': order.tableId,
+      'guests_count': order.guestCount,
+      'notes': '',
+      'items': order.items.map((i) {
+        return {
+          'product_id': i.productId,
+          'product_name': i.productName,
+          'quantity': i.quantity,
+          'price': i.itemPrice,
+          'comment': i.comment ?? '',
+        };
+      }).toList(),
+    };
 
-      final payload = {
-        'table': order.tableId,
-        'tableId': order.tableId,
-        'guests_count': order.guestCount,
-        'notes': '',
-        'items': order.items.map((i) {
-          return {
-            'product_id': i.productId,
-            'product_name': i.productName,
-            'quantity': i.quantity,
-            'price': i.itemPrice,
-            'comment': i.comment ?? '',
-          };
-        }).toList(),
-      };
+    final res = await _requestWithFailover(
+      cloudCall: (dio) => dio.post('orders/', data: payload),
+      localCall: (dio) => dio.post('orders', data: payload),
+    );
 
-      final res = await dio.post(ApiConstants.orders, data: payload);
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        return true;
-      }
-    } catch (_) {}
-
-    return true;
+    return res != null && (res.statusCode == 200 || res.statusCode == 201);
   }
 
-  // 7. Taomni bekor qilish yoki qaytarish (POST /api/orders/:orderId/cancel-item)
+  // 7. Taomni bekor qilish yoki qaytarish
   Future<bool> cancelOrderItem({
     required String orderId,
     required dynamic itemId,
     required int cancelQty,
     String? reason,
   }) async {
-    try {
-      final dio = await _getDio();
-      final res = await dio.post(
-        ApiConstants.cancelOrderItem(orderId),
-        data: {
-          'itemId': itemId,
-          'cancelQty': cancelQty,
-          'reason': reason ?? 'Mijoz bekor qildi',
-        },
-      );
-      return res.statusCode == 200 || res.statusCode == 201;
-    } catch (_) {
-      return false;
-    }
+    final payload = {
+      'itemId': itemId,
+      'cancelQty': cancelQty,
+      'reason': reason ?? 'Mijoz bekor qildi',
+    };
+
+    final res = await _requestWithFailover(
+      cloudCall: (dio) => dio.post('orders/$orderId/cancel-item/', data: payload),
+      localCall: (dio) => dio.post('orders/$orderId/cancel-item', data: payload),
+    );
+
+    return res != null && (res.statusCode == 200 || res.statusCode == 201);
   }
 
-  // 8. Taom soni yoki narxini tahrirlash (PUT /api/orders/:orderId/items/:itemId)
+  // 8. Taom soni yoki narxini tahrirlash
   Future<bool> updateOrderItem({
     required String orderId,
     required dynamic itemId,
@@ -319,48 +421,55 @@ class ApiService {
     String? comment,
     String? waiterName,
   }) async {
-    try {
-      final dio = await _getDio();
-      final res = await dio.put(
-        ApiConstants.updateOrderItem(orderId, itemId.toString()),
-        data: {
-          'quantity': quantity,
-          if (price != null) 'price': price,
-          if (comment != null) 'comment': comment,
-          if (waiterName != null) 'waiter_name': waiterName,
-        },
-      );
-      return res.statusCode == 200 || res.statusCode == 201;
-    } catch (_) {
-      return false;
-    }
+    final payload = {
+      'quantity': quantity,
+      if (price != null) 'price': price,
+      if (comment != null) 'comment': comment,
+      if (waiterName != null) 'waiter_name': waiterName,
+    };
+
+    final res = await _requestWithFailover(
+      cloudCall: (dio) => dio.put('orders/$orderId/items/$itemId/', data: payload),
+      localCall: (dio) => dio.put('orders/$orderId/items/$itemId', data: payload),
+    );
+
+    return res != null && (res.statusCode == 200 || res.statusCode == 201);
   }
 
-  // 8. Pre-chek / Hisob so'rash (POST /api/orders/{id}/bill-request)
+  // 9. Pre-chek / Hisob so'rash
   Future<bool> requestPreBill({required String orderId}) async {
     final useMock = await AppPreferences.isUsingMockData();
-    if (useMock) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      return true;
-    }
+    if (useMock) return true;
 
-    try {
-      final dio = await _getDio();
-      final res = await dio.post(ApiConstants.orderBillRequest(orderId));
-      return res.statusCode == 200 || res.statusCode == 201;
-    } catch (_) {
-      return true;
-    }
+    final res = await _requestWithFailover(
+      cloudCall: (dio) => dio.post('orders/$orderId/bill-request/'),
+      localCall: (dio) => dio.post('orders/$orderId/bill-request'),
+    );
+
+    return res != null && (res.statusCode == 200 || res.statusCode == 201);
   }
 
-  // 9. Server holatini tekshirish
+  // 10. Server holatini tekshirish
   Future<bool> checkHealth() async {
     try {
-      final dio = await _getDio();
-      final res = await dio.get('/health');
-      return res.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
+      final cloudDio = await _getCloudDio();
+      final res = await cloudDio.get('tables/');
+      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 500) {
+        connectionStatusNotifier.value = ServerConnectionType.cloud;
+        return true;
+      }
+    } catch (_) {}
+
+    try {
+      final localDio = await _getLocalDio();
+      final res = await localDio.get('health');
+      if (res.statusCode == 200) {
+        connectionStatusNotifier.value = ServerConnectionType.local;
+        return true;
+      }
+    } catch (_) {}
+
+    connectionStatusNotifier.value = ServerConnectionType.offline;
+    return false;
   }
 }

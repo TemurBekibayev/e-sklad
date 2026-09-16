@@ -10,10 +10,11 @@ class ProductModifier {
   });
 
   factory ProductModifier.fromJson(Map<String, dynamic> json) {
+    final rawPrice = json['extra_price'] ?? 0.0;
     return ProductModifier(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? '',
-      extraPrice: (json['extra_price'] as num?)?.toDouble() ?? 0.0,
+      extraPrice: double.tryParse(rawPrice.toString()) ?? 0.0,
     );
   }
 
@@ -88,6 +89,22 @@ class Product {
               .toList() ??
           [],
     );
+  }
+
+  String? get fullImageUrl {
+    if (imageUrl == null || imageUrl!.trim().isEmpty) return null;
+    final url = imageUrl!.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    if (url.contains('uploads/') || url.contains('media/')) {
+      final clean = url.startsWith('/') ? url : '/$url';
+      return 'http://192.168.1.8:4000$clean';
+    }
+    if (url.startsWith('/')) {
+      return 'https://getpos.uz$url';
+    }
+    return 'https://getpos.uz/$url';
   }
 
   Map<String, dynamic> toJson() => {

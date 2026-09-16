@@ -4,15 +4,17 @@ import '../core/network/api_service.dart';
 import '../core/network/server_discovery_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
-  String _serverUrl = '';
+  String _serverUrl = 'https://getpos.uz/api/v1/cafe';
+  String _localKassaUrl = 'http://192.168.1.8:4000/api';
   bool _useMockData = false;
   String _language = 'uz';
   bool _isServerOnline = false;
   bool _isDiscovering = false;
-  ServerConnectionType _connectionType = ServerConnectionType.offline;
+  ServerConnectionType _connectionType = ServerConnectionType.cloud;
   String _serverStatusLabel = 'Tekshirilmoqda...';
 
   String get serverUrl => _serverUrl;
+  String get localKassaUrl => _localKassaUrl;
   bool get useMockData => _useMockData;
   String get language => _language;
   bool get isServerOnline => _isServerOnline;
@@ -22,8 +24,9 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<void> init() async {
     _serverUrl = await AppPreferences.getServerUrl();
+    _localKassaUrl = await AppPreferences.getLocalKassaUrl();
     _useMockData = await AppPreferences.isUsingMockData();
-    await autoDiscoverServer();
+    await checkHealth();
   }
 
   Future<void> autoDiscoverServer({bool force = false}) async {
@@ -47,16 +50,35 @@ class SettingsProvider extends ChangeNotifier {
 
   Future<bool> checkHealth() async {
     _isServerOnline = await ApiService().checkHealth();
-    if (_isServerOnline) {
-      final isLocal = _serverUrl.contains('192.168.') || _serverUrl.contains('10.') || _serverUrl.contains('localhost') || _serverUrl.contains('127.0.0.1');
-      _connectionType = isLocal ? ServerConnectionType.local : ServerConnectionType.cloud;
-      _serverStatusLabel = isLocal ? 'Kafedagi Kassa (Faol)' : 'Online Bulut (Faol)';
+    final status = ApiService().connectionStatusNotifier.value;
+    _connectionType = status;
+
+    if (status == ServerConnectionType.cloud) {
+      _serverStatusLabel = '☁️ Bulut Serveri (getpos.uz) — Online';
+    } else if (status == ServerConnectionType.local) {
+      _serverStatusLabel = '💻 Kafedagi Wi-Fi Kassa ($_localKassaUrl) — Faol';
     } else {
-      _connectionType = ServerConnectionType.offline;
-      _serverStatusLabel = 'Offline (Ulanib bo\'lmadi)';
+      _serverStatusLabel = '⚠️ Oflayn rejim (Tarmoq yo\'q)';
     }
+
     notifyListeners();
     return _isServerOnline;
+  }
+
+  Future<void> updateLocalKassaUrl(String url) async {
+    var formatted = url.trim();
+    if (!formatted.startsWith('http://') && !formatted.startsWith('https://')) {
+      if (formatted.contains(':')) {
+        formatted = 'http://$formatted/api';
+      } else {
+        formatted = 'http://$formatted:4000/api';
+      }
+    }
+    _localKassaUrl = formatted;
+    await AppPreferences.setLocalKassaUrl(formatted);
+    ApiService().resetDio();
+    await checkHealth();
+    notifyListeners();
   }
 
   Future<void> updateServerUrl(String url) async {

@@ -19,7 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     final prov = context.read<SettingsProvider>();
-    _urlController = TextEditingController(text: prov.serverUrl);
+    _urlController = TextEditingController(text: prov.localKassaUrl);
   }
 
   @override
@@ -106,7 +106,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
           ],
 
-          // Server Connection Card
+          // Cloud First Master Card
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -118,10 +118,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.dns_rounded, color: AppColors.primary, size: 22),
+                          Icon(Icons.cloud_done_rounded, color: AppColors.primary, size: 22),
                           SizedBox(width: 8),
                           Text(
-                            'Kassa Server Manzili',
+                            'Asosiy Bulut Baza',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.tableFreeLight,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          '☁️ Cloud First',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.tableFree,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'https://getpos.uz/api/v1/cafe',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Ilova doimo internet orqali to\'g\'ridan-to\'g\'ri ushbu markaziy bazaga ulanib ishlaydi.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Backup Local Kassa Wi-Fi Card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.wifi_rounded, color: AppColors.tableFree, size: 22),
+                          SizedBox(width: 8),
+                          Text(
+                            'Zaxira Kassa IP (Wi-Fi)',
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -149,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              settingsProv.isServerOnline ? 'Online' : 'Offline',
+                              settingsProv.isServerOnline ? 'Faol' : 'Offline',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -165,7 +222,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Holat: ${settingsProv.serverStatusLabel}',
+                    'Joriy ulanish: ${settingsProv.serverStatusLabel}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -176,70 +233,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   TextField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      hintText: 'http://192.168.1.12:4000/api',
-                      prefixIcon: Icon(Icons.link, color: AppColors.textSecondary),
+                      labelText: 'Lokal Kassa IP-manzili',
+                      hintText: '192.168.1.8 yoki http://192.168.1.8:4000/api',
+                      prefixIcon: Icon(Icons.router_rounded, color: AppColors.textSecondary),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: settingsProv.isDiscovering
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.radar_rounded, size: 18),
-                          label: Text(settingsProv.isDiscovering ? 'Qidirilmoqda...' : 'Avtomatik topish'),
-                          onPressed: settingsProv.isDiscovering
-                              ? null
-                              : () async {
-                                  await settingsProv.autoDiscoverServer(force: true);
-                                  _urlController.text = settingsProv.serverUrl;
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(settingsProv.serverStatusLabel),
-                                        backgroundColor: settingsProv.isServerOnline ? AppColors.success : AppColors.warning,
-                                      ),
-                                    );
-                                  }
-                                },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isSaving
-                              ? null
-                              : () async {
-                                  setState(() => _isSaving = true);
-                                  await settingsProv.updateServerUrl(_urlController.text.trim());
-                                  final online = await settingsProv.checkHealth();
-                                  setState(() => _isSaving = false);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(online
-                                            ? 'Kassa serveriga ulanish muvaffaqiyatli!'
-                                            : 'Serverga ulanib bo\'lmadi. IP-manzilni tekshiring.'),
-                                        backgroundColor: online ? AppColors.success : AppColors.error,
-                                      ),
-                                    );
-                                  }
-                                },
-                          child: _isSaving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                              : const Text('Saqlash'),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Internet o\'chib qolsa, ilova avtomatik ravishda ushbu Kassa kompyuteriga Wi-Fi orqali ulanadi va uzluksiz ishlashni ta\'minlaydi.',
+                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check_circle_outline, size: 20),
+                      label: Text(_isSaving ? 'Tekshirilmoqda...' : 'Saqlash va Ulanishni tekshirish'),
+                      onPressed: _isSaving
+                          ? null
+                          : () async {
+                              setState(() => _isSaving = true);
+                              await settingsProv.updateLocalKassaUrl(_urlController.text.trim());
+                              final online = await settingsProv.checkHealth();
+                              setState(() => _isSaving = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(online
+                                        ? 'Sozlamalar saqlandi! ${settingsProv.serverStatusLabel}'
+                                        : 'Sozlamalar saqlandi. Tarmoq tekshirildi.'),
+                                    backgroundColor: online ? AppColors.success : AppColors.info,
+                                  ),
+                                );
+                              }
+                            },
+                    ),
                   ),
                 ],
               ),
