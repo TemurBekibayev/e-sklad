@@ -392,7 +392,29 @@ namespace GetPOS.Installer
                             {
                                 using (ZipArchive archive = new ZipArchive(stream))
                                 {
-                                    archive.ExtractToDirectory(targetDir);
+                                    int total = archive.Entries.Count;
+                                    int count = 0;
+                                    foreach (ZipArchiveEntry entry in archive.Entries)
+                                    {
+                                        count++;
+                                        string fullPath = Path.Combine(targetDir, entry.FullName);
+                                        if (string.IsNullOrEmpty(entry.Name))
+                                        {
+                                            if (!Directory.Exists(fullPath)) Directory.CreateDirectory(fullPath);
+                                        }
+                                        else
+                                        {
+                                            string dir = Path.GetDirectoryName(fullPath);
+                                            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                                            entry.ExtractToFile(fullPath, true);
+                                        }
+
+                                        if (count % 25 == 0 || count == total)
+                                        {
+                                            int prog = 15 + (int)((float)count / total * 45);
+                                            SetStatus("Dastur fayllari yozilmoqda (" + count + "/" + total + ")...", prog);
+                                        }
+                                    }
                                     return true;
                                 }
                             }
@@ -400,7 +422,10 @@ namespace GetPOS.Installer
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Extract error: " + ex.Message);
+            }
             return false;
         }
 
