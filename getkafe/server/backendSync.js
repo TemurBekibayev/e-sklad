@@ -799,6 +799,12 @@ function isTableRecentlyPrinted(tableNumber, orderId) {
   return false;
 }
 
+let broadcastCallback = null;
+
+function setBroadcastCallback(cb) {
+  broadcastCallback = cb;
+}
+
 // Poll getpos.uz for tables in 'bill_requested' status to print pre-checks even when waiter is on mobile cellular data (Wi-Fi OFF)
 async function pollCloudBillRequests() {
   try {
@@ -829,56 +835,110 @@ async function pollCloudBillRequests() {
           }
         }
         console.log(`[BackendSync] Dastlabki bulut holati yuklandi (${tables.length} ta stol)`);
-        return;
       }
 
       for (const t of tables) {
-        if (t.status === 'bill_requested' && t.active_order) {
-          const orderId = t.active_order.id || t.active_order_id;
-          const tableNum = String(t.number || t.name || t.id);
-          const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
-          const printKey = `${orderId}_${updatedTime}`;
+        const localTable = await get(`SELECT * FROM tables WHERE number = ? OR id = ?`, [t.number, t.number]);
+        if (localTable) {
+          let tableChanged = false;
 
-          // Agar bu stol yaqinda (lokal Wi-Fi orqali) chop etilgan bo'lsa, qayta chop etmaymiz!
-          if (isTableRecentlyPrinted(tableNum, orderId)) {
-            lastPrintedCloudOrders.add(printKey);
-            continue;
-          }
-
-          if (orderId && !lastPrintedCloudOrders.has(printKey)) {
-            lastPrintedCloudOrders.add(printKey);
-            markTablePrintedLocally(tableNum, orderId);
-            if (lastPrintedCloudOrders.size > 200) {
-              const firstKey = lastPrintedCloudOrders.values().next().value;
-              lastPrintedCloudOrders.delete(firstKey);
+          if (t.status === 'bill_requested' || t.status === 'busy') {
+            if (localTable.status !== t.status) {
+              await run(`UPDATE tables SET status = ? WHERE id = ?`, [t.status, localTable.id]);
+              tableChanged = true;
             }
 
-            console.log(`[BackendSync] Bulutdan (Mobile Data) yangi hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
-            
-            const rawItems = t.active_order.items || [];
-            const activeItems = rawItems.map(i => ({
-              product_name: i.product_name || i.name || 'Taom',
-              quantity: Number(i.quantity || 1),
-              price: Number(i.price || i.unit_price || 0),
-            }));
+            if (t.active_order) {
+              const orderId = t.active_order.id || t.active_order_id;
+              const orderTotal = Number(t.active_order.total_amount || t.active_order.subtotal || 0);
+              const waiterName = t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant';
 
-            const subtotal = activeItems.reduce((s, it) => s + (it.price * it.quantity), 0);
-            const servicePercent = 10;
-            const serviceFee = Math.round((subtotal * servicePercent) / 100);
-            const totalAmount = subtotal + serviceFee;
+              let localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+              if (!localOrder) {
+                localOrder = await get(
+                  `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`,
+                  [localTable.id]
+                );
+              }
 
-            const printerService = require('./printer');
-            const printRes = await printerService.printPrecheckReceipt({
-              orderId,
-              tableNumber: String(t.number || t.name || '1'),
-              waiterName: t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant',
-              items: activeItems,
-              subtotal,
-              serviceFeePercent: servicePercent,
-              serviceFee,
-              totalAmount,
-            });
-            console.log('[BackendSync Cloud Pre-check] Chop etildi:', printRes);
+              if (localOrder) {
+                await run(
+                  `UPDATE orders SET status = ?, total_amount = ?, waiter_name = ? WHERE id = ?`,
+                  [t.status, orderTotal, waiterName, localOrder.id]
+                );
+                if (localTable.current_order_id !== localOrder.id) {
+                  await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [localOrder.id, localTable.id]);
+                  tableChanged = true;
+                }
+              } else {
+                const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
+                await run(
+                  `INSERT INTO orders (id, table_id, waiter_name, status, total_amount, guest_count) VALUES (?, ?, ?, ?, ?, ?)`,
+                  [newOrderId, localTable.id, waiterName, t.status, orderTotal, t.active_order.guests_count || 4]
+                );
+                await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [newOrderId, localTable.id]);
+                tableChanged = true;
+              }
+
+              // Pre-chek termal printerga chiqarish (agar hali chop etilmagan bo'lsa)
+              if (t.status === 'bill_requested') {
+                const tableNum = String(t.number || t.name || t.id);
+                const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
+                const printKey = `${orderId}_${updatedTime}`;
+
+                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey)) {
+                  lastPrintedCloudOrders.add(printKey);
+                  markTablePrintedLocally(tableNum, orderId);
+                  if (lastPrintedCloudOrders.size > 200) {
+                    const firstKey = lastPrintedCloudOrders.values().next().value;
+                    lastPrintedCloudOrders.delete(firstKey);
+                  }
+
+                  console.log(`[BackendSync] Bulutdan (Mobile Data) yangi hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
+                  
+                  const rawItems = t.active_order.items || [];
+                  const activeItems = rawItems.map(i => ({
+                    product_name: i.product_name || i.name || 'Taom',
+                    quantity: Number(i.quantity || 1),
+                    price: Number(i.price || i.unit_price || 0),
+                  }));
+
+                  const subtotal = activeItems.reduce((s, it) => s + (it.price * it.quantity), 0);
+                  const servicePercent = 10;
+                  const serviceFee = Math.round((subtotal * servicePercent) / 100);
+                  const totalAmount = subtotal + serviceFee;
+
+                  const printerService = require('./printer');
+                  printerService.printPrecheckReceipt({
+                    orderId,
+                    tableNumber: String(t.number || t.name || localTable.number),
+                    waiterName,
+                    items: activeItems,
+                    subtotal,
+                    serviceFeePercent: servicePercent,
+                    serviceFee,
+                    totalAmount,
+                  }).then(res => console.log('[BackendSync Cloud Pre-check] Chop etildi:', res)).catch(err => console.error('[BackendSync Cloud Pre-check] Error:', err.message));
+                }
+              }
+            }
+          } else if (t.status === 'free') {
+            if (localTable.status !== 'free') {
+              await run(`UPDATE tables SET status = 'free', current_order_id = NULL WHERE id = ?`, [localTable.id]);
+              await run(`UPDATE orders SET status = 'paid' WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested')`, [localTable.id]);
+              tableChanged = true;
+            }
+          }
+
+          if (tableChanged && broadcastCallback) {
+            const updated = await get(`
+              SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+              FROM tables t
+              LEFT JOIN orders o ON t.current_order_id = o.id
+              WHERE t.id = ?
+            `, [localTable.id]);
+            broadcastCallback('TABLE_UPDATED', updated);
+            broadcastCallback('TABLES_UPDATED', {});
           }
         }
       }
@@ -1222,6 +1282,7 @@ module.exports = {
   patchBasketStatus,
   markTablePrintedLocally,
   isTableRecentlyPrinted,
+  setBroadcastCallback,
   getLastSyncResult: () => lastSyncResult,
 };
 

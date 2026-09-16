@@ -79,6 +79,8 @@ function broadcast(event, data) {
   });
 }
 
+backendSync.setBroadcastCallback(broadcast);
+
 wss.on('connection', (ws) => {
   // Yangi ulanuvchiga darhol hozirgi holatni yuborish
   (async () => {
