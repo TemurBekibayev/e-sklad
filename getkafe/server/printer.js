@@ -486,6 +486,10 @@ async function printPrecheckReceipt(precheckData) {
         }
 
         console.log('[Printer] Pre-chek chop etildi:', stdout.trim());
+        try {
+          const backendSync = require('./backendSync');
+          backendSync.markTablePrintedLocally(precheckData.tableNumber, precheckData.orderId);
+        } catch (_) {}
         resolve({ success: true, message: 'Pre-chek chop etildi: ' + stdout.trim() });
       });
     });

@@ -768,6 +768,36 @@ const lastPrintedCloudOrders = new Set();
 let cloudPollTimer = null;
 const serverStartTime = Date.now();
 let isInitialCloudScan = true;
+const recentPrintedTables = new Map(); // identifier -> timestamp
+
+function markTablePrintedLocally(tableNumber, orderId) {
+  const now = Date.now();
+  if (tableNumber) {
+    recentPrintedTables.set(String(tableNumber), now);
+    const digits = String(tableNumber).replace(/\D/g, '');
+    if (digits) recentPrintedTables.set(digits, now);
+  }
+  if (orderId) {
+    recentPrintedTables.set(String(orderId), now);
+  }
+}
+
+function isTableRecentlyPrinted(tableNumber, orderId) {
+  const now = Date.now();
+  const keys = [
+    tableNumber ? String(tableNumber) : null,
+    tableNumber ? String(tableNumber).replace(/\D/g, '') : null,
+    orderId ? String(orderId) : null,
+  ].filter(Boolean);
+
+  for (const k of keys) {
+    const t = recentPrintedTables.get(k);
+    if (t && (now - t < 30000)) { // 30 soniya ichida chop etilgan bo'lsa
+      return true;
+    }
+  }
+  return false;
+}
 
 // Poll getpos.uz for tables in 'bill_requested' status to print pre-checks even when waiter is on mobile cellular data (Wi-Fi OFF)
 async function pollCloudBillRequests() {
@@ -805,11 +835,19 @@ async function pollCloudBillRequests() {
       for (const t of tables) {
         if (t.status === 'bill_requested' && t.active_order) {
           const orderId = t.active_order.id || t.active_order_id;
+          const tableNum = String(t.number || t.name || t.id);
           const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
           const printKey = `${orderId}_${updatedTime}`;
 
+          // Agar bu stol yaqinda (lokal Wi-Fi orqali) chop etilgan bo'lsa, qayta chop etmaymiz!
+          if (isTableRecentlyPrinted(tableNum, orderId)) {
+            lastPrintedCloudOrders.add(printKey);
+            continue;
+          }
+
           if (orderId && !lastPrintedCloudOrders.has(printKey)) {
             lastPrintedCloudOrders.add(printKey);
+            markTablePrintedLocally(tableNum, orderId);
             if (lastPrintedCloudOrders.size > 200) {
               const firstKey = lastPrintedCloudOrders.values().next().value;
               lastPrintedCloudOrders.delete(firstKey);
@@ -1182,6 +1220,8 @@ module.exports = {
   fetchActiveBaskets,
   completeBasketTransaction,
   patchBasketStatus,
+  markTablePrintedLocally,
+  isTableRecentlyPrinted,
   getLastSyncResult: () => lastSyncResult,
 };
 
