@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/cached_product_image.dart';
 import '../../../models/product.dart';
 
 class ProductDetailDialog extends StatefulWidget {
@@ -63,6 +64,17 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Product Image Banner
+            CachedProductImage(
+              imageUrl: widget.product.fullImageUrl,
+              productName: widget.product.name,
+              width: double.infinity,
+              height: 150,
+              borderRadius: 16,
+              fit: BoxFit.cover,
+            ),
+            const SizedBox(height: 14),
 
             // Product Header
             Row(

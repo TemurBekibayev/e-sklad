@@ -90,6 +90,18 @@ class Product {
     );
   }
 
+  String? get fullImageUrl {
+    if (imageUrl == null || imageUrl!.trim().isEmpty) return null;
+    final url = imageUrl!.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    if (url.startsWith('/')) {
+      return 'https://getpos.uz$url';
+    }
+    return 'https://getpos.uz/$url';
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'category_id': categoryId,

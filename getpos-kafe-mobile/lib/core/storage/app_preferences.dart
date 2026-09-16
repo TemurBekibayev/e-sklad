@@ -3,6 +3,7 @@ import '../constants/api_constants.dart';
 
 class AppPreferences {
   static const String _keyServerUrl = 'pos_server_url';
+  static const String _keyLocalKassaUrl = 'pos_local_kassa_url';
   static const String _keyAccessToken = 'pos_access_token';
   static const String _keySavedLogin = 'pos_saved_login';
   static const String _keyWaiterId = 'pos_waiter_id';
@@ -21,6 +22,16 @@ class AppPreferences {
   static Future<void> setServerUrl(String url) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyServerUrl, url);
+  }
+
+  static Future<String> getLocalKassaUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyLocalKassaUrl) ?? 'http://192.168.1.8:4000/api';
+  }
+
+  static Future<void> setLocalKassaUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLocalKassaUrl, url);
   }
 
   static Future<String?> getSavedLogin() async {

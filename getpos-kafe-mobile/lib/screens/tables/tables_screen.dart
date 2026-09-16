@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/network/api_service.dart';
+import '../../core/network/server_discovery_service.dart';
 import '../../models/hall_table.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/tables_provider.dart';
@@ -61,26 +63,44 @@ class _TablesScreenState extends State<TablesScreen> {
                 color: AppColors.textPrimary,
               ),
             ),
-            Row(
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  'Smena faol',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+            ValueListenableBuilder<ServerConnectionType>(
+              valueListenable: ApiService().connectionStatusNotifier,
+              builder: (context, mode, _) {
+                String label;
+                Color dotColor;
+                if (mode == ServerConnectionType.cloud) {
+                  label = '☁️ Bulut (Online)';
+                  dotColor = AppColors.success;
+                } else if (mode == ServerConnectionType.local) {
+                  label = '💻 Wi-Fi Kassa';
+                  dotColor = AppColors.primary;
+                } else {
+                  label = '⚠️ Oflayn';
+                  dotColor = AppColors.warning;
+                }
+
+                return Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: dotColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: dotColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),
