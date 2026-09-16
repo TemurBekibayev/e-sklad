@@ -943,6 +943,130 @@ async function deleteStaffMember(userCode) {
   }
 }
 
+// Real-time Push Active Order to Cloud (https://getpos.uz/api/v1/cafe/orders/)
+async function pushActiveOrderToCloud({ tableId, tableName, waiterName, items, guestCount, orderId }) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false, message: 'No auth token' };
+
+  let remoteTableId = null;
+  if (tableId) {
+    const tRow = await get(`SELECT remote_id, name, number FROM tables WHERE id = ? OR number = ? OR name = ?`, [tableId, tableId, tableId]);
+    remoteTableId = tRow?.remote_id;
+  }
+
+  if (!remoteTableId) {
+    try {
+      const cloudTablesRes = await makeRequest({
+        url: `${baseUrl}/api/v1/cafe/tables/`,
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        timeoutMs: 5000,
+      });
+      const list = cloudTablesRes.data?.results || (Array.isArray(cloudTablesRes.data) ? cloudTablesRes.data : []);
+      const match = list.find(t => String(t.number) === String(tableId) || t.name === tableName || t.name === `STOL - ${tableId}`);
+      if (match) {
+        remoteTableId = match.id;
+        if (tableId) {
+          await run(`UPDATE tables SET remote_id = ? WHERE id = ? OR number = ?`, [match.id, tableId, tableId]);
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!remoteTableId) {
+    console.warn('[BackendSync] Could not find remote table ID for table', tableId);
+    return { success: false, message: 'Remote table ID not found' };
+  }
+
+  const payload = {
+    table: remoteTableId,
+    tableId: remoteTableId,
+    guests_count: guestCount || 2,
+    notes: '',
+    items: (items || []).map(i => ({
+      product_id: i.product_id || i.productId,
+      product_name: i.product_name || i.productName || i.name || 'Taom',
+      quantity: i.quantity || i.qty || 1,
+      price: i.price || i.unit_price || 0,
+      comment: i.comment || '',
+    }))
+  };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: payload,
+      timeoutMs: 6000,
+    });
+
+    if (res.status === 200 || res.status === 201) {
+      console.log(`[BackendSync] Active order pushed to cloud for Table ${tableName || tableId}`);
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res.data };
+  } catch (err) {
+    console.warn('[BackendSync] pushActiveOrderToCloud error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Push Bill Request to Cloud
+async function pushBillRequestToCloud(tableIdOrOrderId) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/${tableIdOrOrderId}/bill-request/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      timeoutMs: 5000,
+    });
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// Push Close / Pay Order to Cloud
+async function pushCloseOrderToCloud({ orderId, tableId, paymentMethod, totalAmount }) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/${orderId}/pay/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: {
+        payment_method: paymentMethod || 'cash',
+        total_amount: totalAmount,
+      },
+      timeoutMs: 5000,
+    });
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -953,6 +1077,9 @@ module.exports = {
   syncFromBackend,
   syncToBackend,
   pushOrderSale,
+  pushActiveOrderToCloud,
+  pushBillRequestToCloud,
+  pushCloseOrderToCloud,
   pushStaffMember,
   deleteStaffMember,
   startPeriodicSync,
@@ -962,3 +1089,4 @@ module.exports = {
   patchBasketStatus,
   getLastSyncResult: () => lastSyncResult,
 };
+

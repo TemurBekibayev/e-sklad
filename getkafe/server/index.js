@@ -1686,6 +1686,16 @@ app.post([
     broadcast('TABLE_UPDATED', updatedTable);
     if (ticket) broadcast('KITCHEN_NEW_TICKET', ticket);
 
+    // Real-time Push Active Order to Cloud (https://getpos.uz)
+    backendSync.pushActiveOrderToCloud({
+      tableId: table.id,
+      tableName: table.name,
+      waiterName: body.waiterName || body.waiter_name || 'Ofitsiant',
+      items: rawItems,
+      guestCount: body.guestCount || body.guests_count || 2,
+      orderId: targetOrderId,
+    }).catch(e => console.warn('[BackendSync] Background active order push error:', e.message));
+
     const fullOrder = {
       id: targetOrderId,
       order_id: targetOrderId,
@@ -1729,6 +1739,8 @@ app.post('/api/orders/:id/bill-request', async (req, res) => {
     // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
     await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [id]);
     await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
+
+    backendSync.pushBillRequestToCloud(id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
 
     const updatedTable = await get(`
       SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
