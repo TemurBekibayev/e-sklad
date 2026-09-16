@@ -173,6 +173,32 @@ class RestaurantOrder {
 
   int get draftItemsCount => items.where((i) => i.status == OrderItemStatus.draft).length;
 
+  RestaurantOrder copyWith({
+    String? id,
+    String? tableId,
+    String? tableName,
+    String? waiterId,
+    String? waiterName,
+    int? guestCount,
+    List<OrderItem>? items,
+    double? serviceFeePercent,
+    double? discountPercent,
+    DateTime? createdAt,
+  }) {
+    return RestaurantOrder(
+      id: id ?? this.id,
+      tableId: tableId ?? this.tableId,
+      tableName: tableName ?? this.tableName,
+      waiterId: waiterId ?? this.waiterId,
+      waiterName: waiterName ?? this.waiterName,
+      guestCount: guestCount ?? this.guestCount,
+      items: items ?? List.from(this.items),
+      serviceFeePercent: serviceFeePercent ?? this.serviceFeePercent,
+      discountPercent: discountPercent ?? this.discountPercent,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   factory RestaurantOrder.fromJson(Map<String, dynamic> json) {
     final rawFee = json['service_fee_percent'] ?? json['serviceFeePercent'] ?? 10.0;
     final feePercent = double.tryParse(rawFee.toString()) ?? 10.0;

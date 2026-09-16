@@ -194,10 +194,14 @@ class ApiService {
       final dio = await _getDio();
       final res = await dio.get('tables/$tableId/');
 
-      if (res.statusCode == 200 && res.data != null) {
-        final orderData = res.data['active_order'] ?? res.data['order'] ?? res.data;
+      if (res.statusCode == 200 && res.data != null && res.data is Map<String, dynamic>) {
+        final orderData = res.data['active_order'] ?? res.data['order'];
         if (orderData != null && orderData is Map<String, dynamic>) {
-          return RestaurantOrder.fromJson(orderData);
+          final merged = Map<String, dynamic>.from(orderData);
+          merged['table'] = tableId;
+          merged['table_id'] = tableId;
+          merged['table_name'] = res.data['name'] ?? res.data['number']?.toString() ?? 'Stol';
+          return RestaurantOrder.fromJson(merged);
         }
       }
     } catch (e) {

@@ -24,10 +24,14 @@ class OrderProvider extends ChangeNotifier {
   Future<void> openTableOrder(RestaurantTable table, String waiterName, String waiterId) async {
     _currentTable = table;
 
+    final tableNameStr = table.number.isNotEmpty
+        ? table.number
+        : 'Stol ${table.id}';
+
     _currentOrder = RestaurantOrder(
       id: table.activeOrderId ?? 'ord_${table.id}_${DateTime.now().millisecondsSinceEpoch}',
       tableId: table.id,
-      tableName: table.number,
+      tableName: tableNameStr,
       waiterId: waiterId,
       waiterName: table.activeWaiterName ?? waiterName,
       guestCount: table.guestCount ?? (table.seats > 2 ? 2 : 1),
@@ -46,10 +50,15 @@ class OrderProvider extends ChangeNotifier {
       final liveOrder = await _apiService.getTableOrder(_currentTable!.id);
       if (liveOrder != null) {
         final draftItems = _currentOrder?.items.where((i) => i.status == OrderItemStatus.draft).toList() ?? [];
-        _currentOrder = liveOrder;
-        if (draftItems.isNotEmpty) {
-          _currentOrder!.items.addAll(draftItems);
-        }
+        final tableNameStr = _currentTable!.number.isNotEmpty
+            ? _currentTable!.number
+            : (liveOrder.tableName != 'Stol' ? liveOrder.tableName : 'Stol ${_currentTable!.id}');
+
+        _currentOrder = liveOrder.copyWith(
+          tableId: _currentTable!.id,
+          tableName: tableNameStr,
+          items: [...liveOrder.items, ...draftItems],
+        );
         notifyListeners();
       }
     } catch (_) {}
@@ -129,6 +138,14 @@ class OrderProvider extends ChangeNotifier {
   // Oshxona va kassaga buyurtma yuborish (POST /api/orders)
   Future<bool> sendToKitchen(TablesProvider tablesProvider) async {
     if (_currentOrder == null || _currentTable == null) return false;
+
+    // Har doim stol UUID va stol nomini kafolatlash
+    if (_currentOrder!.tableId.isEmpty || !_currentOrder!.tableId.contains('-')) {
+      _currentOrder = _currentOrder!.copyWith(
+        tableId: _currentTable!.id,
+        tableName: _currentTable!.number.isNotEmpty ? _currentTable!.number : 'Stol ${_currentTable!.id}',
+      );
+    }
 
     final draftItems = _currentOrder!.items.where((i) => i.status == OrderItemStatus.draft).toList();
     if (draftItems.isEmpty && _currentOrder!.items.isEmpty) return false;
