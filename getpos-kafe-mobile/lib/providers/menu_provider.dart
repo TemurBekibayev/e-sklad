@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/category.dart';
 import '../models/product.dart';
 import '../core/network/api_service.dart';
+import '../core/services/image_cache_service.dart';
 
 class MenuProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -13,6 +14,7 @@ class MenuProvider extends ChangeNotifier {
   bool _isLoading = false;
 
   List<Category> get categories => _categories;
+  List<Product> get allProducts => _allProducts;
   String get selectedCategoryId => _selectedCategoryId;
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
@@ -42,6 +44,8 @@ class MenuProvider extends ChangeNotifier {
       final menuData = await _apiService.getMenu();
       _categories = menuData['categories'] as List<Category>;
       _allProducts = menuData['products'] as List<Product>;
+      // Background Wi-Fi Image Preload into phone flash storage
+      ImageCacheService().preloadProductImages(_allProducts).catchError((_) => <String, int>{});
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -67,6 +71,8 @@ class MenuProvider extends ChangeNotifier {
     final menuData = await _apiService.getMenu();
     _categories = menuData['categories'] as List<Category>;
     _allProducts = menuData['products'] as List<Product>;
+    ImageCacheService().preloadProductImages(_allProducts).catchError((_) => <String, int>{});
     notifyListeners();
   }
 }
+

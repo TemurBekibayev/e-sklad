@@ -97,6 +97,10 @@ class Product {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
+    if (url.contains('uploads/') || url.contains('media/')) {
+      final clean = url.startsWith('/') ? url : '/$url';
+      return 'http://192.168.1.8:4000$clean';
+    }
     if (url.startsWith('/')) {
       return 'https://getpos.uz$url';
     }
