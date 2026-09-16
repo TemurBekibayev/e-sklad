@@ -16,8 +16,10 @@ class ApiService {
   Dio? _dio;
 
   Future<Dio> _getDio() async {
-    if (_dio != null) return _dio!;
-    final baseUrl = await AppPreferences.getServerUrl();
+    var baseUrl = await AppPreferences.getServerUrl();
+    if (!baseUrl.endsWith('/')) {
+      baseUrl = '$baseUrl/';
+    }
     _dio = Dio(
       BaseOptions(
         baseUrl: baseUrl,

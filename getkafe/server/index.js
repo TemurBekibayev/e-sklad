@@ -34,10 +34,24 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// Mobile API v2.0 compatibility: rewrite /api/v1/... to /api/...
+// Mobile API v2.0 & Cloud First compatibility: rewrite /api/v1/... and root endpoints to /api/...
 app.use((req, res, next) => {
-  if (req.url.startsWith('/api/v1/')) {
+  if (req.url.startsWith('/api/v1/cafe/')) {
+    req.url = req.url.replace('/api/v1/cafe/', '/api/');
+  } else if (req.url.startsWith('/api/v1/products/')) {
+    req.url = req.url.replace('/api/v1/products/', '/api/products/');
+  } else if (req.url.startsWith('/api/v1/auth/')) {
+    req.url = req.url.replace('/api/v1/auth/', '/api/auth/');
+  } else if (req.url.startsWith('/api/v1/')) {
     req.url = req.url.replace('/api/v1/', '/api/');
+  } else if (req.url === '/tables' || req.url.startsWith('/tables?')) {
+    req.url = req.url.replace('/tables', '/api/tables');
+  } else if (req.url === '/halls' || req.url.startsWith('/halls?')) {
+    req.url = req.url.replace('/halls', '/api/halls');
+  } else if (req.url === '/orders' || req.url.startsWith('/orders?')) {
+    req.url = req.url.replace('/orders', '/api/orders');
+  } else if (req.url === '/products' || req.url.startsWith('/products?')) {
+    req.url = req.url.replace('/products', '/api/products');
   }
   next();
 });
