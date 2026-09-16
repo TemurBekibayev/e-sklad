@@ -192,17 +192,25 @@ class _LoginScreenState extends State<LoginScreen> {
               // Hero Icon & Title
               Center(
                 child: Container(
-                  width: 72,
-                  height: 72,
+                  width: 88,
+                  height: 88,
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFF6366F1).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(24),
+                    color: const Color(0xFF16112B),
                     border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.3), width: 1.5),
                   ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: Color(0xFF818CF8),
-                    size: 36,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset(
+                      'assets/logo.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (ctx, err, stack) => const Icon(
+                        Icons.store_rounded,
+                        color: Color(0xFF818CF8),
+                        size: 36,
+                      ),
+                    ),
                   ),
                 ),
               ),
