@@ -82,7 +82,7 @@ class ApiService {
 
   /// Cloud First Request Wrapper:
   /// 1. Always attempt Cloud (https://getpos.uz).
-  /// 2. If network fails / times out, immediately route to Local Kassa Wi-Fi IP.
+  /// 2. If network fails / times out / returns non-JSON HTML, immediately route to Local Kassa Wi-Fi IP.
   Future<Response<dynamic>?> _requestWithFailover({
     required Future<Response<dynamic>> Function(Dio cloudDio) cloudCall,
     required Future<Response<dynamic>> Function(Dio localDio) localCall,
@@ -91,7 +91,12 @@ class ApiService {
     try {
       final cloudDio = await _getCloudDio();
       final res = await cloudCall(cloudDio);
-      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 500) {
+      if (res.statusCode != null &&
+          res.statusCode! >= 200 &&
+          res.statusCode! < 300 &&
+          res.data != null &&
+          (res.data is Map || res.data is List) &&
+          (res.data is! String)) {
         if (connectionStatusNotifier.value != ServerConnectionType.cloud) {
           connectionStatusNotifier.value = ServerConnectionType.cloud;
         }
@@ -105,7 +110,12 @@ class ApiService {
     try {
       final localDio = await _getLocalDio();
       final res = await localCall(localDio);
-      if (res.statusCode != null && res.statusCode! >= 200 && res.statusCode! < 500) {
+      if (res.statusCode != null &&
+          res.statusCode! >= 200 &&
+          res.statusCode! < 300 &&
+          res.data != null &&
+          (res.data is Map || res.data is List) &&
+          (res.data is! String)) {
         if (connectionStatusNotifier.value != ServerConnectionType.local) {
           connectionStatusNotifier.value = ServerConnectionType.local;
         }
@@ -326,8 +336,8 @@ class ApiService {
     final useMock = await AppPreferences.isUsingMockData();
     if (!useMock) {
       final res = await _requestWithFailover(
-        cloudCall: (dio) => dio.get('https://getpos.uz/api/v1/products/'),
-        localCall: (dio) => dio.get('products'),
+        cloudCall: (dio) => dio.get('products/'),
+        localCall: (dio) => dio.get('menu'),
       );
 
       if (res != null && res.statusCode == 200 && res.data != null) {
@@ -335,12 +345,21 @@ class ApiService {
             ? res.data['results']
             : (res.data['products'] ?? (res.data is List ? res.data : []));
 
-        final categories = [
-          Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-          Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
-          Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
-          Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
-        ];
+        List<Category> categories = [];
+        if (res.data is Map && res.data['categories'] != null && res.data['categories'] is List) {
+          final catList = res.data['categories'] as List;
+          categories = [
+            Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+            ...catList.map((c) => Category.fromJson(c as Map<String, dynamic>)),
+          ];
+        } else {
+          categories = [
+            Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+            Category(id: 'c2', name: 'Asosiy taomlar', iconName: 'restaurant'),
+            Category(id: 'c3', name: 'Ichimliklar', iconName: 'local_cafe'),
+            Category(id: 'c4', name: 'Salatlar', iconName: 'eco'),
+          ];
+        }
 
         final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
 
