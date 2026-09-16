@@ -181,6 +181,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  const Text(
+                    'Tezkor ulanish rejimini tanlang:',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.cloud_done_rounded, size: 16, color: AppColors.primary),
+                        label: const Text('☁️ GetPOS Bulut (getpos.uz)'),
+                        backgroundColor: AppColors.primaryLight.withValues(alpha: 0.2),
+                        onPressed: () async {
+                          _urlController.text = 'https://getpos.uz/api/v1/cafe';
+                          await settingsProv.updateServerUrl('https://getpos.uz/api/v1/cafe');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('☁️ GetPOS Bulut serveriga muvaffaqiyatli ulandi!'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.wifi_rounded, size: 16, color: AppColors.success),
+                        label: const Text('💻 Wi-Fi Kassa (192.168.1.8)'),
+                        backgroundColor: AppColors.tableFreeLight,
+                        onPressed: () async {
+                          _urlController.text = 'http://192.168.1.8:4000/api';
+                          await settingsProv.updateServerUrl('http://192.168.1.8:4000/api');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('💻 Lokal Wi-Fi Kassa serveriga ulandi!'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
