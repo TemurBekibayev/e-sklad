@@ -90,8 +90,13 @@ namespace KafePOS
 
         public static string FindNodeExecutable()
         {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string[] candidates = new string[]
             {
+                Path.Combine(baseDir, "node.exe"),
+                Path.Combine(baseDir, "bin", "node.exe"),
+                @"C:\KafePOS\node.exe",
+                @"C:\KafePOS\bin\node.exe",
                 @"C:\Program Files\nodejs\node.exe",
                 @"C:\Program Files (x86)\nodejs\node.exe",
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\node\node.exe"),
