@@ -251,14 +251,18 @@ class ApiService {
     };
   }
 
-  // 6. Stolga Buyurtma Qo'shish (POST https://getpos.uz/api/v1/cafe/orders/)
   Future<bool> sendOrderToKitchen({required RestaurantOrder order}) async {
-    final tableNumDigits = order.tableName.replaceAll(RegExp(r'\D'), '');
-    var cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
-        _tableNumberToCloudUuid[order.tableId] ??
-        (order.tableId.contains('-') ? order.tableId : null);
-
     final dio = await _getDio();
+    final tableNumDigits = order.tableName.replaceAll(RegExp(r'\D'), '');
+
+    String? cloudTableId;
+    if (order.tableId.contains('-') && order.tableId.length >= 30) {
+      cloudTableId = order.tableId;
+    } else {
+      cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
+          _tableNumberToCloudUuid[order.tableId.replaceAll(RegExp(r'\D'), '')] ??
+          _tableNumberToCloudUuid[order.tableId];
+    }
 
     if (cloudTableId == null) {
       try {
@@ -282,17 +286,26 @@ class ApiService {
             }
           }
           cloudTableId = _tableNumberToCloudUuid[tableNumDigits] ??
-              _tableNumberToCloudUuid[order.tableId] ??
-              (order.tableId.contains('-') ? order.tableId : null);
+              _tableNumberToCloudUuid[order.tableId.replaceAll(RegExp(r'\D'), '')] ??
+              _tableNumberToCloudUuid[order.tableId];
         }
       } catch (_) {}
+    }
+
+    final finalTableId = (cloudTableId != null && cloudTableId.isNotEmpty)
+        ? cloudTableId
+        : (order.tableId.isNotEmpty ? order.tableId : null);
+
+    if (finalTableId == null || finalTableId.isEmpty) {
+      debugPrint('[ApiService] sendOrderToKitchen error: Stol UUID topilmadi (tableId: ${order.tableId}, tableName: ${order.tableName})');
+      return false;
     }
 
     final itemsToSend = order.items.where((i) => i.status == OrderItemStatus.draft).toList();
     final effectiveItems = itemsToSend.isNotEmpty ? itemsToSend : order.items;
 
     final cloudPayload = {
-      'table': cloudTableId ?? order.tableId,
+      'table': finalTableId,
       'guests_count': order.guestCount,
       'notes': '',
       'items': effectiveItems.map((i) {

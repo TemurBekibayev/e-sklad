@@ -183,9 +183,9 @@ class RestaurantOrder {
 
     return RestaurantOrder(
       id: json['id']?.toString() ?? json['order_id']?.toString() ?? '',
-      tableId: json['table_id']?.toString() ?? json['tableId']?.toString() ?? '',
+      tableId: json['table']?.toString() ?? json['table_id']?.toString() ?? json['tableId']?.toString() ?? '',
       tableName: json['table_name'] ?? json['tableName'] ?? 'Stol',
-      waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString() ?? '',
+      waiterId: json['waiter']?.toString() ?? json['waiter_id']?.toString() ?? json['waiterId']?.toString() ?? '',
       waiterName: json['waiter_name'] ?? json['waiterName'] ?? 'Ofitsiant',
       guestCount: guests,
       items: ((json['items'] ?? json['order_items'] ?? json['products']) as List<dynamic>?)
