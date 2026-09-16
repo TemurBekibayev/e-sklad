@@ -21,6 +21,7 @@ const printerService = require('./printer');
 const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = printerService;
 const telegram = require('./telegram');
 const backendSync = require('./backendSync');
+const imageHelper = require('./imageHelper');
 
 const app = express();
 app.use(cors());
@@ -69,7 +70,11 @@ function broadcast(event, data) {
   const payload = JSON.stringify({ event, data, timestamp: Date.now() });
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      try {
+        client.send(payload);
+      } catch (err) {
+        console.error('[WS Broadcast] Send error:', err.message);
+      }
     }
   });
 }
@@ -122,11 +127,21 @@ function getLocalIp() {
 }
 
 // Mobil ilovalar va veb-kassa uchun rasm URL-manzilini to'liq formatlash
-function resolveImageUrl(req, img) {
+function resolveImageUrl(req, img, id) {
   if (!img) return '';
-  if (img.startsWith('http://') || img.startsWith('https://')) return img;
   const host = (req && req.get && req.get('host')) || `${getLocalIp()}:4000`;
   const protocol = (req && req.protocol) || 'http';
+
+  // If local file exists in server/uploads, serve it directly over local Wi-Fi
+  if (id && (img.startsWith('http://') || img.startsWith('https://'))) {
+    const filename = imageHelper.getFilenameForUrl(img, id);
+    const filePath = path.join(uploadsDir, filename);
+    if (fs.existsSync(filePath)) {
+      return `${protocol}://${host}/uploads/${filename}`;
+    }
+  }
+
+  if (img.startsWith('http://') || img.startsWith('https://')) return img;
   const clean = img.startsWith('/') ? img : `/${img}`;
   return `${protocol}://${host}${clean}`;
 }
@@ -841,7 +856,7 @@ app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) =
       product_type: p.product_type || 'Товар',
       category: categoryMap[p.category_id] || 'Boshqa',
       category_id: p.category_id,
-      image: resolveImageUrl(req, p.image),
+      image: resolveImageUrl(req, p.image, p.id),
       image_path: p.image || '',
       mxik_code: p.mxik_code || '10701001001000000',
       package_code: p.package_code || '796',
