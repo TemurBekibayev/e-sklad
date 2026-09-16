@@ -288,11 +288,14 @@ class ApiService {
       } catch (_) {}
     }
 
+    final itemsToSend = order.items.where((i) => i.status == OrderItemStatus.draft).toList();
+    final effectiveItems = itemsToSend.isNotEmpty ? itemsToSend : order.items;
+
     final cloudPayload = {
       'table': cloudTableId ?? order.tableId,
       'guests_count': order.guestCount,
       'notes': '',
-      'items': order.items.map((i) {
+      'items': effectiveItems.map((i) {
         final numericId = int.tryParse(i.productId.replaceAll(RegExp(r'\D'), ''));
         return {
           if (numericId != null && numericId > 0) 'product_id': numericId,
