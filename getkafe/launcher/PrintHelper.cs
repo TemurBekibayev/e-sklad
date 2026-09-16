@@ -46,7 +46,19 @@ namespace KafePOS.Printer
         public string fiscalQrUrl { get; set; }
         public string qrImageBase64 { get; set; }
         public string date { get; set; }
-        public bool isSynced { get; set; }
+        public object isSynced { get; set; }
+        public object isOnline { get; set; }
+        public bool IsSyncedBool
+        {
+            get
+            {
+                if (isSynced == null) return true;
+                if (isSynced is bool) return (bool)isSynced;
+                if (isSynced is int) return (int)isSynced != 0;
+                string s = isSynced.ToString().Trim().ToLowerInvariant();
+                return s == "1" || s == "true";
+            }
+        }
         public List<ReceiptItem> items { get; set; }
         
         // Print config options
@@ -55,7 +67,7 @@ namespace KafePOS.Printer
         public string headerTitle { get; set; }
         public string headerAddress { get; set; }
         public string footerText { get; set; }
-        public bool autoCut { get; set; }
+        public object autoCut { get; set; }
     }
 
     public class KitchenTicketData
@@ -451,7 +463,7 @@ namespace KafePOS.Printer
                 drawCenter("Fiskal belgi (ФП): " + r.fiscalSign, fontBold);
             }
 
-            if (r.isSynced)
+            if (r.IsSyncedBool)
             {
                 drawCenter("Soliq.uz ga muvaffaqiyatli yuborildi", fontSmall);
             }

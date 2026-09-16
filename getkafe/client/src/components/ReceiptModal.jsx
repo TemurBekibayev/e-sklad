@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Printer, CheckCircle, X, ExternalLink, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -6,6 +6,12 @@ export default function ReceiptModal({ receipt, onClose }) {
   const { t, tr } = useLanguage();
   const [printing, setPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState(null);
+
+  useEffect(() => {
+    if (receipt) {
+      handlePrint();
+    }
+  }, [receipt?.paymentId || receipt?.receiptSeq]);
 
   if (!receipt) return null;
 
