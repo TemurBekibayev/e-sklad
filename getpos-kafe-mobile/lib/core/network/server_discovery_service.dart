@@ -60,11 +60,23 @@ class ServerDiscoveryService {
     return false;
   }
 
-  /// Eng yaxshi serverni avtomatik aniqlash va sozlash
+  /// Eng yaxshi serverni avtomatik aniqlash va sozlash (Cloud First)
   Future<DiscoveredServer> autoDiscoverBestServer({bool forceRescan = false}) async {
     final savedUrl = await AppPreferences.getServerUrl();
 
-    // 1. Agar avval saqlangan lokal IP ishlayotgan bo'lsa (va forceRescan bo'lmasa)
+    // 1. Cloud First: Asosiy bulut serverini (https://getpos.uz) tekshirish
+    const cloudUrl = ApiConstants.defaultBaseUrl; // 'https://getpos.uz/api/v1/cafe'
+    final isCloudHealthy = await _pingServer(cloudUrl, timeoutMs: 2500);
+    if (isCloudHealthy) {
+      await AppPreferences.setServerUrl(cloudUrl);
+      return DiscoveredServer(
+        url: cloudUrl,
+        type: ServerConnectionType.cloud,
+        label: 'Online Bulut Serveri (getpos.uz)',
+      );
+    }
+
+    // 2. Agar avval saqlangan manzil bo'lsa va ishlayotgan bo'lsa
     if (!forceRescan && savedUrl.isNotEmpty) {
       final isSavedHealthy = await _pingServer(savedUrl, timeoutMs: 1200);
       if (isSavedHealthy) {
@@ -72,16 +84,16 @@ class ServerDiscoveryService {
         return DiscoveredServer(
           url: savedUrl,
           type: isLocal ? ServerConnectionType.local : ServerConnectionType.cloud,
-          label: isLocal ? 'Kafedagi Kassa ($savedUrl)' : 'Online Bulut Serveri',
+          label: isLocal ? 'Kafedagi Lokal Kassa ($savedUrl)' : 'Online Bulut Serveri',
         );
       }
     }
 
-    // 2. Lokal Wi-Fi tarmog'idagi ehtimoliy Kassa IP-larini tezkor tekshirish (Local First)
+    // 3. Internet bo'lmaganda lokal Wi-Fi tarmog'idagi Kassa serverini tekshirish
     final candidateUrls = [
-      'http://192.168.1.8:4000/api', // Joriy kompyuter Wi-Fi IP manzili
-      'http://10.0.2.2:4000/api',    // Android Emulyator
-      'http://localhost:4000/api',   // Lokal Desktop
+      'http://192.168.1.8:4000/api',
+      'http://10.0.2.2:4000/api',
+      'http://localhost:4000/api',
       'http://192.168.1.12:4000/api',
       'http://192.168.1.5:4000/api',
       'http://192.168.1.10:4000/api',
@@ -97,7 +109,6 @@ class ServerDiscoveryService {
       'http://192.168.1.20:4000/api',
     ];
 
-    // Birinchi bo'lib javob bergan lokal serverni tanlab olish
     final localServerCompleter = Completer<String?>();
     int pending = candidateUrls.length;
 
@@ -126,19 +137,7 @@ class ServerDiscoveryService {
       return DiscoveredServer(
         url: foundLocalUrl,
         type: ServerConnectionType.local,
-        label: 'Kafedagi Kassa Kompyuteri ($foundLocalUrl)',
-      );
-    }
-
-    // 3. Agar lokal server topilmasa, Online Cloud serverni tekshirish
-    const cloudUrl = ApiConstants.fallbackBaseUrl; // 'https://getpos.uz/api'
-    final isCloudHealthy = await _pingServer(cloudUrl, timeoutMs: 3000);
-    if (isCloudHealthy) {
-      await AppPreferences.setServerUrl(cloudUrl);
-      return DiscoveredServer(
-        url: cloudUrl,
-        type: ServerConnectionType.cloud,
-        label: 'Online Bulut Serveri ($cloudUrl)',
+        label: 'Kafedagi Lokal Kassa ($foundLocalUrl)',
       );
     }
 

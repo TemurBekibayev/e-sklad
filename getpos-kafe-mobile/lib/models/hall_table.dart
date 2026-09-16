@@ -100,23 +100,32 @@ class RestaurantTable {
   });
 
   factory RestaurantTable.fromJson(Map<String, dynamic> json) {
+    final activeOrderObj = json['active_order'] is Map<String, dynamic> ? json['active_order'] as Map<String, dynamic> : null;
     final numVal = json['name'] ?? (json['number'] != null ? 'Stol ${json['number']}' : '');
     final seatsVal = json['capacity'] ?? json['seats'] ?? 4;
-    final totalVal = json['totalAmount'] ?? json['total'] ?? json['total_amount'] ?? 0.0;
-    final hallVal = json['hall'] ?? json['hall_name'] ?? 'Asosiy Zal';
-    final rawItems = json['items'] ?? json['order_items'] ?? json['products'];
+    final rawTotal = json['totalAmount'] ?? json['total'] ?? json['total_amount'] ?? activeOrderObj?['total_amount'] ?? activeOrderObj?['subtotal'] ?? 0.0;
+    final totalVal = double.tryParse(rawTotal.toString()) ?? 0.0;
+    final hallVal = json['hall_name'] ?? json['hall'] ?? 'Asosiy Zal';
+    final rawItems = json['items'] ?? json['order_items'] ?? json['products'] ?? activeOrderObj?['items'];
     final itemsList = (rawItems is List)
         ? rawItems.map((i) => OrderItem.fromJson(i as Map<String, dynamic>)).toList()
         : <OrderItem>[];
 
-    final parsedTotal = (totalVal as num).toDouble();
     final parsedOrderId = json['activeOrderId']?.toString() ??
         json['active_order_id']?.toString() ??
+        activeOrderObj?['id']?.toString() ??
         json['order_id']?.toString() ??
         json['orderId']?.toString();
 
-    var parsedStatus = TableStatus.fromString(json['status']?.toString());
-    if (parsedStatus == TableStatus.free && (parsedTotal > 0 || parsedOrderId != null)) {
+    final parsedWaiter = json['activeWaiterName'] ??
+        json['active_waiter_name'] ??
+        activeOrderObj?['waiter_name'] ??
+        json['waiter_name'] ??
+        json['waiterName'] ??
+        json['waiter'];
+
+    var parsedStatus = TableStatus.fromString(json['status']?.toString() ?? activeOrderObj?['status']?.toString());
+    if (parsedStatus == TableStatus.free && (totalVal > 0 || parsedOrderId != null)) {
       parsedStatus = TableStatus.busy;
     }
 
@@ -125,13 +134,13 @@ class RestaurantTable {
       hallId: hallVal.toString(),
       hallName: hallVal.toString(),
       number: numVal.toString(),
-      seats: (seatsVal as num).toInt(),
+      seats: (seatsVal is num) ? seatsVal.toInt() : (int.tryParse(seatsVal.toString()) ?? 4),
       status: parsedStatus,
       activeOrderId: parsedOrderId,
-      activeWaiterName: json['activeWaiterName'] ?? json['active_waiter_name'] ?? json['waiter_name'] ?? json['waiterName'] ?? json['waiter'],
-      guestCount: json['guest_count'] ?? json['guestCount'],
-      totalAmount: parsedTotal,
-      openedAt: json['opened_at'] != null ? DateTime.tryParse(json['opened_at']) : null,
+      activeWaiterName: parsedWaiter?.toString(),
+      guestCount: json['guest_count'] ?? json['guestCount'] ?? activeOrderObj?['guests_count'],
+      totalAmount: totalVal,
+      openedAt: json['opened_at'] != null ? DateTime.tryParse(json['opened_at'].toString()) : null,
       items: itemsList,
     );
   }
