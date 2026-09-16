@@ -14,7 +14,7 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim() || !managerName.trim() || !managerPin.trim()) return;
+    if (!name.trim() || !managerName.trim() || !managerPhone.trim() || !managerPassword.trim()) return;
 
     onSave({
       name,
@@ -22,7 +22,7 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
       manager_name: managerName,
       manager_email: managerEmail,
       manager_phone: managerPhone,
-      manager_pin: managerPin,
+      manager_pin: managerPin.trim() || '1111',
       manager_password: managerPassword
     });
 
@@ -54,7 +54,7 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Do'kon nomi
+              Do'kon nomi <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
@@ -81,13 +81,13 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
 
           <div className="pt-2 border-t border-slate-100">
             <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
-              Birinchi manager
+              Birinchi manager (Tizim boshqaruvchisi)
             </h4>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Ism (F.I.SH)
+                  Manager ismi (F.I.SH) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -101,10 +101,11 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Telefon raqami
+                  Telefon raqami (Login sifatida) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={managerPhone}
                   onChange={(e) => setManagerPhone(e.target.value)}
                   placeholder="+998901234567"
@@ -114,13 +115,14 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Email manzili <span className="text-slate-400 font-normal">(ixtiyoriy)</span>
+                  Tizim paroli (Kassa va panelga kirish) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="email"
-                  value={managerEmail}
-                  onChange={(e) => setManagerEmail(e.target.value)}
-                  placeholder="manager@domain.uz"
+                  type="password"
+                  required
+                  value={managerPassword}
+                  onChange={(e) => setManagerPassword(e.target.value)}
+                  placeholder="••••••••"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
                 />
               </div>
@@ -128,28 +130,27 @@ export default function NewTenantModal({ isOpen, onClose, onSave }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Kirish PIN kodi (4 xonali)
+                    Kirish PIN kodi <span className="text-slate-400 font-normal">(4 xonali tezkor)</span>
                   </label>
                   <input
                     type="password"
                     maxLength={4}
-                    required
                     value={managerPin}
                     onChange={(e) => setManagerPin(e.target.value.replace(/\D/g, ''))}
-                    placeholder="1234"
+                    placeholder="1111 (standart)"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition text-center tracking-widest font-mono"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Tizim paroli <span className="text-slate-400 font-normal">(ixtiyoriy)</span>
+                    Email <span className="text-slate-400 font-normal">(ixtiyoriy)</span>
                   </label>
                   <input
-                    type="password"
-                    value={managerPassword}
-                    onChange={(e) => setManagerPassword(e.target.value)}
-                    placeholder="••••••••"
+                    type="email"
+                    value={managerEmail}
+                    onChange={(e) => setManagerEmail(e.target.value)}
+                    placeholder="manager@domain.uz"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
                   />
                 </div>

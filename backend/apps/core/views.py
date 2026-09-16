@@ -134,15 +134,15 @@ class TenantViewSet(viewsets.ModelViewSet):
         manager_name = request.data.get('manager_name')
         manager_email = request.data.get('manager_email')
         manager_phone = request.data.get('manager_phone', '')
-        manager_pin = request.data.get('manager_pin')
+        manager_pin = request.data.get('manager_pin') or '1111'
         manager_password = request.data.get('manager_password')
         subscription_months = int(request.data.get('subscription_months', 1))
         subscription_fee = request.data.get('subscription_monthly_fee', 250000.0)
 
-        if not name or not manager_name or not manager_pin:
-            return Response({'detail': "Do'kon nomi, manager ismi va PIN-kodi kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
+        if not name or not manager_name or not manager_password:
+            return Response({'detail': "Do'kon nomi, manager ismi va paroli kiritilishi shart."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if len(str(manager_pin)) != 4 or not str(manager_pin).isdigit():
+        if manager_pin and (len(str(manager_pin)) != 4 or not str(manager_pin).isdigit()):
             return Response({'detail': "PIN-kod 4 xonali son bo'lishi shart."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -180,7 +180,7 @@ class TenantViewSet(viewsets.ModelViewSet):
                     tenant=tenant,
                     is_staff=True
                 )
-                manager.set_pin(manager_pin)
+                manager.set_pin(manager_pin or '1111')
                 if manager_password:
                     manager.set_password(manager_password)
                 manager.save()
