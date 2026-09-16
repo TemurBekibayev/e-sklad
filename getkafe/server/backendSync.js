@@ -881,8 +881,8 @@ async function pollCloudBillRequests() {
                 const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
                 currentEffectiveOrderId = newOrderId;
                 await run(
-                  `INSERT INTO orders (id, table_id, waiter_name, status, total_amount, guest_count) VALUES (?, ?, ?, ?, ?, ?)`,
-                  [newOrderId, localTable.id, waiterName, t.status, orderTotal, t.active_order.guests_count || 4]
+                  `INSERT INTO orders (id, table_id, waiter_name, status, total_amount) VALUES (?, ?, ?, ?, ?)`,
+                  [newOrderId, localTable.id, waiterName, t.status, orderTotal]
                 );
                 await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [newOrderId, localTable.id]);
                 tableChanged = true;
@@ -972,7 +972,7 @@ async function pollCloudBillRequests() {
       }
     }
   } catch (err) {
-    // Silent catch for network hiccups
+    console.error('[pollCloudBillRequests ERROR]:', err);
   }
 }
 
@@ -1310,6 +1310,7 @@ module.exports = {
   patchBasketStatus,
   markTablePrintedLocally,
   isTableRecentlyPrinted,
+  pollCloudBillRequests,
   setBroadcastCallback,
   getLastSyncResult: () => lastSyncResult,
 };
