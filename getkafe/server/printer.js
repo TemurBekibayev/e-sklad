@@ -145,10 +145,19 @@ async function printThermalReceipt(receiptData) {
     return { success: true, virtual: true, message: 'PrintHelper topilmadi, chek xotirada saqlandi' };
   }
 
+  let targetPrinter = (receiptData && receiptData.printerName) || settings.receipt_printer || '';
+  if (!targetPrinter) {
+    try {
+      const installed = await getInstalledPrinters();
+      const thermal = installed.find(p => /xprinter|pos|thermal|xp-|receipt|80/i.test(p.name)) || installed.find(p => p.isDefault) || installed[0];
+      if (thermal) targetPrinter = thermal.name;
+    } catch (e) {}
+  }
+
   // Rekvizitlarni birlashtirish
   const payload = {
     ...receiptData,
-    printerName: receiptData.printerName || settings.receipt_printer || '',
+    printerName: targetPrinter,
     paperWidth: receiptData.paperWidth || settings.paper_width || '80mm',
     headerTitle: settings.header_title,
     headerAddress: settings.header_address,
@@ -192,7 +201,14 @@ async function testPrint(printerName, paperWidth) {
   }
 
   const settings = await getPrinterSettings();
-  const targetPrinter = printerName || settings.receipt_printer || '';
+  let targetPrinter = printerName || settings.receipt_printer || '';
+  if (!targetPrinter) {
+    try {
+      const installed = await getInstalledPrinters();
+      const thermal = installed.find(p => /xprinter|pos|thermal|xp-|receipt|80/i.test(p.name)) || installed.find(p => p.isDefault) || installed[0];
+      if (thermal) targetPrinter = thermal.name;
+    } catch (e) {}
+  }
   const targetWidth = paperWidth || settings.paper_width || '80mm';
 
   return new Promise((resolve) => {
