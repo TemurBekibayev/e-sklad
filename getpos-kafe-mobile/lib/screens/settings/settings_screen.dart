@@ -225,7 +225,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             SizedBox(width: 8),
                             Flexible(
                               child: Text(
-                                'Taom Rasmlari (Wi-Fi Kesh)',
+                                'Taom Rasmlari (Doimiy Kesh)',
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -253,7 +253,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Kafedagi Wi-Fi ga ulanganda, barcha taomlar rasmlari Kassa kompyuteridan telefoningizning doimiy xotirasiga yuklab olinadi. Shundan so\'ng internet bo\'lmaganda ham rasmlar tez va xatosiz ko\'rinadi.',
+                    'Barcha taomlar rasmlari telefoningizning doimiy xotirasiga (keshga) saqlab olinadi. Shundan so\'ng rasmlar doimo tez va internet trafigini sarflamasdan darhol ko\'rinadi.',
                     style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                   ),
                   const SizedBox(height: 12),
@@ -298,7 +298,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: Text(
                         _isSyncingImages
                             ? 'Rasmlar telefon xotirasiga yuklanmoqda...'
-                            : 'Rasmlarni Wi-Fi orqali yuklab olish',
+                            : 'Rasmlarni yuklab olish (Keshga saqlash)',
                       ),
                       onPressed: _isSyncingImages
                           ? null

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import '../storage/app_preferences.dart';
 import '../../models/product.dart';
 
 class ImageCacheService {
@@ -77,21 +76,20 @@ class ImageCacheService {
     }
   }
 
-  /// Preload and permanently cache all product images over local Wi-Fi
+  /// Preload and permanently cache all product images over Internet/Cloud
   Future<Map<String, int>> preloadProductImages(List<Product> products) async {
-    final localKassaUrl = await AppPreferences.getLocalKassaUrl();
     int successCount = 0;
     int skippedCount = 0;
     int errorCount = 0;
 
     for (final product in products) {
-      final resolvedUrl = resolveProductImageUrl(product.imageUrl, localKassaUrl);
+      final resolvedUrl = product.fullImageUrl ?? resolveProductImageUrl(product.imageUrl, 'https://getpos.uz');
       if (resolvedUrl == null || resolvedUrl.isEmpty) {
         skippedCount++;
         continue;
       }
 
-      final key = getCacheKey(product.imageUrl) ?? resolvedUrl;
+      final key = getCacheKey(resolvedUrl) ?? resolvedUrl;
 
       try {
         final isCached = await isImageCached(key) || await isImageCached(resolvedUrl);
@@ -100,9 +98,9 @@ class ImageCacheService {
           continue;
         }
 
-        // Download and store in local phone storage with 5s timeout using key
+        // Download and store in local phone storage with 8s timeout using key
         final file = await _cacheManager.getSingleFile(resolvedUrl, key: key).timeout(
-          const Duration(seconds: 5),
+          const Duration(seconds: 8),
           onTimeout: () => throw TimeoutException('Image download timeout: $resolvedUrl'),
         );
         if (file.existsSync()) {
