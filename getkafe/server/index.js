@@ -2267,6 +2267,17 @@ app.post('/api/printers/print-receipt', async (req, res) => {
   }
 });
 
+// Pre-chek (Hisob-kitob / Pre-bill) chop etish
+app.post(['/api/printers/print-precheck', '/api/orders/:id/print-precheck'], async (req, res) => {
+  try {
+    const result = await printerService.printPrecheckReceipt(req.body);
+    res.json(result);
+  } catch (err) {
+    console.error('[Printer API] printPrecheck error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Sinov chekini chiqarish
 app.post('/api/printers/test', async (req, res) => {
   try {

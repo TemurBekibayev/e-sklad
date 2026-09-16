@@ -387,13 +387,39 @@ export default function JetCafePosView({
     }
   };
 
-  // Precheck print
-  const handlePrintPrecheck = () => {
-    if (orderItems.length === 0) {
+  // Precheck print to thermal printer (Xprinter)
+  const handlePrintPrecheck = async () => {
+    const validItems = orderItems.filter((it) => !it.is_cancelled && it.quantity > 0);
+    if (validItems.length === 0) {
       alert('Буюртма бўш!');
       return;
     }
-    window.print();
+
+    try {
+      const res = await fetch('/api/printers/print-precheck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: currentTable.current_order_id || currentTable.order_id || '',
+          tableNumber: currentTable.number || currentTable.name || '1',
+          waiterName: selectedWaiter || 'Ofitsiant',
+          items: validItems,
+          subtotal: subtotal,
+          serviceFeePercent: serviceFeePercent,
+          serviceFee: serviceFee,
+          totalAmount: totalAmount,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        console.log('[Precheck] Chop etildi:', data.message);
+      } else {
+        alert('Пречек чиқаришда хатолик: ' + (data.error || data.message || 'Номаълум хатолик'));
+      }
+    } catch (err) {
+      console.error('[Precheck] Error:', err);
+      alert('Пречек чиқаришда хатолик: ' + err.message);
+    }
   };
 
   // Complete Payment

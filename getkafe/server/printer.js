@@ -417,6 +417,85 @@ async function printKitchenCancellationTicket({ orderId, tableNumber, hallName, 
 }
 
 /**
+ * Pre-chek (Xaridor uchun oraliq hisob-kitob cheki) chiqarish
+ */
+async function printPrecheckReceipt(precheckData) {
+  const settings = await getPrinterSettings();
+  const helperPath = getPrintHelperPath();
+
+  if (!helperPath) {
+    return { success: false, error: 'PrintHelper.exe topilmadi' };
+  }
+
+  let targetPrinter = (precheckData && precheckData.printerName) || settings.receipt_printer || '';
+  if (!targetPrinter) {
+    try {
+      const installed = await getInstalledPrinters();
+      const thermal = installed.find(p => /xprinter|pos|thermal|xp-|receipt|80/i.test(p.name)) || installed.find(p => p.isDefault) || installed[0];
+      if (thermal) targetPrinter = thermal.name;
+    } catch (e) {}
+  }
+
+  const rawItems = precheckData.items || [];
+  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
+  const subtotal = precheckData.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
+  const servicePercent = precheckData.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
+  const serviceFee = precheckData.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+  const totalAmount = precheckData.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
+
+  const payload = {
+    receiptSeq: 0,
+    printerName: targetPrinter,
+    paperWidth: precheckData.paperWidth || settings.paper_width || '80mm',
+    headerTitle: settings.header_title || 'KAFE "MILLIY TAOMLAR"',
+    headerAddress: settings.header_address || 'Toshkent shahar',
+    tableNumber: precheckData.tableNumber ? String(precheckData.tableNumber) : '1',
+    waiterName: precheckData.waiterName || 'Ofitsiant',
+    date: new Date().toISOString(),
+    paymentMethod: 'precheck',
+    totalAmount: totalAmount,
+    vatAmount: 0,
+    footerText: "DIQQAT: Ushbu hisob to'lov cheki emas! (Pre-chek)",
+    items: [
+      ...items.map(it => ({
+        product_name: it.product_name,
+        quantity: Number(it.quantity),
+        price: Number(it.price),
+      })),
+      ...(serviceFee > 0 ? [{
+        product_name: `Xizmat haqi (${servicePercent}%)`,
+        quantity: 1,
+        price: serviceFee,
+      }] : []),
+    ],
+    autoCut: true,
+  };
+
+  const tempFile = path.join(os.tmpdir(), `precheck_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.json`);
+
+  try {
+    fs.writeFileSync(tempFile, JSON.stringify(payload), 'utf8');
+
+    return await new Promise((resolve) => {
+      execFile(helperPath, ['print-receipt', tempFile], { windowsHide: true }, (err, stdout, stderr) => {
+        try { fs.unlinkSync(tempFile); } catch (e) {}
+
+        if (err) {
+          console.error('[Printer] Pre-chek chop etish xatosi:', stderr || err.message);
+          return resolve({ success: false, error: stderr || err.message });
+        }
+
+        console.log('[Printer] Pre-chek chop etildi:', stdout.trim());
+        resolve({ success: true, message: 'Pre-chek chop etildi: ' + stdout.trim() });
+      });
+    });
+  } catch (err) {
+    try { fs.unlinkSync(tempFile); } catch (e) {}
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Kassa yakuniy chekini saqlash
  */
 function recordFiscalReceipt(receiptData) {
@@ -430,6 +509,7 @@ module.exports = {
   getPrinterSettings,
   updatePrinterSettings,
   printThermalReceipt,
+  printPrecheckReceipt,
   testPrint,
   formatKitchenTicket,
   printToKitchen,
