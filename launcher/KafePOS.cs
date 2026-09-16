@@ -72,17 +72,40 @@ namespace KafePOS
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             if (File.Exists(Path.Combine(baseDir, "server", "index.js"))) return baseDir;
+            if (File.Exists(Path.Combine(baseDir, "getkafe", "server", "index.js"))) return Path.Combine(baseDir, "getkafe");
 
             string currentDir = Directory.GetCurrentDirectory();
             if (File.Exists(Path.Combine(currentDir, "server", "index.js"))) return currentDir;
+            if (File.Exists(Path.Combine(currentDir, "getkafe", "server", "index.js"))) return Path.Combine(currentDir, "getkafe");
 
             DirectoryInfo parentInfo = Directory.GetParent(baseDir);
-            if (parentInfo != null && File.Exists(Path.Combine(parentInfo.FullName, "server", "index.js")))
+            if (parentInfo != null)
             {
-                return parentInfo.FullName;
+                if (File.Exists(Path.Combine(parentInfo.FullName, "server", "index.js"))) return parentInfo.FullName;
+                if (File.Exists(Path.Combine(parentInfo.FullName, "getkafe", "server", "index.js"))) return Path.Combine(parentInfo.FullName, "getkafe");
             }
 
             return baseDir;
+        }
+
+        public static string FindNodeExecutable()
+        {
+            string[] candidates = new string[]
+            {
+                @"C:\Program Files\nodejs\node.exe",
+                @"C:\Program Files (x86)\nodejs\node.exe",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\node\node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"npm\node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"nodejs\node.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"nodejs\node.exe")
+            };
+
+            foreach (string p in candidates)
+            {
+                if (File.Exists(p)) return p;
+            }
+
+            return "node.exe";
         }
 
         private Icon LoadOrCreateAppIcon()
@@ -457,12 +480,22 @@ namespace KafePOS
                 // 2. Mahalliy KafePOS dvigatelini ishga tushirish
                 UpdateStatus("KafePOS serveri ishga tushirilmoqda...");
                 string serverJs = Path.Combine(projectDir, "server", "index.js");
+                if (!File.Exists(serverJs))
+                {
+                    string altJs = Path.Combine(projectDir, "getkafe", "server", "index.js");
+                    if (File.Exists(altJs))
+                    {
+                        serverJs = altJs;
+                        projectDir = Path.Combine(projectDir, "getkafe");
+                    }
+                }
 
                 if (File.Exists(serverJs))
                 {
+                    string nodeExe = PosApplicationContext.FindNodeExecutable();
                     ProcessStartInfo psi = new ProcessStartInfo();
                     psi.WorkingDirectory = projectDir;
-                    psi.FileName = "node.exe";
+                    psi.FileName = nodeExe;
                     psi.Arguments = "\"" + serverJs + "\"";
                     psi.CreateNoWindow = true;
                     psi.WindowStyle = ProcessWindowStyle.Hidden;
