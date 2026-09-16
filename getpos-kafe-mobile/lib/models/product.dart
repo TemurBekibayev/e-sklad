@@ -10,10 +10,11 @@ class ProductModifier {
   });
 
   factory ProductModifier.fromJson(Map<String, dynamic> json) {
+    final rawPrice = json['extra_price'] ?? 0.0;
     return ProductModifier(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? '',
-      extraPrice: (json['extra_price'] as num?)?.toDouble() ?? 0.0,
+      extraPrice: double.tryParse(rawPrice.toString()) ?? 0.0,
     );
   }
 

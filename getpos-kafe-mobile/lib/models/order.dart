@@ -55,17 +55,24 @@ class OrderItem {
   double get totalPrice => itemPrice * quantity;
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
-    final priceVal = json['price'] ?? json['unit_price'] ?? 0.0;
+    final rawPrice = json['price'] ?? json['unit_price'] ?? json['item_price'] ?? 0.0;
+    final priceVal = double.tryParse(rawPrice.toString()) ?? 0.0;
     final isCanc = json['is_cancelled'] == 1 || json['is_cancelled'] == true || json['status'] == 'cancelled';
+    final rawQty = json['quantity'] ?? json['qty'] ?? 1;
+    final qty = int.tryParse(rawQty.toString()) ?? (rawQty is num ? rawQty.toInt() : 1);
+    final rawExtra = json['modifiers_extra_price'] ?? 0.0;
+    final extraPrice = double.tryParse(rawExtra.toString()) ?? 0.0;
+    final rawCourse = json['course'] ?? 1;
+    final courseVal = int.tryParse(rawCourse.toString()) ?? (rawCourse is num ? rawCourse.toInt() : 1);
 
     return OrderItem(
       id: json['id']?.toString() ?? '',
       productId: json['product_id']?.toString() ?? json['productId']?.toString() ?? '',
       productName: json['product_name'] ?? json['productName'] ?? json['name'] ?? '',
-      unitPrice: (priceVal as num).toDouble(),
-      quantity: (json['quantity'] as num?)?.toInt() ?? 1,
+      unitPrice: priceVal,
+      quantity: qty,
       selectedModifiers: (json['selected_modifiers'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
-      modifiersExtraPrice: (json['modifiers_extra_price'] as num?)?.toDouble() ?? 0.0,
+      modifiersExtraPrice: extraPrice,
       comment: json['comment'],
       status: isCanc
           ? OrderItemStatus.cancelled
@@ -73,7 +80,7 @@ class OrderItem {
               (e) => e.name == json['status'],
               orElse: () => OrderItemStatus.sent,
             ),
-      course: json['course'] ?? 1,
+      course: courseVal,
       waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString(),
       waiterName: json['waiter_name'] ?? json['waiterName'],
       isCancelled: isCanc,
@@ -167,19 +174,26 @@ class RestaurantOrder {
   int get draftItemsCount => items.where((i) => i.status == OrderItemStatus.draft).length;
 
   factory RestaurantOrder.fromJson(Map<String, dynamic> json) {
+    final rawFee = json['service_fee_percent'] ?? json['serviceFeePercent'] ?? 10.0;
+    final feePercent = double.tryParse(rawFee.toString()) ?? 10.0;
+    final rawDisc = json['discount_percent'] ?? json['discountPercent'] ?? 0.0;
+    final discPercent = double.tryParse(rawDisc.toString()) ?? 0.0;
+    final rawGuests = json['guest_count'] ?? json['guestCount'] ?? json['guests_count'] ?? 1;
+    final guests = int.tryParse(rawGuests.toString()) ?? (rawGuests is num ? rawGuests.toInt() : 1);
+
     return RestaurantOrder(
       id: json['id']?.toString() ?? json['order_id']?.toString() ?? '',
       tableId: json['table_id']?.toString() ?? json['tableId']?.toString() ?? '',
       tableName: json['table_name'] ?? json['tableName'] ?? 'Stol',
       waiterId: json['waiter_id']?.toString() ?? json['waiterId']?.toString() ?? '',
       waiterName: json['waiter_name'] ?? json['waiterName'] ?? 'Ofitsiant',
-      guestCount: json['guest_count'] ?? json['guestCount'] ?? 1,
+      guestCount: guests,
       items: ((json['items'] ?? json['order_items'] ?? json['products']) as List<dynamic>?)
-              ?.map((item) => OrderItem.fromJson(item))
+              ?.map((item) => OrderItem.fromJson(item as Map<String, dynamic>))
               .toList() ??
           [],
-      serviceFeePercent: (json['service_fee_percent'] as num?)?.toDouble() ?? 10.0,
-      discountPercent: (json['discount_percent'] as num?)?.toDouble() ?? 0.0,
+      serviceFeePercent: feePercent,
+      discountPercent: discPercent,
       createdAt: json['order_created_at'] != null || json['created_at'] != null
           ? DateTime.tryParse(json['order_created_at'] ?? json['created_at']) ?? DateTime.now()
           : DateTime.now(),
