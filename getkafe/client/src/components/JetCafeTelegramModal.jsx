@@ -72,7 +72,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
       });
       const data = await res.json();
       if (data.success) {
-        setStatusMsg(enable ? "JetBot servisi ishga tushdi!" : "JetBot servisi to'xtatildi.");
+        setStatusMsg(enable ? "Telegram Bot servisi ishga tushdi!" : "Telegram Bot servisi to'xtatildi.");
         setTimeout(() => setStatusMsg(''), 3000);
         loadData();
       }
@@ -254,11 +254,11 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
       {/* Outer Windows-like dialog */}
       <div className="bg-[#f0f0f0] border-2 border-[#005a9e] rounded shadow-2xl w-full max-w-xl text-slate-800 flex flex-col font-sans select-none overflow-hidden">
         
-        {/* Title Bar matching JetBot 2.3.2.26 */}
+        {/* Title Bar matching Telegram Bot */}
         <div className="bg-[#005a9e] text-white px-3 py-1 flex items-center justify-between font-medium text-xs shadow">
           <div className="flex items-center gap-1.5">
             <span>✈️</span>
-            <span>JetBot - Sozlamalar | 2.3.2</span>
+            <span>Telegram Bot - Sozlamalar | 2.3.2</span>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -588,17 +588,17 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
             <div className="bg-white border border-slate-200 p-3 rounded shadow-sm">
               <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-1.5 text-sm">
                 <span>📘</span>
-                <span>JetBot ni sozlash yo'riqnomasi (3 qadamda)</span>
+                <span>Telegram Bot ni sozlash yo'riqnomasi (3 qadamda)</span>
               </h4>
               <ol className="list-decimal pl-5 space-y-2 text-xs">
                 <li>
                   <b>@BotFather orqali bot ochish:</b>
                   <p className="text-slate-600 mt-0.5">
-                    Telegramda <code className="bg-slate-100 px-1 rounded text-blue-700">@BotFather</code> ga kiring va <code className="bg-slate-100 px-1 rounded">/newbot</code> yuboring. Bot nomini (masalan: <i>Hisobchiuzbot</i>) va username (masalan: <i>Hisobchiuz101bot</i>) belgilang.
+                    Telegramda <code className="bg-slate-100 px-1 rounded text-blue-700">@BotFather</code> ga kiring va <code className="bg-slate-100 px-1 rounded">/newbot</code> yuboring. Bot nomini va username belgilang.
                   </p>
                 </li>
                 <li>
-                  <b>Tokenni JetBot ga kiritish:</b>
+                  <b>Tokenni kiritish:</b>
                   <p className="text-slate-600 mt-0.5">
                     BotFather bergan HTTP API tokenni <b>Sozlamalar ▶ Token sozlash</b> oynasiga kiritib <b>Saqla</b> tugmasini bosing.
                   </p>
@@ -661,7 +661,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
             <div className="bg-[#005a9e] text-white px-3 py-1 flex items-center justify-between font-medium text-xs">
               <div className="flex items-center gap-1.5">
                 <span>🔑</span>
-                <span>JetBot - Token</span>
+                <span>Telegram Bot - Token sozlash</span>
               </div>
               <button
                 type="button"
@@ -711,7 +711,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
       )}
 
       {/* ========================================================================= */}
-      {/* SUB-MODAL 2: JetBot - Yangi obunachi matching jetbot_step_170.jpg          */}
+      {/* SUB-MODAL 2: Telegram Bot - Yangi obunachi                                 */}
       {/* ========================================================================= */}
       {isNewSubModalOpen && (
         <div className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4">
@@ -720,7 +720,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
             <div className="bg-[#005a9e] text-white px-3 py-1 flex items-center justify-between font-medium text-xs">
               <div className="flex items-center gap-1.5">
                 <span>➕</span>
-                <span>JetBot - Yangi obunachi</span>
+                <span>Telegram Bot - Yangi obunachi</span>
               </div>
               <button
                 type="button"
@@ -788,7 +788,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
       )}
 
       {/* ========================================================================= */}
-      {/* SUB-MODAL 3: JetBot - Obuna matching jetbot_frame_4.jpg & step_180.jpg    */}
+      {/* SUB-MODAL 3: Telegram Bot - Obuna sozlamalari                              */}
       {/* ========================================================================= */}
       {isObunaModalOpen && (
         <div className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4">
@@ -797,7 +797,7 @@ export default function JetCafeTelegramModal({ isOpen, onClose }) {
             <div className="bg-[#005a9e] text-white px-3 py-1 flex items-center justify-between font-medium text-xs">
               <div className="flex items-center gap-1.5">
                 <span>📋</span>
-                <span>JetBot - Obuna</span>
+                <span>Telegram Bot - Obuna sozlamalari</span>
               </div>
               <button
                 type="button"

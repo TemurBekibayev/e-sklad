@@ -509,15 +509,15 @@ export default function JetCafePosView({
             <span>Категории</span>
           </button>
 
-          {/* Quick JetBot Button matching JetCafe Video */}
+          {/* Quick Telegram Bot Button */}
           <button
             type="button"
             onClick={() => setIsTelegramModalOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded text-xs font-semibold text-sky-800 shadow-sm transition active:scale-95"
-            title="JetBot - Telegram Bot sozlamalari"
+            title="Telegram Bot xabarnoma sozlamalari"
           >
             <span>✈️</span>
-            <span>JetBot</span>
+            <span>Telegram Bot</span>
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           </button>
 
@@ -616,7 +616,7 @@ export default function JetCafePosView({
                   </button>
                 </div>
 
-                {/* JetBot Telegram Integration Option */}
+                {/* Telegram Integration Option */}
                 <div className="py-1">
                   <button
                     type="button"
@@ -625,7 +625,7 @@ export default function JetCafePosView({
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-sky-600 text-sm">✈️</span>
-                      <span>Telegram Bot (JetBot)</span>
+                      <span>Telegram Bot Sozlamalari</span>
                     </div>
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Faol</span>
                   </button>

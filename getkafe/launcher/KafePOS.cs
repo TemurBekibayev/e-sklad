@@ -90,13 +90,8 @@ namespace KafePOS
 
         public static string FindNodeExecutable()
         {
-            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string[] candidates = new string[]
             {
-                Path.Combine(baseDir, "node.exe"),
-                Path.Combine(baseDir, "bin", "node.exe"),
-                @"C:\KafePOS\node.exe",
-                @"C:\KafePOS\bin\node.exe",
                 @"C:\Program Files\nodejs\node.exe",
                 @"C:\Program Files (x86)\nodejs\node.exe",
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\node\node.exe"),
@@ -381,12 +376,13 @@ namespace KafePOS
     public class SplashForm : Form
     {
         private Label lblStatus;
-        private Label lblTitle;
-        private ProgressBar progressBar;
         private string projectDir;
         private Icon formIcon;
         private Action<Process> onReadyCallback;
         private Process spawnedServerProcess;
+        private System.Windows.Forms.Timer animTimer;
+        private int animFrame = 0;
+        private Image logoImage;
 
         public SplashForm(string pDir, Icon icon, Action<Process> onReady)
         {
@@ -398,65 +394,214 @@ namespace KafePOS
             this.Icon = icon;
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Size = new Size(480, 230);
-            this.BackColor = Color.FromArgb(15, 23, 42); // slate-900
+            this.Size = new Size(520, 270);
+            this.BackColor = Color.FromArgb(11, 19, 43); // Deep luxury slate navy
+            this.DoubleBuffered = true;
 
-            // Title
-            lblTitle = new Label();
-            lblTitle.Text = "GetPOS Kafe";
-            lblTitle.Font = new Font("Segoe UI", 20, FontStyle.Bold);
-            lblTitle.ForeColor = Color.FromArgb(245, 158, 11); // amber-500
-            lblTitle.Location = new Point(32, 28);
-            lblTitle.AutoSize = true;
-            this.Controls.Add(lblTitle);
+            // Load logo image from assets / public if available
+            try
+            {
+                string logoPath = Path.Combine(projectDir, "getkafe", "client", "public", "getpos-kafe-logo.png");
+                if (!File.Exists(logoPath))
+                    logoPath = Path.Combine(projectDir, "client", "public", "getpos-kafe-logo.png");
+                if (!File.Exists(logoPath))
+                    logoPath = Path.Combine(projectDir, "assets", "GetPOS_Kafe_Logo.png");
 
-            // Subtitle
-            Label lblSub = new Label();
-            lblSub.Text = "Professional Touch Kassa • Termal Chek • JetBot • Soliq OFD";
-            lblSub.Font = new Font("Segoe UI", 9, FontStyle.Regular);
-            lblSub.ForeColor = Color.FromArgb(148, 163, 184); // slate-400
-            lblSub.Location = new Point(34, 68);
-            lblSub.AutoSize = true;
-            this.Controls.Add(lblSub);
+                if (File.Exists(logoPath))
+                {
+                    logoImage = Image.FromFile(logoPath);
+                }
+                else if (formIcon != null)
+                {
+                    logoImage = formIcon.ToBitmap();
+                }
+            }
+            catch
+            {
+                if (formIcon != null) logoImage = formIcon.ToBitmap();
+            }
 
             // Status Label
             lblStatus = new Label();
-            lblStatus.Text = "Tizim tayyorlanmoqda...";
-            lblStatus.Font = new Font("Segoe UI", 10, FontStyle.Regular);
-            lblStatus.ForeColor = Color.White;
-            lblStatus.Location = new Point(34, 115);
-            lblStatus.Size = new Size(410, 25);
+            lblStatus.Text = "Kassa tizimi tayyorlanmoqda...";
+            lblStatus.Font = new Font("Segoe UI", 10.5f, FontStyle.Regular);
+            lblStatus.ForeColor = Color.FromArgb(241, 245, 249);
+            lblStatus.Location = new Point(35, 150);
+            lblStatus.Size = new Size(450, 24);
+            lblStatus.BackColor = Color.Transparent;
             this.Controls.Add(lblStatus);
 
-            // Progress Bar
-            progressBar = new ProgressBar();
-            progressBar.Style = ProgressBarStyle.Marquee;
-            progressBar.MarqueeAnimationSpeed = 25;
-            progressBar.Location = new Point(34, 150);
-            progressBar.Size = new Size(412, 12);
-            this.Controls.Add(progressBar);
-
-            // Version info
-            Label lblVer = new Label();
-            lblVer.Text = "v2.5 Standalone POS Edition";
-            lblVer.Font = new Font("Segoe UI", 8, FontStyle.Regular);
-            lblVer.ForeColor = Color.FromArgb(100, 116, 139);
-            lblVer.Location = new Point(34, 185);
-            lblVer.AutoSize = true;
-            this.Controls.Add(lblVer);
-
-            // Border styling
-            this.Paint += (s, e) =>
+            // Animation Timer for smooth custom progress bar
+            animTimer = new System.Windows.Forms.Timer();
+            animTimer.Interval = 25;
+            animTimer.Tick += (s, e) =>
             {
-                using (Pen p = new Pen(Color.FromArgb(245, 158, 11), 2))
-                {
-                    e.Graphics.DrawRectangle(p, 1, 1, this.Width - 2, this.Height - 2);
-                }
+                animFrame = (animFrame + 4) % (this.Width + 120);
+                this.Invalidate(new Rectangle(35, 180, 450, 16));
             };
+            animTimer.Start();
+
+            this.Paint += SplashForm_Paint;
 
             Thread worker = new Thread(StartKafePOSProcess);
             worker.IsBackground = true;
             worker.Start();
+        }
+
+        private void SplashForm_Paint(object sender, PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            // 1. Background gradient
+            using (LinearGradientBrush bgBrush = new LinearGradientBrush(
+                this.ClientRectangle,
+                Color.FromArgb(11, 19, 43),
+                Color.FromArgb(15, 23, 42),
+                90f))
+            {
+                g.FillRectangle(bgBrush, this.ClientRectangle);
+            }
+
+            // 2. Modern subtle border with accent top glow line
+            using (Pen borderPen = new Pen(Color.FromArgb(30, 41, 59), 1.5f))
+            {
+                g.DrawRectangle(borderPen, 1, 1, this.Width - 2, this.Height - 2);
+            }
+            using (LinearGradientBrush topGlow = new LinearGradientBrush(
+                new Rectangle(0, 0, this.Width, 3),
+                Color.FromArgb(245, 158, 11),
+                Color.FromArgb(59, 130, 246),
+                0f))
+            {
+                g.FillRectangle(topGlow, 0, 0, this.Width, 3);
+            }
+
+            // 3. Draw Logo Box on the left
+            int logoBoxX = 35;
+            int logoBoxY = 32;
+            int logoBoxSize = 62;
+
+            using (GraphicsPath path = RoundedRect(new Rectangle(logoBoxX, logoBoxY, logoBoxSize, logoBoxSize), 12))
+            {
+                using (SolidBrush boxBg = new SolidBrush(Color.FromArgb(20, 30, 55)))
+                {
+                    g.FillPath(boxBg, path);
+                }
+                using (Pen boxBorder = new Pen(Color.FromArgb(245, 158, 11), 1.5f))
+                {
+                    g.DrawPath(boxBorder, path);
+                }
+            }
+
+            if (logoImage != null)
+            {
+                g.DrawImage(logoImage, logoBoxX + 6, logoBoxY + 6, logoBoxSize - 12, logoBoxSize - 12);
+            }
+
+            // 4. Header Titles (GetPOS Kafe)
+            int titleX = logoBoxX + logoBoxSize + 16;
+            using (Font fontGet = new Font("Segoe UI", 21f, FontStyle.Bold))
+            using (Font fontPos = new Font("Segoe UI", 21f, FontStyle.Bold))
+            using (Font fontKafe = new Font("Segoe UI", 21f, FontStyle.Bold))
+            using (SolidBrush brushWhite = new SolidBrush(Color.White))
+            using (SolidBrush brushBlue = new SolidBrush(Color.FromArgb(59, 130, 246)))
+            using (SolidBrush brushAmber = new SolidBrush(Color.FromArgb(245, 158, 11)))
+            {
+                g.DrawString("Get", fontGet, brushWhite, titleX, logoBoxY - 2);
+                SizeF szGet = g.MeasureString("Get", fontGet);
+                g.DrawString("POS", fontPos, brushBlue, titleX + szGet.Width - 6, logoBoxY - 2);
+                SizeF szPos = g.MeasureString("POS", fontPos);
+                g.DrawString(" Kafe", fontKafe, brushAmber, titleX + szGet.Width + szPos.Width - 14, logoBoxY - 2);
+            }
+
+            // 5. Subtitle & Feature pills (NO JetBot)
+            using (Font subFont = new Font("Segoe UI", 9.5f, FontStyle.Regular))
+            using (SolidBrush subBrush = new SolidBrush(Color.FromArgb(148, 163, 184)))
+            {
+                g.DrawString("Kafe & Restoran Avtomatlashtirish Tizimi", subFont, subBrush, titleX, logoBoxY + 36);
+            }
+
+            using (Font tagFont = new Font("Segoe UI", 8f, FontStyle.Regular))
+            using (SolidBrush tagBrush = new SolidBrush(Color.FromArgb(100, 116, 139)))
+            {
+                g.DrawString("⚡ Touch Kassa   •   🖨️ Chek Printer   •   📱 Ofitsiant   •   🧾 Soliq OFD", tagFont, tagBrush, 35, 112);
+            }
+
+            // 6. Custom Modern Progress Bar
+            int barX = 35;
+            int barY = 184;
+            int barWidth = 450;
+            int barHeight = 8;
+
+            // Track (background)
+            using (GraphicsPath trackPath = RoundedRect(new Rectangle(barX, barY, barWidth, barHeight), 4))
+            {
+                using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(30, 41, 59)))
+                {
+                    g.FillPath(trackBrush, trackPath);
+                }
+            }
+
+            // Animated Moving Shimmer Pill
+            int pillWidth = 140;
+            int pillX = barX + (animFrame % (barWidth + pillWidth)) - pillWidth;
+
+            Rectangle fillRect = new Rectangle(pillX, barY, pillWidth, barHeight);
+            Rectangle clipRect = new Rectangle(barX, barY, barWidth, barHeight);
+
+            GraphicsState state = g.Save();
+            using (GraphicsPath clipPath = RoundedRect(clipRect, 4))
+            {
+                g.SetClip(clipPath);
+                if (fillRect.Right > barX && fillRect.Left < barX + barWidth)
+                {
+                    using (LinearGradientBrush pillBrush = new LinearGradientBrush(
+                        fillRect,
+                        Color.FromArgb(245, 158, 11), // amber-500
+                        Color.FromArgb(234, 88, 12),  // orange-600
+                        0f))
+                    {
+                        g.FillRectangle(pillBrush, fillRect);
+                    }
+                }
+            }
+            g.Restore(state);
+
+            // 7. Footer text
+            using (Font verFont = new Font("Segoe UI", 8.2f, FontStyle.Regular))
+            using (SolidBrush verBrush = new SolidBrush(Color.FromArgb(100, 116, 139)))
+            {
+                g.DrawString("GetPOS Kafe Edition v3.0", verFont, verBrush, 35, 228);
+                string copyText = "© GetPOS Cloud System";
+                SizeF szCopy = g.MeasureString(copyText, verFont);
+                g.DrawString(copyText, verFont, verBrush, this.Width - 35 - szCopy.Width, 228);
+            }
+        }
+
+        private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
+        {
+            int diameter = radius * 2;
+            Size size = new Size(diameter, diameter);
+            Rectangle arc = new Rectangle(bounds.Location, size);
+            GraphicsPath path = new GraphicsPath();
+
+            if (radius == 0)
+            {
+                path.AddRectangle(bounds);
+                return path;
+            }
+
+            path.AddArc(arc, 180, 90);
+            arc.X = bounds.Right - diameter;
+            path.AddArc(arc, 270, 90);
+            arc.Y = bounds.Bottom - diameter;
+            path.AddArc(arc, 0, 90);
+            arc.X = bounds.Left;
+            path.AddArc(arc, 90, 90);
+            path.CloseFigure();
+            return path;
         }
 
         private void UpdateStatus(string message)
@@ -561,6 +706,12 @@ namespace KafePOS
             {
                 this.BeginInvoke(new Action(CompleteSplash));
                 return;
+            }
+
+            if (animTimer != null)
+            {
+                animTimer.Stop();
+                animTimer.Dispose();
             }
 
             this.Hide();

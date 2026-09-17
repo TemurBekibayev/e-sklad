@@ -258,10 +258,10 @@ async function processIncomingMessage(msg) {
       }
     }
 
-    // Video response format (jetbot_step_180 / frame 5):
-    // "JetBot yondi"
+    // Video response format:
+    // "Telegram Bot faollashtirildi"
     // "💡 Sizning obuna raqamingiz: 💳 1268"
-    await sendMessage(chatId, `JetBot yondi\n\n💡 Sizning obuna raqamingiz: 💳 <b>${sub?.sub_number || 1268}</b>`);
+    await sendMessage(chatId, `Telegram Bot faollashtirildi\n\n💡 Sizning obuna raqamingiz: 💳 <b>${sub?.sub_number || 1268}</b>`);
     return;
   }
 
@@ -269,12 +269,12 @@ async function processIncomingMessage(msg) {
   if (text === '/start') {
     const sub = await get(`SELECT * FROM telegram_subscribers WHERE chat_id = ?`, [chatId]);
     if (sub && sub.is_active) {
-      await sendMessage(chatId, `JetBot yondi\n\n💡 Sizning obuna raqamingiz: 💳 <b>${sub.sub_number || 1268}</b>`);
+      await sendMessage(chatId, `Telegram Bot faollashtirildi\n\n💡 Sizning obuna raqamingiz: 💳 <b>${sub.sub_number || 1268}</b>`);
     } else {
       await sendMessage(
         chatId,
         `Assalomu alaykum, <b>${firstName}</b>!\n` +
-        `JetBot tizimiga xush kelibsiz.\n\n` +
+        `GetPOS Telegram Bot tizimiga xush kelibsiz.\n\n` +
         `Iltimos, POS ekrandagi <b>4 xonali kodni</b> yuboring (Masalan: <code>6901</code>) botni kassangizga ulash uchun.`
       );
     }
@@ -286,7 +286,7 @@ async function processIncomingMessage(msg) {
   if (!sub || !sub.is_active) {
     await sendMessage(
       chatId,
-      `Iltimos, avval kassadagi JetBot sozlamalaridan 4 xonali PIN kodni olib shu yerga yuboring.`
+      `Iltimos, avval kassadagi Telegram Bot sozlamalaridan 4 xonali PIN kodni olib shu yerga yuboring.`
     );
     return;
   }
@@ -456,13 +456,13 @@ async function notifyShiftStatus(action = 'open') {
 
 // 5. Bot status on/off
 async function notifyBotStatus(isOn = true) {
-  const text = isOn ? 'JetBot yondi' : "JetBot o'chdi";
+  const text = isOn ? 'Telegram Bot yondi' : "Telegram Bot o'chdi";
   await broadcast('notify_bot_status', text);
 }
 
 // Test message sender
 async function sendTestNotification(chatId = null) {
-  const text = `🔔 <b>JetBot Sinov Xabari</b>\n\nGetPOS Kafe tizimi bilan Telegram aloqasi muvaffaqiyatli o'rnatildi!\nSana: ${formatDate(new Date())}`;
+  const text = `🔔 <b>Telegram Bot Sinov Xabari</b>\n\nGetPOS Kafe tizimi bilan Telegram aloqasi muvaffaqiyatli o'rnatildi!\nSana: ${formatDate(new Date())}`;
   if (chatId) {
     return await sendMessage(chatId, text);
   }

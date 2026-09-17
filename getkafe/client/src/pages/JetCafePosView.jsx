@@ -681,7 +681,7 @@ export default function JetCafePosView({
                   >
                     <div className="flex items-center gap-2">
                       <span>✈️</span>
-                      <span>JetBot (Telegram Bot)</span>
+                      <span>Telegram Bot Sozlamalari</span>
                     </div>
                     <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-bold">Faol</span>
                   </button>
