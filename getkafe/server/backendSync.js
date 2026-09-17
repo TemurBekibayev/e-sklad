@@ -926,7 +926,8 @@ async function pollCloudBillRequests() {
     if (res.status === 200 && res.data) {
       const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
       
-      // If server just started, populate locally known items from SQLite so we only print genuinely new waiter orders
+      // Dastur yangi yoqilganda (startup) bulutdagi barcha eski buyurtma va pre-cheklarni xotiraga yozib olamiz
+      // Bu server har safar o'chib yonganda eski cheklarni qayta chop etib qog'oz isrof qilishining oldini oladi!
       if (isInitialCloudScan) {
         isInitialCloudScan = false;
         try {
@@ -935,8 +936,29 @@ async function pollCloudBillRequests() {
             lastPrintedCloudKitchenItems.add(`${row.order_id}_${row.product_name}_${row.quantity}`);
             lastPrintedCloudKitchenItems.add(String(row.product_name));
           }
+          for (const t of tables) {
+            const tableNum = String(t.number || t.name || t.id);
+            if (t.active_order) {
+              const orderId = t.active_order.id || t.active_order_id;
+              const updatedTime = t.active_order.updated_at || t.active_order.created_at || 'startup';
+              if (orderId) {
+                lastPrintedCloudOrders.add(`${orderId}_${updatedTime}`);
+                lastPrintedCloudOrders.add(String(orderId));
+                markTablePrintedLocally(tableNum, orderId);
+              }
+              const cloudItems = t.active_order.items || [];
+              for (const ci of cloudItems) {
+                const ciName = ci.product_name || ci.name || 'Taom';
+                const ciQty = Number(ci.quantity || 1);
+                const ciItemId = ci.id || `${orderId}_${ciName}_${ciQty}`;
+                lastPrintedCloudKitchenItems.add(String(ciItemId));
+                lastPrintedCloudKitchenItems.add(`${ciItemId}_diff_${ciQty}`);
+                lastPrintedCloudKitchenItems.add(`${orderId}_${ciName}_${ciQty}`);
+              }
+            }
+          }
         } catch (e) {}
-        console.log(`[BackendSync] Dastlabki bulut skaneri tayyorlandi (${tables.length} ta stol)`);
+        console.log(`[BackendSync] Dastlabki skaner tayyorlandi (${tables.length} ta stol). Eski cheklar avtomatik bloklandi.`);
       }
 
       for (const t of tables) {
@@ -1077,8 +1099,9 @@ async function pollCloudBillRequests() {
                 const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
                 const printKey = `${orderId}_${updatedTime}`;
 
-                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey)) {
+                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey) && !lastPrintedCloudOrders.has(String(orderId))) {
                   lastPrintedCloudOrders.add(printKey);
+                  lastPrintedCloudOrders.add(String(orderId));
                   markTablePrintedLocally(tableNum, orderId);
                   if (lastPrintedCloudOrders.size > 200) {
                     const firstKey = lastPrintedCloudOrders.values().next().value;
