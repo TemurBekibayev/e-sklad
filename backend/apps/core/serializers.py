@@ -221,8 +221,8 @@ class TenantSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    pin = serializers.CharField(write_only=True, required=False, max_length=10)
-    password = serializers.CharField(write_only=True, required=False, min_length=4)
+    pin = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=10)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -254,9 +254,13 @@ class UserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        if pin:
-            instance.set_pin(pin)
-        if password:
+        if pin is not None:
+            if str(pin).strip():
+                instance.set_pin(pin)
+            else:
+                instance.pin_hash = ''
+                instance.plain_pin = ''
+        if password is not None and str(password).strip():
             instance.set_password(password)
         instance.save()
         return instance

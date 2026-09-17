@@ -13,9 +13,12 @@ import {
   Clock,
   Plus,
   Copy,
-  Check
+  Check,
+  Edit,
+  Trash2
 } from 'lucide-react';
 import PaymentModal from '../components/PaymentModal';
+import EditWorkerModal from '../components/EditWorkerModal';
 import { 
   BarChart, 
   Bar, 
@@ -34,6 +37,8 @@ export default function TenantDetailPage({ tenantId, onBack }) {
   const [products, setProducts] = useState([]);
   const [subscriptionPayments, setSubscriptionPayments] = useState([]);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
+  const [selectedWorker, setSelectedWorker] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
 
@@ -88,6 +93,45 @@ export default function TenantDetailPage({ tenantId, onBack }) {
       loadTenantData();
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const handleOpenAddWorker = () => {
+    setSelectedWorker(null);
+    setIsWorkerModalOpen(true);
+  };
+
+  const handleOpenEditWorker = (worker) => {
+    setSelectedWorker(worker);
+    setIsWorkerModalOpen(true);
+  };
+
+  const handleSaveWorker = async (workerData, workerId) => {
+    if (workerId) {
+      await apiFetch(`/users/${workerId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(workerData)
+      });
+    } else {
+      await apiFetch(`/users/`, {
+        method: 'POST',
+        body: JSON.stringify(workerData)
+      });
+    }
+    loadTenantData();
+  };
+
+  const handleDeleteWorker = async (worker) => {
+    if (!window.confirm(`Haqiqatan ham "${worker.name}" xodimini o'chirmoqchimisiz?`)) {
+      return;
+    }
+    try {
+      await apiFetch(`/users/${worker.id}/`, {
+        method: 'DELETE'
+      });
+      loadTenantData();
+    } catch (err) {
+      alert(err.message || 'Xatolik yuz berdi');
     }
   };
 
@@ -435,11 +479,28 @@ export default function TenantDetailPage({ tenantId, onBack }) {
       {/* Tab 2: Xodimlar */}
       {activeTab === 'workers' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
-          <h3 className="text-base font-bold text-slate-900 mb-4">Do'kon xodimlari</h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-slate-100">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">
+                {tenant?.business_type === 'cafe' ? 'Kafe xodimlari' : 'Do\'kon xodimlari'}
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Menejer, savdo xodimlari, ofitsiantlar va ularning tizim parollari
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAddWorker}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/20 transition self-start sm:self-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yangi xodim qo'shish</span>
+            </button>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-600 uppercase">
+                <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                   <th className="py-3 px-4">Ism</th>
                   <th className="py-3 px-4">Roli</th>
                   <th className="py-3 px-4">Email / Login</th>
@@ -447,38 +508,57 @@ export default function TenantDetailPage({ tenantId, onBack }) {
                   <th className="py-3 px-4">Tizim Parol</th>
                   <th className="py-3 px-4">Telefon</th>
                   <th className="py-3 px-4">Holati</th>
-                  <th className="py-3 px-4 text-right">Oxirgi faollik</th>
+                  <th className="py-3 px-4">Oxirgi faollik</th>
+                  <th className="py-3 px-4 text-right">Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {workers.map((w) => (
-                  <tr key={w.id} className="hover:bg-slate-50/60 transition">
+                  <tr key={w.id} className="hover:bg-slate-50/60 transition group">
                     <td className="py-3.5 px-4 font-bold text-slate-900">{w.name}</td>
-                    <td className="py-3.5 px-4 text-slate-600">{getRoleLabel(w.role)}</td>
-                    <td className="py-3.5 px-4 text-slate-500 font-medium">{w.email || '-'}</td>
-                    <td className="py-3.5 px-4 text-blue-600 font-bold">{w.plain_pin || '-'}</td>
-                    <td className="py-3.5 px-4 text-slate-700 font-semibold">{w.plain_password || '-'}</td>
+                    <td className="py-3.5 px-4 text-slate-600 font-medium">{getRoleLabel(w.role)}</td>
+                    <td className="py-3.5 px-4 text-slate-500 font-mono text-xs">{w.email || '-'}</td>
+                    <td className="py-3.5 px-4 text-blue-600 font-bold font-mono">{w.plain_pin || '-'}</td>
+                    <td className="py-3.5 px-4 text-slate-700 font-semibold font-mono">{w.plain_password || '-'}</td>
                     <td className="py-3.5 px-4 text-slate-500 font-medium">{w.phone_number || '-'}</td>
                     <td className="py-3.5 px-4">
                       {w.is_active ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
-                          Faol
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          🟢 Faol
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
-                          Nofaol
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                          🔴 Nofaol
                         </span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 text-right text-slate-500 text-xs font-medium">
+                    <td className="py-3.5 px-4 text-slate-500 text-xs font-medium">
                       {w.last_login ? new Date(w.last_login).toLocaleDateString('ru-RU') : '-'}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="flex items-center justify-end space-x-1">
+                        <button
+                          onClick={() => handleOpenEditWorker(w)}
+                          title="Tahrirlash"
+                          className="p-1.5 text-blue-600 hover:bg-blue-100/70 rounded-lg transition"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteWorker(w)}
+                          title="O'chirish"
+                          className="p-1.5 text-rose-500 hover:bg-rose-100/70 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {workers.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-slate-500 font-medium">
-                      Xodimlar topilmadi.
+                    <td colSpan={9} className="py-10 text-center text-slate-400 font-medium text-xs">
+                      Hozircha xodimlar mavjud emas.
                     </td>
                   </tr>
                 )}
@@ -573,6 +653,15 @@ export default function TenantDetailPage({ tenantId, onBack }) {
         onClose={() => setIsPaymentModalOpen(false)}
         tenant={tenant}
         onPaymentSuccess={() => loadTenantData()}
+      />
+
+      {/* Edit/Add Worker Modal */}
+      <EditWorkerModal
+        isOpen={isWorkerModalOpen}
+        onClose={() => setIsWorkerModalOpen(false)}
+        worker={selectedWorker}
+        onSave={handleSaveWorker}
+        tenantId={tenant?.id}
       />
     </div>
   );
