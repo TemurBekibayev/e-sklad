@@ -917,12 +917,6 @@ function isTableRecentlyPrinted(tableNumber, orderId) {
   return false;
 }
 
-let broadcastCallback = null;
-
-function setBroadcastCallback(cb) {
-  broadcastCallback = cb;
-}
-
 // Poll getpos.uz for tables in 'busy' / 'bill_requested' status to sync orders and print kitchen & pre-checks
 async function pollCloudBillRequests() {
   try {
