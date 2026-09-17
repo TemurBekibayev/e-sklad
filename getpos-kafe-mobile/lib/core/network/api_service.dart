@@ -237,36 +237,34 @@ class ApiService {
   Future<Map<String, dynamic>> getMenu() async {
     try {
       final dio = await _getDio();
-      final res = await dio.get('https://getpos.uz/api/v1/products/?page_size=100');
+      final res = await dio.get('https://getpos.uz/api/v1/products/?page_size=200');
 
       if (res.statusCode == 200 && res.data != null) {
         final List prodList = (res.data is Map && res.data['results'] != null)
             ? res.data['results']
             : (res.data['products'] ?? (res.data is List ? res.data : []));
 
-        if (prodList.isNotEmpty) {
-          final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
-          
-          final Map<String, Category> categoriesMap = {
-            'c1': Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
-          };
+        final products = prodList.map((p) => Product.fromJson(p as Map<String, dynamic>)).toList();
+        
+        final Map<String, Category> categoriesMap = {
+          'c1': Category(id: 'c1', name: 'Barchasi', iconName: 'all_inclusive'),
+        };
 
-          for (final p in products) {
-            final catName = p.categoryId.isNotEmpty ? p.categoryId : 'Taomlar';
-            if (!categoriesMap.containsKey(catName)) {
-              categoriesMap[catName] = Category(
-                id: catName,
-                name: catName,
-                iconName: 'restaurant',
-              );
-            }
+        for (final p in products) {
+          final catName = p.categoryId.isNotEmpty ? p.categoryId : 'Taomlar';
+          if (!categoriesMap.containsKey(catName)) {
+            categoriesMap[catName] = Category(
+              id: catName,
+              name: catName,
+              iconName: 'restaurant',
+            );
           }
-
-          return {
-            'categories': categoriesMap.values.toList(),
-            'products': products,
-          };
         }
+
+        return {
+          'categories': categoriesMap.values.toList(),
+          'products': products,
+        };
       }
     } catch (e) {
       debugPrint('[ApiService] getMenu online error: $e');

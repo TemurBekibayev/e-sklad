@@ -23,7 +23,7 @@ class _OrderScreenState extends State<OrderScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MenuProvider>().init();
+      context.read<MenuProvider>().refresh();
       context.read<OrderProvider>().refreshCurrentOrder();
     });
   }
@@ -93,7 +93,10 @@ class _OrderScreenState extends State<OrderScreen> {
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textPrimary),
             tooltip: 'Yangilash',
-            onPressed: () => orderProv.refreshCurrentOrder(),
+            onPressed: () {
+              orderProv.refreshCurrentOrder();
+              menuProv.refresh();
+            },
           ),
           IconButton(
             icon: Icon(_isSearchActive ? Icons.close : Icons.search),
