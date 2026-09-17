@@ -444,6 +444,26 @@ async function ensureAuthToken() {
     }
   }
 
+  // Fallback auto-login with any locally active user in SQLite
+  try {
+    const localUser = await get(
+      `SELECT name, login, email, phone, pin, password, user_code FROM users 
+       WHERE (password != '' OR pin != '') AND status = 'active'
+       ORDER BY CASE WHEN role IN ('admin', 'manager') THEN 0 ELSE 1 END, id ASC LIMIT 1`
+    );
+    if (localUser) {
+      const loginId = localUser.user_code || localUser.login || localUser.email || localUser.phone || localUser.name;
+      const pass = localUser.password || localUser.pin;
+      const loginRes = await loginLiveUser(loginId, pass, cfg.api_url, localUser.login || localUser.name);
+      if (loginRes.success && loginRes.token) {
+        cachedAuthToken = loginRes.token;
+        return cachedAuthToken;
+      }
+    }
+  } catch (e) {
+    console.warn('[BackendSync] Local user auto-login warning:', e.message);
+  }
+
   return null;
 }
 
@@ -888,22 +908,17 @@ async function pollCloudBillRequests() {
     if (res.status === 200 && res.data) {
       const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
       
-      // If server just started, mark existing tables & items as already known so we don't spam print historical bills
+      // If server just started, populate locally known items from SQLite so we only print genuinely new waiter orders
       if (isInitialCloudScan) {
         isInitialCloudScan = false;
-        for (const t of tables) {
-          if (t.active_order) {
-            const orderId = t.active_order.id || t.active_order_id;
-            const updatedTime = t.active_order.updated_at || t.active_order.created_at || '';
-            lastPrintedCloudOrders.add(`${orderId}_${updatedTime}`);
-            const items = t.active_order.items || [];
-            for (const item of items) {
-              const itemId = item.id || `${orderId}_${item.product_name}_${item.quantity}`;
-              lastPrintedCloudKitchenItems.add(String(itemId));
-            }
+        try {
+          const locallyStored = await all(`SELECT order_id, product_name, quantity FROM order_items`);
+          for (const row of locallyStored) {
+            lastPrintedCloudKitchenItems.add(`${row.order_id}_${row.product_name}_${row.quantity}`);
+            lastPrintedCloudKitchenItems.add(String(row.product_name));
           }
-        }
-        console.log(`[BackendSync] Dastlabki bulut holati yuklandi (${tables.length} ta stol)`);
+        } catch (e) {}
+        console.log(`[BackendSync] Dastlabki bulut skaneri tayyorlandi (${tables.length} ta stol)`);
       }
 
       for (const t of tables) {

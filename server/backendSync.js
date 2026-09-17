@@ -148,15 +148,10 @@ async function updateConfig({ api_url, tenant_id, tenant_name, auth_token, sync_
   return updated;
 }
 
-function cleanBaseUrl(urlStr) {
-  if (!urlStr) return 'https://getpos.uz';
-  return urlStr.trim().replace(/\/+$/, '').replace(/\/api$/, '');
-}
-
 // Fetch all live tenants from backend (getpos.uz/api/tenants/)
 async function fetchLiveTenants(customUrl = null) {
   const cfg = await getConfig();
-  const baseUrl = cleanBaseUrl(customUrl || cfg.api_url);
+  const baseUrl = (customUrl || cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
   const url = `${baseUrl}/api/tenants/`;
 
   try {
@@ -281,7 +276,10 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
     payload.login = extraLogin;
   }
 
-  if (cfg.tenant_id) {
+  // Only constrain to tenant_id if this is a pure numeric PIN/user_id login without an email/phone
+  const loginStr = String(payload.login || userIdOrLogin || '');
+  const isEmailOrPhone = loginStr.includes('@') || /^\+?\d{7,}$/.test(loginStr);
+  if (cfg.tenant_id && !isEmailOrPhone) {
     payload.tenant_id = cfg.tenant_id;
   }
 
@@ -320,10 +318,16 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
     const returnedTenantId = res.data.tenantId || res.data.user?.tenant_id || cfg.tenant_id;
     const returnedTenantName = res.data.tenantName || res.data.user?.tenant_name || cfg.tenant_name;
 
-    if (token) {
-      await run(`UPDATE backend_config SET auth_token = ?, tenant_id = ?, tenant_name = ? WHERE id = 1`, [
-        token, returnedTenantId, returnedTenantName,
-      ]);
+    const tenantChanged = Boolean(returnedTenantId && cfg.tenant_id && returnedTenantId !== cfg.tenant_id);
+
+    if (tenantChanged) {
+      await switchTenantAndCleanData(returnedTenantId, returnedTenantName, token);
+    } else {
+      if (token) {
+        await run(`UPDATE backend_config SET auth_token = ?, tenant_id = ?, tenant_name = ? WHERE id = 1`, [
+          token, returnedTenantId, returnedTenantName,
+        ]);
+      }
     }
 
     const userData = {
@@ -356,8 +360,62 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
       token,
     };
   } else {
-    const msg = res?.data?.error || res?.data?.detail || "Noto'g'ri PIN-kod!";
+    const msg = res?.data?.error || res?.data?.detail || "Noto'g'ri PIN-kod yoki parol!";
     return { success: false, message: msg };
+  }
+}
+
+// Switch tenant & clear previous tenant's private menu/tables/orders
+async function switchTenantAndCleanData(newTenantId, newTenantName, token) {
+  console.log(`[BackendSync] Switching to tenant: ${newTenantName} (${newTenantId}). Resetting local data.`);
+  try {
+    // 1. Clear previous local data
+    await run(`DELETE FROM order_items`);
+    await run(`DELETE FROM orders`);
+    await run(`DELETE FROM payments`);
+    await run(`DELETE FROM fiscal_queue`);
+    await run(`DELETE FROM products`);
+    await run(`DELETE FROM categories`);
+    await run(`DELETE FROM tables`);
+    await run(`DELETE FROM halls`);
+
+    // 2. Update config
+    await run(`
+      UPDATE backend_config 
+      SET tenant_id = ?, tenant_name = ?, auth_token = ?, last_sync_time = CURRENT_TIMESTAMP 
+      WHERE id = 1
+    `, [newTenantId, newTenantName, token || '']);
+
+    // 3. Seed default base categories for a clean cafe
+    await run(`
+      INSERT INTO categories (id, name, slug, icon, order_index) VALUES
+      (1, 'Taomlar', 'taomlar', '🍲', 1),
+      (2, 'Ichimliklar', 'ichimliklar', '🥤', 2),
+      (3, 'Salatlar', 'salatlar', '🥗', 3),
+      (4, 'Shirinliklar', 'shirinliklar', '🍰', 4)
+    `);
+
+    // 4. Seed default halls and tables
+    await run(`
+      INSERT INTO halls (id, name, order_index) VALUES
+      (1, 'Asosiy Zal', 1),
+      (2, 'Zal 1', 2),
+      (3, 'VIP Xona', 3)
+    `);
+
+    for (let i = 1; i <= 10; i++) {
+      const hallName = i <= 6 ? 'Asosiy Zal' : (i <= 8 ? 'Zal 1' : 'VIP Xona');
+      await run(`
+        INSERT INTO tables (number, name, capacity, status, hall)
+        VALUES (?, ?, 4, 'free', ?)
+      `, [i, `STOL - ${i}`, hallName]);
+    }
+
+    // 5. Sync new tenant's data from getpos.uz
+    cachedAuthToken = token;
+    await syncFromBackend();
+  } catch (err) {
+    console.error('[BackendSync] switchTenantAndCleanData error:', err.message);
   }
 }
 
@@ -384,6 +442,26 @@ async function ensureAuthToken() {
     } catch (e) {
       console.warn('[BackendSync] Auto-login failed:', e.message);
     }
+  }
+
+  // Fallback auto-login with any locally active user in SQLite
+  try {
+    const localUser = await get(
+      `SELECT name, login, email, phone, pin, password, user_code FROM users 
+       WHERE (password != '' OR pin != '') AND status = 'active'
+       ORDER BY CASE WHEN role IN ('admin', 'manager') THEN 0 ELSE 1 END, id ASC LIMIT 1`
+    );
+    if (localUser) {
+      const loginId = localUser.user_code || localUser.login || localUser.email || localUser.phone || localUser.name;
+      const pass = localUser.password || localUser.pin;
+      const loginRes = await loginLiveUser(loginId, pass, cfg.api_url, localUser.login || localUser.name);
+      if (loginRes.success && loginRes.token) {
+        cachedAuthToken = loginRes.token;
+        return cachedAuthToken;
+      }
+    }
+  } catch (e) {
+    console.warn('[BackendSync] Local user auto-login warning:', e.message);
   }
 
   return null;
@@ -439,7 +517,7 @@ async function syncFromBackend() {
     return { skipped: true, message: 'Backend sinxronizatsiyasi faol emas' };
   }
 
-  const baseUrl = cleanBaseUrl(cfg.api_url);
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
   const tenantId = cfg.tenant_id;
   const startTime = Date.now();
 
@@ -529,14 +607,58 @@ async function syncFromBackend() {
       }
     }
 
+    // 3. SYNC TABLES (GET & POST /api/v1/cafe/tables/)
+    let tablesSynced = 0;
+    try {
+      const tablesHeaders = {};
+      if (token) tablesHeaders['Authorization'] = `Bearer ${token}`;
+
+      const cloudTablesRes = await makeRequest({
+        url: `${baseUrl}/api/v1/cafe/tables/`,
+        method: 'GET',
+        headers: tablesHeaders,
+      });
+
+      if (cloudTablesRes.status === 200) {
+        const cloudTables = cloudTablesRes.data?.results || (Array.isArray(cloudTablesRes.data) ? cloudTablesRes.data : []);
+        if (cloudTables.length === 0) {
+          // Cloud has no tables yet for this tenant - upload all local tables
+          const localTables = await all(`SELECT * FROM tables`);
+          for (const lt of localTables) {
+            try {
+              await makeRequest({
+                url: `${baseUrl}/api/v1/cafe/tables/`,
+                method: 'POST',
+                headers: { ...tablesHeaders, 'Content-Type': 'application/json' },
+                body: {
+                  number: lt.number || lt.id,
+                  name: lt.name || `STOL - ${lt.number || lt.id}`,
+                  capacity: lt.capacity || 4,
+                  status: lt.status || 'free',
+                }
+              });
+              tablesSynced++;
+            } catch (upErr) {
+              // Ignore single upload error
+            }
+          }
+        } else {
+          tablesSynced = cloudTables.length;
+        }
+      }
+    } catch (tblErr) {
+      console.warn('[BackendSync] Table sync warning:', tblErr.message);
+    }
+
     const latency = Date.now() - startTime;
     lastSyncResult = {
       status: 'synced',
       lastSyncTime: new Date().toISOString(),
-      message: `Real backend (getpos.uz) dan ${usersSynced} ta xodim va ${productsSynced} ta mahsulot yuklandi`,
+      message: `Real backend (getpos.uz) dan ${usersSynced} ta xodim, ${productsSynced} ta mahsulot va ${tablesSynced} ta stol sinxronlandi`,
       latencyMs: latency,
       usersSynced,
       productsSynced,
+      tablesSynced,
       ordersPushed: lastSyncResult.ordersPushed || 0,
     };
 
@@ -725,17 +847,307 @@ async function syncToBackend() {
   return { pushed: pushedCount, remaining: pendingRows.length - pushedCount };
 }
 
+const lastPrintedCloudOrders = new Set();
+const lastPrintedCloudKitchenItems = new Set();
+let cloudPollTimer = null;
+const serverStartTime = Date.now();
+let isInitialCloudScan = true;
+const recentPrintedTables = new Map(); // identifier -> timestamp
+
+function markTablePrintedLocally(tableNumber, orderId) {
+  const now = Date.now();
+  if (tableNumber) {
+    recentPrintedTables.set(String(tableNumber), now);
+    const digits = String(tableNumber).replace(/\D/g, '');
+    if (digits) recentPrintedTables.set(digits, now);
+  }
+  if (orderId) {
+    recentPrintedTables.set(String(orderId), now);
+  }
+}
+
+function isTableRecentlyPrinted(tableNumber, orderId) {
+  const now = Date.now();
+  const keys = [
+    tableNumber ? String(tableNumber) : null,
+    tableNumber ? String(tableNumber).replace(/\D/g, '') : null,
+    orderId ? String(orderId) : null,
+  ].filter(Boolean);
+
+  for (const k of keys) {
+    const t = recentPrintedTables.get(k);
+    if (t && (now - t < 30000)) { // 30 soniya ichida chop etilgan bo'lsa
+      return true;
+    }
+  }
+  return false;
+}
+
+let broadcastCallback = null;
+
+function setBroadcastCallback(cb) {
+  broadcastCallback = cb;
+}
+
+// Poll getpos.uz for tables in 'busy' / 'bill_requested' status to sync orders and print kitchen & pre-checks
+async function pollCloudBillRequests() {
+  try {
+    const cfg = await getConfig();
+    if (!cfg.is_external_active || !cfg.api_url) return;
+    const baseUrl = cfg.api_url.replace(/\/+$/, '');
+    const token = await ensureAuthToken();
+    if (!token) return;
+
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/tables/`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+      timeoutMs: 4000,
+    });
+
+    if (res.status === 200 && res.data) {
+      const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
+      
+      // If server just started, populate locally known items from SQLite so we only print genuinely new waiter orders
+      if (isInitialCloudScan) {
+        isInitialCloudScan = false;
+        try {
+          const locallyStored = await all(`SELECT order_id, product_name, quantity FROM order_items`);
+          for (const row of locallyStored) {
+            lastPrintedCloudKitchenItems.add(`${row.order_id}_${row.product_name}_${row.quantity}`);
+            lastPrintedCloudKitchenItems.add(String(row.product_name));
+          }
+        } catch (e) {}
+        console.log(`[BackendSync] Dastlabki bulut skaneri tayyorlandi (${tables.length} ta stol)`);
+      }
+
+      for (const t of tables) {
+        const localTable = await get(`SELECT * FROM tables WHERE number = ? OR id = ? OR remote_id = ?`, [t.number, t.number, t.id]);
+        if (localTable) {
+          let tableChanged = false;
+
+          // Always associate cloud UUID (remote_id) with local table
+          if (t.id && localTable.remote_id !== t.id) {
+            await run(`UPDATE tables SET remote_id = ? WHERE id = ?`, [t.id, localTable.id]);
+          }
+
+          if (t.status === 'bill_requested' || t.status === 'busy' || t.active_order) {
+            const currentStatus = t.status === 'free' ? 'busy' : t.status;
+            if (localTable.status !== currentStatus) {
+              await run(`UPDATE tables SET status = ? WHERE id = ?`, [currentStatus, localTable.id]);
+              tableChanged = true;
+            }
+
+            if (t.active_order) {
+              const orderId = t.active_order.id || t.active_order_id;
+              const orderTotal = Number(t.active_order.total_amount || t.active_order.subtotal || 0);
+              const waiterName = t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant';
+
+              let localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+              if (!localOrder) {
+                localOrder = await get(
+                  `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`,
+                  [localTable.id]
+                );
+              }
+
+              let currentEffectiveOrderId = orderId;
+              if (localOrder) {
+                currentEffectiveOrderId = localOrder.id;
+                await run(
+                  `UPDATE orders SET status = ?, total_amount = ?, waiter_name = ? WHERE id = ?`,
+                  [currentStatus, orderTotal, waiterName, localOrder.id]
+                );
+                if (localTable.current_order_id !== localOrder.id) {
+                  await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [localOrder.id, localTable.id]);
+                  tableChanged = true;
+                }
+              } else {
+                const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
+                currentEffectiveOrderId = newOrderId;
+                await run(
+                  `INSERT INTO orders (id, table_id, waiter_name, status, total_amount) VALUES (?, ?, ?, ?, ?)`,
+                  [newOrderId, localTable.id, waiterName, currentStatus, orderTotal]
+                );
+                await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [newOrderId, localTable.id]);
+                tableChanged = true;
+              }
+
+              // Sync order items from Cloud to local SQLite for Desktop POS display & Kitchen printing
+              const cloudItems = t.active_order.items || [];
+              const newItemsToPrint = [];
+
+              if (cloudItems.length > 0 && currentEffectiveOrderId) {
+                const existingItems = await all(`SELECT * FROM order_items WHERE order_id = ?`, [currentEffectiveOrderId]);
+
+                for (const ci of cloudItems) {
+                  const ciName = ci.product_name || ci.name || 'Taom';
+                  const ciQty = Number(ci.quantity || 1);
+                  const ciPrice = Number(ci.price || ci.unit_price || 0);
+                  const ciComment = ci.comment || '';
+                  const ciItemId = ci.id || `${orderId}_${ciName}_${ciQty}`;
+
+                  const found = existingItems.find(ei => ei.product_name === ciName);
+                  if (!found) {
+                    await run(
+                      `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status, waiter_name)
+                       VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)`,
+                      [currentEffectiveOrderId, ci.product_id || ci.product || 1, ciName, ciQty, ciPrice, ciComment, waiterName]
+                    );
+                    tableChanged = true;
+
+                    if (!lastPrintedCloudKitchenItems.has(String(ciItemId))) {
+                      lastPrintedCloudKitchenItems.add(String(ciItemId));
+                      newItemsToPrint.push({
+                        id: ciItemId,
+                        product_name: ciName,
+                        quantity: ciQty,
+                        price: ciPrice,
+                        comment: ciComment,
+                        workshop: ci.workshop || 'Oshxona',
+                      });
+                    }
+                  } else if (found.quantity !== ciQty) {
+                    const diffQty = ciQty - found.quantity;
+                    await run(`UPDATE order_items SET quantity = ?, price = ? WHERE id = ?`, [ciQty, ciPrice, found.id]);
+                    tableChanged = true;
+
+                    if (diffQty > 0 && !lastPrintedCloudKitchenItems.has(`${ciItemId}_diff_${ciQty}`)) {
+                      lastPrintedCloudKitchenItems.add(`${ciItemId}_diff_${ciQty}`);
+                      newItemsToPrint.push({
+                        id: ciItemId,
+                        product_name: ciName,
+                        quantity: diffQty,
+                        price: ciPrice,
+                        comment: ciComment,
+                        workshop: ci.workshop || 'Oshxona',
+                      });
+                    }
+                  }
+                }
+              }
+
+              // Oshxona printeriga yangi taomlarni chop etish
+              if (newItemsToPrint.length > 0) {
+                console.log(`[BackendSync] Bulutdan yangi taomlar keldi (${localTable.number}-stol):`, newItemsToPrint.map(i => `${i.product_name} x${i.quantity}`).join(', '));
+                try {
+                  const printerService = require('./printer');
+                  printerService.printToKitchen({
+                    orderId: currentEffectiveOrderId,
+                    tableNumber: String(localTable.number || t.number),
+                    waiterName,
+                    items: newItemsToPrint,
+                  }).catch(e => console.warn('[BackendSync Kitchen Print Error]:', e.message));
+                } catch (e) {
+                  console.warn('[BackendSync Kitchen Print Exception]:', e.message);
+                }
+
+                if (broadcastCallback) {
+                  broadcastCallback('KITCHEN_NEW_TICKET', {
+                    orderId: currentEffectiveOrderId,
+                    tableNumber: String(localTable.number || t.number),
+                    waiterName,
+                    items: newItemsToPrint,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+              }
+
+              // Pre-chek termal printerga chiqarish (agar hali chop etilmagan bo'lsa)
+              if (t.status === 'bill_requested') {
+                const tableNum = String(t.number || t.name || t.id);
+                const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
+                const printKey = `${orderId}_${updatedTime}`;
+
+                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey)) {
+                  lastPrintedCloudOrders.add(printKey);
+                  markTablePrintedLocally(tableNum, orderId);
+                  if (lastPrintedCloudOrders.size > 200) {
+                    const firstKey = lastPrintedCloudOrders.values().next().value;
+                    lastPrintedCloudOrders.delete(firstKey);
+                  }
+
+                  console.log(`[BackendSync] Bulutdan (Mobile Data) yangi hisob so'rovi keldi: Stol ${t.number}, Buyurtma: ${orderId}`);
+                  
+                  const rawItems = t.active_order.items || [];
+                  const activeItems = rawItems.map(i => ({
+                    product_name: i.product_name || i.name || 'Taom',
+                    quantity: Number(i.quantity || 1),
+                    price: Number(i.price || i.unit_price || 0),
+                  }));
+
+                  const subtotal = activeItems.reduce((s, it) => s + (it.price * it.quantity), 0);
+                  const servicePercent = 10;
+                  const serviceFee = Math.round((subtotal * servicePercent) / 100);
+                  const totalAmount = subtotal + serviceFee;
+
+                  const printerService = require('./printer');
+                  printerService.printPrecheckReceipt({
+                    orderId,
+                    tableNumber: String(t.number || t.name || localTable.number),
+                    waiterName,
+                    items: activeItems,
+                    subtotal,
+                    serviceFeePercent: servicePercent,
+                    serviceFee,
+                    totalAmount,
+                  }).then(res => console.log('[BackendSync Cloud Pre-check] Chop etildi:', res)).catch(err => console.error('[BackendSync Cloud Pre-check] Error:', err.message));
+
+                  if (broadcastCallback) {
+                    broadcastCallback('BILL_REQUESTED', {
+                      tableNumber: String(t.number || t.name || localTable.number),
+                      orderId,
+                    });
+                  }
+                }
+              }
+            }
+          } else if (t.status === 'free') {
+            if (localTable.status !== 'free') {
+              await run(`UPDATE tables SET status = 'free', current_order_id = NULL WHERE id = ?`, [localTable.id]);
+              await run(`UPDATE orders SET status = 'paid' WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested')`, [localTable.id]);
+              tableChanged = true;
+            }
+          }
+
+          if (tableChanged && broadcastCallback) {
+            const updated = await get(`
+              SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+              FROM tables t
+              LEFT JOIN orders o ON t.current_order_id = o.id
+              WHERE t.id = ?
+            `, [localTable.id]);
+            broadcastCallback('TABLE_UPDATED', updated);
+            broadcastCallback('TABLES_UPDATED', {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[pollCloudBillRequests ERROR]:', err);
+  }
+}
+
 function startPeriodicSync(intervalSeconds = 30) {
   if (syncTimer) clearInterval(syncTimer);
   syncTimer = setInterval(async () => {
     await syncToBackend();
   }, intervalSeconds * 1000);
+
+  if (cloudPollTimer) clearInterval(cloudPollTimer);
+  cloudPollTimer = setInterval(async () => {
+    await pollCloudBillRequests();
+  }, 4000); // Har 4 soniyada bulutdagi yangi hisob so'rovlarini tekshirib darhol chop etadi
 }
 
 function stopPeriodicSync() {
   if (syncTimer) {
     clearInterval(syncTimer);
     syncTimer = null;
+  }
+  if (cloudPollTimer) {
+    clearInterval(cloudPollTimer);
+    cloudPollTimer = null;
   }
 }
 
@@ -904,6 +1316,134 @@ async function deleteStaffMember(userCode) {
   }
 }
 
+// Real-time Push Active Order to Cloud (https://getpos.uz/api/v1/cafe/orders/)
+async function pushActiveOrderToCloud({ tableId, tableName, waiterName, items, guestCount, orderId }) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false, message: 'No auth token' };
+
+  let remoteTableId = null;
+  if (tableId) {
+    const tRow = await get(`SELECT remote_id, name, number FROM tables WHERE id = ? OR number = ? OR name = ?`, [tableId, tableId, tableId]);
+    remoteTableId = tRow?.remote_id;
+  }
+
+  if (!remoteTableId) {
+    try {
+      const cloudTablesRes = await makeRequest({
+        url: `${baseUrl}/api/v1/cafe/tables/`,
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        timeoutMs: 5000,
+      });
+      const list = cloudTablesRes.data?.results || (Array.isArray(cloudTablesRes.data) ? cloudTablesRes.data : []);
+      const match = list.find(t => String(t.number) === String(tableId) || t.name === tableName || t.name === `STOL - ${tableId}`);
+      if (match) {
+        remoteTableId = match.id;
+        if (tableId) {
+          await run(`UPDATE tables SET remote_id = ? WHERE id = ? OR number = ?`, [match.id, tableId, tableId]);
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!remoteTableId) {
+    console.warn('[BackendSync] Could not find remote table ID for table', tableId);
+    return { success: false, message: 'Remote table ID not found' };
+  }
+
+  const payload = {
+    table: remoteTableId,
+    tableId: remoteTableId,
+    guests_count: guestCount || 2,
+    notes: '',
+    items: (items || []).map(i => {
+      const rawPid = i.product_id || i.productId;
+      const numPid = rawPid ? parseInt(String(rawPid).replace(/\D/g, ''), 10) : null;
+      return {
+        ...(numPid && numPid > 0 ? { product_id: numPid } : {}),
+        product_name: i.product_name || i.productName || i.name || 'Taom',
+        quantity: i.quantity || i.qty || 1,
+        price: i.price || i.unit_price || 0,
+        comment: i.comment || '',
+      };
+    })
+  };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: payload,
+      timeoutMs: 6000,
+    });
+
+    if (res.status === 200 || res.status === 201) {
+      console.log(`[BackendSync] Active order pushed to cloud for Table ${tableName || tableId}`);
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res.data };
+  } catch (err) {
+    console.warn('[BackendSync] pushActiveOrderToCloud error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Push Bill Request to Cloud
+async function pushBillRequestToCloud(tableIdOrOrderId) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/${tableIdOrOrderId}/bill-request/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      timeoutMs: 5000,
+    });
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// Push Close / Pay Order to Cloud
+async function pushCloseOrderToCloud({ orderId, tableId, paymentMethod, totalAmount }) {
+  const cfg = await getConfig();
+  const baseUrl = (cfg.api_url || 'https://getpos.uz').replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false };
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/cafe/orders/${orderId}/pay/`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: {
+        payment_method: paymentMethod || 'cash',
+        total_amount: totalAmount,
+      },
+      timeoutMs: 5000,
+    });
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -914,6 +1454,9 @@ module.exports = {
   syncFromBackend,
   syncToBackend,
   pushOrderSale,
+  pushActiveOrderToCloud,
+  pushBillRequestToCloud,
+  pushCloseOrderToCloud,
   pushStaffMember,
   deleteStaffMember,
   startPeriodicSync,
@@ -921,5 +1464,11 @@ module.exports = {
   fetchActiveBaskets,
   completeBasketTransaction,
   patchBasketStatus,
+  markTablePrintedLocally,
+  isTableRecentlyPrinted,
+  pollCloudBillRequests,
+  setBroadcastCallback,
+  switchTenantAndCleanData,
   getLastSyncResult: () => lastSyncResult,
 };
+
