@@ -4,9 +4,7 @@ import JetCafeCategoryModal from '../components/JetCafeCategoryModal';
 import JetCafeTableModal from '../components/JetCafeTableModal';
 import JetCafeItemCancelModal from '../components/JetCafeItemCancelModal';
 import JetCafeOrdersJournalModal from '../components/JetCafeOrdersJournalModal';
-import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
-import JetCafeMobileBasketsModal from '../components/JetCafeMobileBasketsModal';
 import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 import { Maximize2, Minimize2 } from 'lucide-react';
@@ -79,45 +77,8 @@ export default function JetCafePosView({
   const [isOrderItemEditModalOpen, setIsOrderItemEditModalOpen] = useState(false);
   const [isOrdersJournalOpen, setIsOrdersJournalOpen] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
-  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState(false);
-  const [mobileBaskets, setMobileBaskets] = useState([]);
-  const [isMobileBasketsModalOpen, setIsMobileBasketsModalOpen] = useState(false);
 
-  // Poll for active mobile baskets from getpos.uz
-  const loadMobileBaskets = async () => {
-    try {
-      const res = await fetch('/api/baskets');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.baskets)) {
-          setMobileBaskets(data.baskets);
-        }
-      }
-    } catch (e) {}
-  };
-
-  useEffect(() => {
-    loadMobileBaskets();
-    const interval = setInterval(loadMobileBaskets, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleLoadBasketToCart = (basket) => {
-    if (!basket || !basket.items || basket.items.length === 0) return;
-    const newItems = basket.items.map((it) => ({
-      product_id: it.product || it.id,
-      product_name: it.product_name,
-      quantity: parseFloat(it.quantity || 1),
-      price: parseFloat(it.unit_price || it.price || 0),
-      comment: `Mobil: ${basket.worker_name || 'Xodim'}`,
-      is_cancelled: false,
-    }));
-    setOrderItems((prev) => [...prev, ...newItems]);
-    if (basket.worker_name) {
-      setSelectedWaiter(basket.worker_name);
-    }
-  };
 
   // Payment form state
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'split'
@@ -636,7 +597,11 @@ export default function JetCafePosView({
                 <div className="py-1">
                   <button
                     type="button"
-                    onClick={() => setIsOrdersJournalOpen(true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
+                      setIsOrdersJournalOpen(true);
+                    }}
                     className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between font-bold text-blue-900"
                   >
                     <div className="flex items-center gap-2">
@@ -647,7 +612,24 @@ export default function JetCafePosView({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
+                      if (onOpenManageTables) onOpenManageTables();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-bold text-amber-900"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>🏛️</span>
+                      <span>Stollar va Zallar sozlamalari</span>
+                    </div>
+                    <span className="text-[10px] text-amber-600">▶</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
                       if (onOpenStaffModal) onOpenStaffModal();
                       else if (onNavigateTab) onNavigateTab('staff');
                     }}
@@ -661,36 +643,9 @@ export default function JetCafePosView({
                 <div className="py-1">
                   <button
                     type="button"
-                    onClick={() => setIsMobileBasketsModalOpen(true)}
-                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center justify-between font-medium text-emerald-900"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>📥</span>
-                      <span>Mobil Savatlar (Ofitsiant)</span>
-                    </div>
-                    {mobileBaskets.length > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-black">
-                        {mobileBaskets.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsTelegramModalOpen(true)}
-                    className="w-full text-left px-3 py-2 hover:bg-sky-50 flex items-center justify-between font-medium text-sky-950"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>✈️</span>
-                      <span>Telegram Bot Sozlamalari</span>
-                    </div>
-                    <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded font-bold">Faol</span>
-                  </button>
-                </div>
-
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
                       if (onOpenPrinterSettings) onOpenPrinterSettings();
                     }}
                     className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-medium text-amber-950"
@@ -705,7 +660,11 @@ export default function JetCafePosView({
                   </button>
                   <button
                     type="button"
-                    onClick={onOpenSettings}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
+                      if (onOpenSettings) onOpenSettings();
+                    }}
                     className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
                   >
                     <span>⚙️</span>
@@ -713,7 +672,11 @@ export default function JetCafePosView({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsBackendModalOpen(true)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSettingsMenuOpen(false);
+                      setIsBackendModalOpen(true);
+                    }}
                     className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between font-medium text-slate-700"
                   >
                     <div className="flex items-center gap-2">
@@ -1574,31 +1537,30 @@ export default function JetCafePosView({
         onConfirmCancel={handleConfirmCancel}
       />
 
-      {/* 7. Orders Journal & Reports Modal matching Video 2 (frames 5 & 7) */}
+      {/* 7. Orders Journal & Reports Modal */}
       <JetCafeOrdersJournalModal
         isOpen={isOrdersJournalOpen}
         onClose={() => setIsOrdersJournalOpen(false)}
       />
 
-      {/* 8. JetBot Telegram Integration Modal matching JetCafe Video */}
-      <JetCafeTelegramModal
-        isOpen={isTelegramModalOpen}
-        onClose={() => setIsTelegramModalOpen(false)}
+      {/* 8. Table Selection & Hall Floorplan Modal */}
+      <JetCafeTableModal
+        isOpen={isTableModalOpen}
+        onClose={() => setIsTableModalOpen(false)}
+        tables={tables}
+        halls={halls}
+        currentTableId={currentTable?.id}
+        onSelectTable={(tbl) => {
+          if (onSelectTable) onSelectTable(tbl);
+          setIsTableModalOpen(false);
+        }}
+        onOpenManageTables={onOpenManageTables}
       />
 
       {/* 9. Backend Developer API & Server Modal */}
       <JetCafeBackendModal
         isOpen={isBackendModalOpen}
         onClose={() => setIsBackendModalOpen(false)}
-      />
-
-      {/* 10. Mobil Savatlar Modal (Backend v2.0) */}
-      <JetCafeMobileBasketsModal
-        isOpen={isMobileBasketsModalOpen}
-        onClose={() => setIsMobileBasketsModalOpen(false)}
-        baskets={mobileBaskets}
-        onLoadBasketToCart={handleLoadBasketToCart}
-        onRefresh={loadMobileBaskets}
       />
 
     </div>

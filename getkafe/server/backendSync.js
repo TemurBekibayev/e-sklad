@@ -318,10 +318,16 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
     const returnedTenantId = res.data.tenantId || res.data.user?.tenant_id || cfg.tenant_id;
     const returnedTenantName = res.data.tenantName || res.data.user?.tenant_name || cfg.tenant_name;
 
-    if (token) {
-      await run(`UPDATE backend_config SET auth_token = ?, tenant_id = ?, tenant_name = ? WHERE id = 1`, [
-        token, returnedTenantId, returnedTenantName,
-      ]);
+    const tenantChanged = Boolean(returnedTenantId && cfg.tenant_id && returnedTenantId !== cfg.tenant_id);
+
+    if (tenantChanged) {
+      await switchTenantAndCleanData(returnedTenantId, returnedTenantName, token);
+    } else {
+      if (token) {
+        await run(`UPDATE backend_config SET auth_token = ?, tenant_id = ?, tenant_name = ? WHERE id = 1`, [
+          token, returnedTenantId, returnedTenantName,
+        ]);
+      }
     }
 
     const userData = {
@@ -354,8 +360,62 @@ async function loginLiveUser(userIdOrLogin, passOrPin, customUrl = null, extraLo
       token,
     };
   } else {
-    const msg = res?.data?.error || res?.data?.detail || "Noto'g'ri PIN-kod!";
+    const msg = res?.data?.error || res?.data?.detail || "Noto'g'ri PIN-kod yoki parol!";
     return { success: false, message: msg };
+  }
+}
+
+// Switch tenant & clear previous tenant's private menu/tables/orders
+async function switchTenantAndCleanData(newTenantId, newTenantName, token) {
+  console.log(`[BackendSync] Switching to tenant: ${newTenantName} (${newTenantId}). Resetting local data.`);
+  try {
+    // 1. Clear previous local data
+    await run(`DELETE FROM order_items`);
+    await run(`DELETE FROM orders`);
+    await run(`DELETE FROM payments`);
+    await run(`DELETE FROM fiscal_queue`);
+    await run(`DELETE FROM products`);
+    await run(`DELETE FROM categories`);
+    await run(`DELETE FROM tables`);
+    await run(`DELETE FROM halls`);
+
+    // 2. Update config
+    await run(`
+      UPDATE backend_config 
+      SET tenant_id = ?, tenant_name = ?, auth_token = ?, last_sync_time = CURRENT_TIMESTAMP 
+      WHERE id = 1
+    `, [newTenantId, newTenantName, token || '']);
+
+    // 3. Seed default base categories for a clean cafe
+    await run(`
+      INSERT INTO categories (id, name, slug, icon, order_index) VALUES
+      (1, 'Taomlar', 'taomlar', '🍲', 1),
+      (2, 'Ichimliklar', 'ichimliklar', '🥤', 2),
+      (3, 'Salatlar', 'salatlar', '🥗', 3),
+      (4, 'Shirinliklar', 'shirinliklar', '🍰', 4)
+    `);
+
+    // 4. Seed default halls and tables
+    await run(`
+      INSERT INTO halls (id, name, order_index) VALUES
+      (1, 'Asosiy Zal', 1),
+      (2, 'Zal 1', 2),
+      (3, 'VIP Xona', 3)
+    `);
+
+    for (let i = 1; i <= 10; i++) {
+      const hallName = i <= 6 ? 'Asosiy Zal' : (i <= 8 ? 'Zal 1' : 'VIP Xona');
+      await run(`
+        INSERT INTO tables (number, name, capacity, status, hall)
+        VALUES (?, ?, 4, 'free', ?)
+      `, [i, `STOL - ${i}`, hallName]);
+    }
+
+    // 5. Sync new tenant's data from getpos.uz
+    cachedAuthToken = token;
+    await syncFromBackend();
+  } catch (err) {
+    console.error('[BackendSync] switchTenantAndCleanData error:', err.message);
   }
 }
 
@@ -1393,6 +1453,7 @@ module.exports = {
   isTableRecentlyPrinted,
   pollCloudBillRequests,
   setBroadcastCallback,
+  switchTenantAndCleanData,
   getLastSyncResult: () => lastSyncResult,
 };
 

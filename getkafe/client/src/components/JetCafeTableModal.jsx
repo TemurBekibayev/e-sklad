@@ -42,7 +42,8 @@ export default function JetCafeTableModal({
         {/* Title Bar */}
         <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-3 py-1.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 font-semibold text-slate-700 tracking-wide text-xs">
-            <span className="text-emerald-600 font-bold">jetcafe</span>
+            <span className="font-black text-slate-800">GetPOS</span>
+            <span className="text-amber-600 font-black">Kafe</span>
             <span className="text-slate-400">|</span>
             <span>Stollar (Zallar va o'rindiqlar sxemasi)</span>
           </div>

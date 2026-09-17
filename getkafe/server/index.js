@@ -2107,17 +2107,24 @@ app.put(['/api/orders/:orderId/items/:itemId', '/api/order-items/:itemId'], asyn
   }
 });
 
-// 7.2. Buyurtmalar jurnali (jetcafe | Заказы) - Video 5 & 7 dagi funksiya
+// 7.2. Buyurtmalar jurnali (GetPOS Kafe | Заказы)
 app.get('/api/orders/journal', async (req, res) => {
   try {
-    const orders = await all(`
+    const { dateFrom, dateTo } = req.query;
+    let sql = `
       SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.created_at as paid_at
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
       LEFT JOIN payments p ON o.id = p.order_id
-      ORDER BY o.created_at DESC
-      LIMIT 100
-    `);
+    `;
+    const params = [];
+    if (dateFrom && dateTo) {
+      sql += ` WHERE o.created_at >= ? AND o.created_at <= ?`;
+      params.push(dateFrom.replace('T', ' '), dateTo.replace('T', ' '));
+    }
+    sql += ` ORDER BY o.created_at DESC LIMIT 200`;
+
+    const orders = await all(sql, params);
 
     const orderIds = orders.map((o) => o.id);
     let itemsByOrder = {};
