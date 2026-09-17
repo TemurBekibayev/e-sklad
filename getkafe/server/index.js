@@ -508,11 +508,15 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
       if (t.current_order_id) {
         activeOrder = await get(`SELECT * FROM orders WHERE id = ?`, [t.current_order_id]);
       }
-      if (!activeOrder && t.id) {
+      if (!activeOrder && t.id && t.status !== 'free') {
         activeOrder = await get(
           `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
           [t.id]
         );
+      }
+      if (activeOrder && t.status === 'free') {
+        // If table is free, do not attach old active order
+        activeOrder = null;
       }
       if (activeOrder) {
         items = await all(
@@ -520,7 +524,7 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
           [activeOrder.id]
         );
       }
-      const orderTotal = activeOrder ? Number(activeOrder.total_amount || 0) : Number(t.total_amount || 0);
+      const orderTotal = activeOrder ? Number(activeOrder.total_amount || 0) : 0;
 
       return {
         id: t.id,
@@ -2317,6 +2321,17 @@ app.post('/api/payments', async (req, res) => {
         broadcast('BACKEND_SYNC_COMPLETED', { success: true, transactionId: syncRes.transactionId });
       }
     }).catch((e) => console.warn('[BackendSync] Sale sync warning:', e.message));
+
+    // Also close and free table on Cloud Cafe backend
+    backendSync.pushCloseOrderToCloud({
+      orderId,
+      tableId,
+      tableNumber: updatedTable?.number,
+      paymentMethod,
+      cashAmount,
+      cardAmount,
+      totalAmount: order.total_amount,
+    }).catch((e) => console.warn('[BackendSync] Close cloud order warning:', e.message));
 
     // Avtomatik ravishda termal chek chiqarish (agar sozlangan bo'lsa)
     try {

@@ -792,6 +792,17 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
 
     if (txRes.status === 201 || txRes.status === 200) {
       lastSyncResult.ordersPushed = (lastSyncResult.ordersPushed || 0) + 1;
+      
+      // Also close order and free table on Cloud Cafe endpoint
+      pushCloseOrderToCloud({
+        orderId: order.id,
+        tableId: order.table_id,
+        paymentMethod,
+        cashAmount: cashSum,
+        cardAmount: cardSum,
+        totalAmount: totalSum,
+      }).catch(() => {});
+
       return {
         success: true,
         transactionId: txRes.data?.id,
@@ -804,6 +815,72 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
     console.warn('[BackendSync] pushOrderSale failed, queueing offline:', err.message);
     await queueOrderForSync({ order, items, paymentData });
     return { queued: true, error: err.message };
+  }
+}
+
+// Close order / table on getpos.uz cloud backend
+async function pushCloseOrderToCloud({ orderId, tableId, tableNumber, paymentMethod, cashAmount, cardAmount, totalAmount }) {
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { skipped: true };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false, error: 'No token' };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+
+  try {
+    // 1. If orderId is known, close on Cloud Cafe Order endpoint: POST /api/v1/cafe/orders/{orderId}/pay/
+    if (orderId) {
+      try {
+        const payRes = await makeRequest({
+          url: `${baseUrl}/api/v1/cafe/orders/${orderId}/pay/`,
+          method: 'POST',
+          headers,
+          body: {
+            payment_method: paymentMethod || 'cash',
+            cash_amount: cashAmount || totalAmount || 0,
+            card_amount: cardAmount || 0,
+          },
+          timeoutMs: 4000,
+        });
+        if (payRes && payRes.status >= 200 && payRes.status < 300) {
+          console.log(`[BackendSync] Cloud order ${orderId} successfully marked as PAID on getpos.uz`);
+        }
+      } catch (err) {
+        console.warn(`[BackendSync] Cloud order pay attempt warning:`, err.message);
+      }
+    }
+
+    // 2. Also ensure cloud table is set to 'free' via PATCH /api/v1/cafe/tables/{remote_id}/
+    const localTable = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableId, tableNumber || tableId]);
+    const remoteId = localTable?.remote_id;
+
+    if (remoteId) {
+      try {
+        await makeRequest({
+          url: `${baseUrl}/api/v1/cafe/tables/${remoteId}/`,
+          method: 'PATCH',
+          headers,
+          body: {
+            status: 'free',
+            active_order_id: null,
+            current_waiter: null,
+          },
+          timeoutMs: 4000,
+        });
+        console.log(`[BackendSync] Cloud table ${remoteId} (Stol ${localTable.number}) freed on getpos.uz`);
+      } catch (err) {
+        console.warn(`[BackendSync] Cloud table PATCH warning:`, err.message);
+      }
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.warn('[BackendSync] pushCloseOrderToCloud warning:', err.message);
+    return { success: false, error: err.message };
   }
 }
 
@@ -849,16 +926,12 @@ async function syncToBackend() {
         paymentData: data.paymentData,
       });
 
-      if (res.success) {
-        await run(`
-          UPDATE fiscal_queue 
-          SET status = 'synced', synced_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `, [row.id]);
+      if (res && (res.success || res.transactionId)) {
+        await run(`UPDATE fiscal_queue SET status = 'synced' WHERE id = ?`, [row.id]);
         pushedCount++;
       }
     } catch (e) {
-      console.warn('[BackendSync] Flush single order error:', e.message);
+      console.warn('[BackendSync] Offline order flush error:', e.message);
     }
   }
 
@@ -909,13 +982,14 @@ function setBroadcastCallback(cb) {
 
 // Poll getpos.uz for tables in 'busy' / 'bill_requested' status to sync orders and print kitchen & pre-checks
 async function pollCloudBillRequests() {
-  try {
-    const cfg = await getConfig();
-    if (!cfg.is_external_active || !cfg.api_url) return;
-    const baseUrl = cfg.api_url.replace(/\/+$/, '');
-    const token = await ensureAuthToken();
-    if (!token) return;
+  const cfg = await getConfig();
+  if (!cfg.api_url) return;
 
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return;
+
+  try {
     const res = await makeRequest({
       url: `${baseUrl}/api/v1/cafe/tables/`,
       method: 'GET',
@@ -973,26 +1047,45 @@ async function pollCloudBillRequests() {
 
           if (t.status === 'bill_requested' || t.status === 'busy' || t.active_order) {
             const currentStatus = t.status === 'free' ? 'busy' : t.status;
+            const orderId = t.active_order?.id || t.active_order_id;
+
+            // Check if this order was already PAID locally
+            let localOrder = null;
+            if (orderId) {
+              localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+            }
+            if (!localOrder) {
+              localOrder = await get(
+                `SELECT * FROM orders WHERE table_id = ? ORDER BY id DESC LIMIT 1`,
+                [localTable.id]
+              );
+            }
+
+            // If localTable is already 'free' AND (the order is paid locally OR table was just closed),
+            // do NOT reopen the table as busy/bill_requested! Instead, notify cloud to close it!
+            if (localTable.status === 'free' && (!localOrder || localOrder.status === 'paid')) {
+              // Ensure cloud table also gets closed
+              if (orderId || localTable.remote_id) {
+                pushCloseOrderToCloud({
+                  orderId,
+                  tableId: localTable.id,
+                  tableNumber: localTable.number,
+                }).catch(() => {});
+              }
+              continue;
+            }
+
             if (localTable.status !== currentStatus) {
               await run(`UPDATE tables SET status = ? WHERE id = ?`, [currentStatus, localTable.id]);
               tableChanged = true;
             }
 
             if (t.active_order) {
-              const orderId = t.active_order.id || t.active_order_id;
               const orderTotal = Number(t.active_order.total_amount || t.active_order.subtotal || 0);
               const waiterName = t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant';
 
-              let localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
-              if (!localOrder) {
-                localOrder = await get(
-                  `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`,
-                  [localTable.id]
-                );
-              }
-
               let currentEffectiveOrderId = orderId;
-              if (localOrder) {
+              if (localOrder && localOrder.status !== 'paid') {
                 currentEffectiveOrderId = localOrder.id;
                 await run(
                   `UPDATE orders SET status = ?, total_amount = ?, waiter_name = ? WHERE id = ?`,
@@ -1002,7 +1095,7 @@ async function pollCloudBillRequests() {
                   await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [localOrder.id, localTable.id]);
                   tableChanged = true;
                 }
-              } else {
+              } else if (!localOrder || localOrder.status !== 'paid') {
                 const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
                 currentEffectiveOrderId = newOrderId;
                 await run(

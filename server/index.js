@@ -21,6 +21,7 @@ const printerService = require('./printer');
 const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = printerService;
 const telegram = require('./telegram');
 const backendSync = require('./backendSync');
+const imageHelper = require('./imageHelper');
 
 const app = express();
 app.use(cors());
@@ -34,10 +35,24 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// Mobile API v2.0 compatibility: rewrite /api/v1/... to /api/...
+// Mobile API v2.0 & Cloud First compatibility: rewrite /api/v1/... and root endpoints to /api/...
 app.use((req, res, next) => {
-  if (req.url.startsWith('/api/v1/')) {
+  if (req.url.startsWith('/api/v1/cafe/')) {
+    req.url = req.url.replace('/api/v1/cafe/', '/api/');
+  } else if (req.url.startsWith('/api/v1/products/')) {
+    req.url = req.url.replace('/api/v1/products/', '/api/products/');
+  } else if (req.url.startsWith('/api/v1/auth/')) {
+    req.url = req.url.replace('/api/v1/auth/', '/api/auth/');
+  } else if (req.url.startsWith('/api/v1/')) {
     req.url = req.url.replace('/api/v1/', '/api/');
+  } else if (req.url === '/tables' || req.url.startsWith('/tables?')) {
+    req.url = req.url.replace('/tables', '/api/tables');
+  } else if (req.url === '/halls' || req.url.startsWith('/halls?')) {
+    req.url = req.url.replace('/halls', '/api/halls');
+  } else if (req.url === '/orders' || req.url.startsWith('/orders?')) {
+    req.url = req.url.replace('/orders', '/api/orders');
+  } else if (req.url === '/products' || req.url.startsWith('/products?')) {
+    req.url = req.url.replace('/products', '/api/products');
   }
   next();
 });
@@ -55,10 +70,16 @@ function broadcast(event, data) {
   const payload = JSON.stringify({ event, data, timestamp: Date.now() });
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      try {
+        client.send(payload);
+      } catch (err) {
+        console.error('[WS Broadcast] Send error:', err.message);
+      }
     }
   });
 }
+
+backendSync.setBroadcastCallback(broadcast);
 
 wss.on('connection', (ws) => {
   // Yangi ulanuvchiga darhol hozirgi holatni yuborish
@@ -108,11 +129,21 @@ function getLocalIp() {
 }
 
 // Mobil ilovalar va veb-kassa uchun rasm URL-manzilini to'liq formatlash
-function resolveImageUrl(req, img) {
+function resolveImageUrl(req, img, id) {
   if (!img) return '';
-  if (img.startsWith('http://') || img.startsWith('https://')) return img;
   const host = (req && req.get && req.get('host')) || `${getLocalIp()}:4000`;
   const protocol = (req && req.protocol) || 'http';
+
+  // If local file exists in server/uploads, serve it directly over local Wi-Fi
+  if (id && (img.startsWith('http://') || img.startsWith('https://'))) {
+    const filename = imageHelper.getFilenameForUrl(img, id);
+    const filePath = path.join(uploadsDir, filename);
+    if (fs.existsSync(filePath)) {
+      return `${protocol}://${host}/uploads/${filename}`;
+    }
+  }
+
+  if (img.startsWith('http://') || img.startsWith('https://')) return img;
   const clean = img.startsWith('/') ? img : `/${img}`;
   return `${protocol}://${host}${clean}`;
 }
@@ -275,36 +306,47 @@ app.post('/api/config/backend/tenant', async (req, res) => {
 app.get('/api/auth/users', async (req, res) => {
   try {
     const cfg = await backendSync.getConfig();
-    const tenantId = req.query.tenantId || cfg.tenant_id || '90e04abf-246d-4683-91eb-1ac34d7b2ee7';
+    const tenantId = req.query.tenantId || cfg.tenant_id || '';
 
-    // 1. Fetch live staff from getpos.uz and merge into local SQLite if missing
-    try {
-      const staffRes = await backendSync.fetchStaffForTenant(tenantId);
-      if (staffRes.users && staffRes.users.length > 0) {
-        for (const u of staffRes.users) {
-          const uCode = u.id || u.user_code;
-          const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
-          const localExists = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [uCode, u.name]);
-          if (!localExists) {
-            await run(
-              `INSERT INTO users (name, role, pin, phone, status, is_shift_open, user_code, tenant_id)
-               VALUES (?, ?, ?, ?, 'active', 1, ?, ?)`,
-              [u.name, mappedRole, u.pin || '1111', u.phone || '', uCode, tenantId]
-            );
+    // 1. Fetch live staff from getpos.uz if tenantId is configured
+    if (tenantId) {
+      try {
+        const staffRes = await backendSync.fetchStaffForTenant(tenantId);
+        if (staffRes.users && staffRes.users.length > 0) {
+          for (const u of staffRes.users) {
+            const uCode = u.id || u.user_code;
+            const mappedRole = (u.role === 'manager' || u.role === 'admin') ? 'admin' : (u.role === 'worker' || u.role === 'waiter' ? 'waiter' : u.role);
+            const localExists = await get(`SELECT id FROM users WHERE user_code = ? OR name = ?`, [uCode, u.name]);
+            if (!localExists) {
+              await run(
+                `INSERT INTO users (name, role, pin, phone, status, is_shift_open, user_code, tenant_id)
+                 VALUES (?, ?, ?, ?, 'active', 1, ?, ?)`,
+                [u.name, mappedRole, u.pin || '1111', u.phone || '', uCode, tenantId]
+              );
+            }
           }
         }
+      } catch (e) {
+        console.warn('[Users] Live fetchStaffForTenant sync error:', e.message);
       }
-    } catch (e) {
-      console.warn('[Users] Live fetchStaffForTenant sync error:', e.message);
     }
 
     // 2. Return all local active users belonging to this tenant
-    const users = await all(
-      `SELECT id, user_code, name, role, status, tenant_id FROM users 
-       WHERE (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND (status = 'active' OR status IS NULL)
-       ORDER BY id ASC`,
-      [tenantId]
-    );
+    let users = [];
+    if (tenantId) {
+      users = await all(
+        `SELECT id, user_code, name, role, status, tenant_id FROM users 
+         WHERE (tenant_id = ? OR tenant_id IS NULL OR tenant_id = '') AND (status = 'active' OR status IS NULL)
+         ORDER BY id ASC`,
+        [tenantId]
+      );
+    } else {
+      users = await all(
+        `SELECT id, user_code, name, role, status, tenant_id FROM users 
+         WHERE status = 'active' OR status IS NULL
+         ORDER BY id ASC`
+      );
+    }
 
     const formatted = users.map((u) => ({
       id: u.user_code || `usr_${u.id}`,
@@ -466,11 +508,15 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
       if (t.current_order_id) {
         activeOrder = await get(`SELECT * FROM orders WHERE id = ?`, [t.current_order_id]);
       }
-      if (!activeOrder && t.id) {
+      if (!activeOrder && t.id && t.status !== 'free') {
         activeOrder = await get(
-          `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
+          `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY created_at DESC LIMIT 1`,
           [t.id]
         );
+      }
+      if (activeOrder && t.status === 'free') {
+        // If table is free, do not attach old active order
+        activeOrder = null;
       }
       if (activeOrder) {
         items = await all(
@@ -478,10 +524,12 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
           [activeOrder.id]
         );
       }
-      const orderTotal = activeOrder ? Number(activeOrder.total_amount || 0) : Number(t.total_amount || 0);
+      const orderTotal = activeOrder ? Number(activeOrder.total_amount || 0) : 0;
 
       return {
         id: t.id,
+        remote_id: t.remote_id || null,
+        remoteId: t.remote_id || null,
         number: t.number,
         name: t.name || `STOL - ${t.number}`,
         hall: t.hall || 'Asosiy Zal',
@@ -827,7 +875,7 @@ app.get(['/api/menu', '/menu', '/api/products', '/products'], async (req, res) =
       product_type: p.product_type || 'Товар',
       category: categoryMap[p.category_id] || 'Boshqa',
       category_id: p.category_id,
-      image: resolveImageUrl(req, p.image),
+      image: resolveImageUrl(req, p.image, p.id),
       image_path: p.image || '',
       mxik_code: p.mxik_code || '10701001001000000',
       package_code: p.package_code || '796',
@@ -985,6 +1033,10 @@ app.post('/api/products', async (req, res) => {
     }
     broadcast('PRODUCT_ADDED', newProduct);
     broadcast('PRODUCTS_UPDATED', {});
+
+    // Asynchronously push to Central Backend (getpos.uz)
+    backendSync.pushProductToCloud(newProduct).catch((e) => console.warn('[Product] Backend push warning:', e.message));
+
     res.json({ success: true, product: newProduct });
   } catch (err) {
     console.error('Add product error:', err);
@@ -1037,6 +1089,10 @@ app.put('/api/products/:id', async (req, res) => {
       updated.image = resolveImageUrl(req, updated.image);
     }
     broadcast('PRODUCT_UPDATED', updated);
+
+    // Asynchronously push update to Central Backend (getpos.uz)
+    backendSync.pushProductToCloud(updated).catch((e) => console.warn('[Product] Backend update warning:', e.message));
+
     res.json({ success: true, product: updated });
   } catch (err) {
     console.error('Update product error:', err);
@@ -1050,21 +1106,21 @@ app.delete(['/api/products/:id', '/products/:id'], async (req, res) => {
     const { id } = req.params;
     const numericId = parseInt(String(id).replace(/\D/g, ''), 10);
     const targetId = !isNaN(numericId) && numericId > 0 ? numericId : id;
-    const strProdId = `prod_${targetId}`;
 
-    // 1. stock_movements jadvalidan tegishli qoldiq yozuvlarini o'chirish
-    try {
-      await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ? OR product_id = ?`, [targetId, id, strProdId]);
-    } catch (smErr) {
-      console.warn('Stock movements delete warning:', smErr.message);
-    }
+    // 0. Avval mahsulotni bazadan topamiz (remote_id uchun)
+    const existing = await get(`SELECT * FROM products WHERE id = ? OR id = ?`, [targetId, id]);
 
-    // 2. Mahsulotni o'chirish (Hard delete, agar cheklov bo'lsa Soft delete is_available = 0)
-    try {
-      await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
-    } catch (dbErr) {
-      console.warn('Hard delete failed, fallback to soft delete:', dbErr.message);
-      await run(`UPDATE products SET is_available = 0 WHERE id = ? OR id = ?`, [targetId, id]);
+    // 1. Foreign Key cheklovlarini tozalash (stock_movements jadvalidan tozalash)
+    await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ?`, [targetId, id]);
+
+    // 2. Mahsulotni lokal bazadan o'chirish
+    await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
+
+    // 3. Agar bulutda remote_id mavjud bo'lsa, getpos.uz serveridan ham butunlay o'chiramiz
+    if (existing && existing.remote_id) {
+      await backendSync.deleteProductFromCloud(existing.remote_id).catch((e) => {
+        console.warn('[Product] Cloud delete warning:', e.message);
+      });
     }
 
     broadcast('PRODUCT_DELETED', { id: targetId, rawId: targetId });
@@ -1182,7 +1238,6 @@ app.get('/api/inventory', async (req, res) => {
       SELECT p.*, c.name as category_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.is_available = 1
       ORDER BY p.name ASC
     `);
 
@@ -1683,6 +1738,16 @@ app.post([
     broadcast('TABLE_UPDATED', updatedTable);
     if (ticket) broadcast('KITCHEN_NEW_TICKET', ticket);
 
+    // Real-time Push Active Order to Cloud (https://getpos.uz)
+    backendSync.pushActiveOrderToCloud({
+      tableId: table.id,
+      tableName: table.name,
+      waiterName: body.waiterName || body.waiter_name || 'Ofitsiant',
+      items: rawItems,
+      guestCount: body.guestCount || body.guests_count || 2,
+      orderId: targetOrderId,
+    }).catch(e => console.warn('[BackendSync] Background active order push error:', e.message));
+
     const fullOrder = {
       id: targetOrderId,
       order_id: targetOrderId,
@@ -1717,34 +1782,136 @@ app.post([
 });
 
 // 7. Ofitsiant "Hisob so'raldi" tugmasini bosishi (POST /api/orders/:id/bill-request)
-app.post('/api/orders/:id/bill-request', async (req, res) => {
+app.post(['/api/orders/:id/bill-request', '/api/orders/bill-request'], async (req, res) => {
   try {
     const { id } = req.params;
-    const order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
-    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+    const bodyOrderId = req.body.orderId;
+    const searchId = id || bodyOrderId;
 
-    // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
-    await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [id]);
-    await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
+    let order = null;
+    if (searchId) {
+      order = await get(`SELECT * FROM orders WHERE id = ?`, [searchId]);
+      if (!order) {
+        order = await get(
+          `SELECT * FROM orders WHERE table_id = ? OR table_id = (SELECT id FROM tables WHERE number = ?) ORDER BY id DESC LIMIT 1`,
+          [searchId, searchId]
+        );
+      }
+    }
 
-    const updatedTable = await get(`
+    const tableId = order ? order.table_id : (req.body.tableId || req.body.tableNumber || searchId);
+    let updatedTable = null;
+
+    if (order) {
+      // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
+      await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [order.id]);
+      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
+      backendSync.pushBillRequestToCloud(order.id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
+
+      updatedTable = await get(`
+        SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+        FROM tables t
+        LEFT JOIN orders o ON t.current_order_id = o.id
+        WHERE t.id = ?
+      `, [order.table_id]);
+    } else if (tableId) {
+      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ? OR number = ?`, [tableId, tableId]);
+      updatedTable = await get(`SELECT * FROM tables WHERE id = ? OR number = ? LIMIT 1`, [tableId, tableId]);
+    }
+
+    if (updatedTable) {
+      broadcast('TABLE_UPDATED', updatedTable);
+      broadcast('BILL_REQUESTED', { tableId: updatedTable.id, tableNumber: updatedTable.number });
+      telegram.notifyBillRequested({
+        tableTitle: updatedTable?.name || `${updatedTable?.number}-stol`,
+        waiterName: updatedTable?.waiter_name || req.body.waiterName || order?.waiter_name || 'Ofitsiant',
+        totalAmount: updatedTable?.total_amount || req.body.totalAmount || order?.total_amount || 0,
+      }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
+    }
+
+    // Pre-chekni avtomatik termal printerga chiqarish
+    try {
+      let activeItems = [];
+      if (order) {
+        activeItems = await all(
+          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+          [order.id]
+        );
+      }
+      if ((!activeItems || activeItems.length === 0) && Array.isArray(req.body.items) && req.body.items.length > 0) {
+        activeItems = req.body.items;
+      }
+
+      const subtotal = req.body.subtotal !== undefined
+        ? Number(req.body.subtotal)
+        : activeItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice || 0) * Number(item.quantity || 1)), 0);
+      const servicePercent = 10;
+      const serviceFee = req.body.serviceFee !== undefined ? Number(req.body.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+      const totalAmount = req.body.totalAmount !== undefined ? Number(req.body.totalAmount) : (subtotal + serviceFee);
+
+      const printRes = await printerService.printPrecheckReceipt({
+        orderId: (order && order.id) || searchId || 'ord_1',
+        tableNumber: updatedTable ? updatedTable.number : (req.body.tableNumber || tableId || '1'),
+        waiterName: req.body.waiterName || updatedTable?.waiter_name || order?.waiter_name || 'Ofitsiant',
+        items: activeItems,
+        subtotal,
+        serviceFeePercent: servicePercent,
+        serviceFee,
+        totalAmount,
+      });
+      console.log('[Bill-Request] Pre-chek chop etish natijasi:', printRes);
+    } catch (printErr) {
+      console.error('[Bill-Request] Pre-chek chop etishda xatolik:', printErr.message);
+    }
+
+    res.json({ success: true, table: updatedTable });
+  } catch (err) {
+    console.error('[Bill-Request] Xatolik:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7.01. Hisob so'rovini bekor qilish / Buyurtmani qayta ochish (POST /api/orders/:id/reopen)
+app.post(['/api/orders/:id/reopen', '/api/tables/:id/reopen'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    let order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
+    let table = null;
+
+    if (order) {
+      table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+    } else {
+      table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [id, id]);
+      if (table && table.current_order_id) {
+        order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
+      }
+      if (!order && table) {
+        order = await get(`SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`, [table.id]);
+      }
+    }
+
+    if (order) {
+      await run(`UPDATE orders SET status = 'open', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [order.id]);
+    }
+    if (table) {
+      await run(`UPDATE tables SET status = 'busy', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [table.id]);
+    }
+
+    const updatedTable = table ? await get(`
       SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
       FROM tables t
       LEFT JOIN orders o ON t.current_order_id = o.id
       WHERE t.id = ?
-    `, [order.table_id]);
+    `, [table.id]) : null;
 
-    broadcast('TABLE_UPDATED', updatedTable);
-    broadcast('BILL_REQUESTED', { tableId: order.table_id, tableNumber: updatedTable.number });
+    if (updatedTable) {
+      broadcast('TABLE_UPDATED', updatedTable);
+      broadcast('TABLES_UPDATED', {});
+    }
 
-    telegram.notifyBillRequested({
-      tableTitle: updatedTable?.name || `${updatedTable?.number}-stol`,
-      waiterName: updatedTable?.waiter_name || order.waiter_name || 'Ofitsiant',
-      totalAmount: updatedTable?.total_amount || order.total_amount || 0,
-    }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
-
-    res.json({ success: true, table: updatedTable });
+    res.json({ success: true, message: "Stol band holatiga qaytarildi", table: updatedTable });
   } catch (err) {
+    console.error('[Reopen Order] Xatolik:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -2007,17 +2174,24 @@ app.put(['/api/orders/:orderId/items/:itemId', '/api/order-items/:itemId'], asyn
   }
 });
 
-// 7.2. Buyurtmalar jurnali (jetcafe | Заказы) - Video 5 & 7 dagi funksiya
+// 7.2. Buyurtmalar jurnali (GetPOS Kafe | Заказы)
 app.get('/api/orders/journal', async (req, res) => {
   try {
-    const orders = await all(`
+    const { dateFrom, dateTo } = req.query;
+    let sql = `
       SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.created_at as paid_at
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
       LEFT JOIN payments p ON o.id = p.order_id
-      ORDER BY o.created_at DESC
-      LIMIT 100
-    `);
+    `;
+    const params = [];
+    if (dateFrom && dateTo) {
+      sql += ` WHERE o.created_at >= ? AND o.created_at <= ?`;
+      params.push(dateFrom.replace('T', ' '), dateTo.replace('T', ' '));
+    }
+    sql += ` ORDER BY o.created_at DESC LIMIT 200`;
+
+    const orders = await all(sql, params);
 
     const orderIds = orders.map((o) => o.id);
     let itemsByOrder = {};
@@ -2148,6 +2322,17 @@ app.post('/api/payments', async (req, res) => {
       }
     }).catch((e) => console.warn('[BackendSync] Sale sync warning:', e.message));
 
+    // Also close and free table on Cloud Cafe backend
+    backendSync.pushCloseOrderToCloud({
+      orderId,
+      tableId,
+      tableNumber: updatedTable?.number,
+      paymentMethod,
+      cashAmount,
+      cardAmount,
+      totalAmount: order.total_amount,
+    }).catch((e) => console.warn('[BackendSync] Close cloud order warning:', e.message));
+
     // Avtomatik ravishda termal chek chiqarish (agar sozlangan bo'lsa)
     try {
       const pSettings = await printerService.getPrinterSettings();
@@ -2233,6 +2418,46 @@ app.post('/api/printers/print-receipt', async (req, res) => {
     res.json(result);
   } catch (err) {
     console.error('[Printer API] printReceipt error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Pre-chek (Hisob-kitob / Pre-bill) chop etish
+app.post(['/api/printers/print-precheck', '/api/orders/:id/print-precheck'], async (req, res) => {
+  try {
+    let payload = { ...req.body };
+    const orderId = req.params.id || req.body.orderId;
+    if (orderId && (!payload.items || payload.items.length === 0)) {
+      const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+      if (order) {
+        const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+        const items = await all(
+          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+          [orderId]
+        );
+        const subtotal = items.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+        const servicePercent = 10;
+        const serviceFee = Math.round((subtotal * servicePercent) / 100);
+        const totalAmount = subtotal + serviceFee;
+
+        payload = {
+          orderId,
+          tableNumber: table ? table.number : order.table_id,
+          waiterName: table?.waiter_name || order.waiter_name || 'Ofitsiant',
+          items,
+          subtotal,
+          serviceFeePercent: servicePercent,
+          serviceFee,
+          totalAmount,
+          ...req.body,
+        };
+      }
+    }
+
+    const result = await printerService.printPrecheckReceipt(payload);
+    res.json(result);
+  } catch (err) {
+    console.error('[Printer API] printPrecheck error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

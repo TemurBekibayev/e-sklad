@@ -553,36 +553,54 @@ async function syncFromBackend() {
       }
     }
 
-    // 2. SYNC PRODUCTS (GET /api/products/?tenantId=...)
+    // 2. SYNC PRODUCTS (GET /api/v1/products/?page_size=200)
     const token = await ensureAuthToken();
     const productHeaders = {};
     if (token) productHeaders['Authorization'] = `Bearer ${token}`;
 
-    const prodsRes = await makeRequest({
-      url: `${baseUrl}/api/products/?tenantId=${tenantId}`,
+    let prodsRes = await makeRequest({
+      url: `${baseUrl}/api/v1/products/?page_size=200`,
       method: 'GET',
       headers: productHeaders,
     });
 
-    if (prodsRes.status === 200) {
+    if (!prodsRes || prodsRes.status !== 200 || !prodsRes.data) {
+      prodsRes = await makeRequest({
+        url: `${baseUrl}/api/products/?tenantId=${tenantId}`,
+        method: 'GET',
+        headers: productHeaders,
+      });
+    }
+
+    if (prodsRes && prodsRes.status === 200) {
       const prodList = prodsRes.data?.results || (Array.isArray(prodsRes.data) ? prodsRes.data : []);
 
       if (prodList.length > 0) {
-        // Ensure a "Do'kon tovarlari / Bar" category exists
-        let storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
-        if (!storeCat) {
-          await run(`
-            INSERT INTO categories (name, slug, icon, order_index)
-            VALUES ('BAR VA ICHIMLIKLAR', 'store_goods', '🥤', 7)
-          `);
-          storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
+        // Fetch all categories
+        const allCats = await all(`SELECT id, name, slug FROM categories`);
+        const catMap = {};
+        for (const c of allCats) {
+          catMap[c.slug || c.id] = c.id;
         }
-        const catId = storeCat?.id || 7;
 
         for (const p of prodList) {
           const rawPrice = p.price_per_sale_unit || p.price || 0;
           const priceNum = Math.round(parseFloat(rawPrice)) || 0;
           const barcodeVal = p.barcode || p.qr_code || null;
+          const pNameLower = (p.name || '').toLowerCase();
+
+          // Determine category
+          let targetCatId = catMap['taomlar'] || 1;
+          if (/\b(choy|kofe|coffee|qahva|cola|fanta|pepsi|sharbat|suv|water|sok|sprite|redbull|limonad|ayron|kompot|bar|ichimlik)\b/i.test(pNameLower) || /ichimlik|pepsi|coca-cola|fanta|mineral/.test(pNameLower)) {
+            // Prevent food with 'choyxona' in name from being categorized as drinks
+            if (!/oshi|palov|kabob|manti|lagmon|shashlik|somsa|sho'rva|lavash|burger/.test(pNameLower)) {
+              targetCatId = catMap['ichimliklar'] || 2;
+            }
+          } else if (/salat|chuchuk|bahor|suzma|achchiq|olivye|sezar|grek/.test(pNameLower)) {
+            targetCatId = catMap['salatlar'] || 3;
+          } else if (/shirinlik|tort|cake|pirojnoe|desert|muzqaymoq|pahlava|cheesecake|medovik/.test(pNameLower)) {
+            targetCatId = catMap['shirinliklar'] || 4;
+          }
 
           // Check if product exists by remote_id or name
           const existingProd = await get(
@@ -599,8 +617,8 @@ async function syncFromBackend() {
           } else {
             await run(`
               INSERT INTO products (category_id, name, price, cost_price, workshop, product_type, mxik_code, package_code, vat_percent, is_available, remote_id, barcode)
-              VALUES (?, ?, ?, ?, 'Бар', 'Товар', '10702002001000000', '796', 12, 1, ?, ?)
-            `, [catId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
+              VALUES (?, ?, ?, ?, 'Oshxona', 'Taom', '10702002001000000', '796', 12, 1, ?, ?)
+            `, [targetCatId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
           }
           productsSynced++;
         }
@@ -774,6 +792,17 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
 
     if (txRes.status === 201 || txRes.status === 200) {
       lastSyncResult.ordersPushed = (lastSyncResult.ordersPushed || 0) + 1;
+      
+      // Also close order and free table on Cloud Cafe endpoint
+      pushCloseOrderToCloud({
+        orderId: order.id,
+        tableId: order.table_id,
+        paymentMethod,
+        cashAmount: cashSum,
+        cardAmount: cardSum,
+        totalAmount: totalSum,
+      }).catch(() => {});
+
       return {
         success: true,
         transactionId: txRes.data?.id,
@@ -786,6 +815,72 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
     console.warn('[BackendSync] pushOrderSale failed, queueing offline:', err.message);
     await queueOrderForSync({ order, items, paymentData });
     return { queued: true, error: err.message };
+  }
+}
+
+// Close order / table on getpos.uz cloud backend
+async function pushCloseOrderToCloud({ orderId, tableId, tableNumber, paymentMethod, cashAmount, cardAmount, totalAmount }) {
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { skipped: true };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return { success: false, error: 'No token' };
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  };
+
+  try {
+    // 1. If orderId is known, close on Cloud Cafe Order endpoint: POST /api/v1/cafe/orders/{orderId}/pay/
+    if (orderId) {
+      try {
+        const payRes = await makeRequest({
+          url: `${baseUrl}/api/v1/cafe/orders/${orderId}/pay/`,
+          method: 'POST',
+          headers,
+          body: {
+            payment_method: paymentMethod || 'cash',
+            cash_amount: cashAmount || totalAmount || 0,
+            card_amount: cardAmount || 0,
+          },
+          timeoutMs: 4000,
+        });
+        if (payRes && payRes.status >= 200 && payRes.status < 300) {
+          console.log(`[BackendSync] Cloud order ${orderId} successfully marked as PAID on getpos.uz`);
+        }
+      } catch (err) {
+        console.warn(`[BackendSync] Cloud order pay attempt warning:`, err.message);
+      }
+    }
+
+    // 2. Also ensure cloud table is set to 'free' via PATCH /api/v1/cafe/tables/{remote_id}/
+    const localTable = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableId, tableNumber || tableId]);
+    const remoteId = localTable?.remote_id;
+
+    if (remoteId) {
+      try {
+        await makeRequest({
+          url: `${baseUrl}/api/v1/cafe/tables/${remoteId}/`,
+          method: 'PATCH',
+          headers,
+          body: {
+            status: 'free',
+            active_order_id: null,
+            current_waiter: null,
+          },
+          timeoutMs: 4000,
+        });
+        console.log(`[BackendSync] Cloud table ${remoteId} (Stol ${localTable.number}) freed on getpos.uz`);
+      } catch (err) {
+        console.warn(`[BackendSync] Cloud table PATCH warning:`, err.message);
+      }
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.warn('[BackendSync] pushCloseOrderToCloud warning:', err.message);
+    return { success: false, error: err.message };
   }
 }
 
@@ -831,16 +926,12 @@ async function syncToBackend() {
         paymentData: data.paymentData,
       });
 
-      if (res.success) {
-        await run(`
-          UPDATE fiscal_queue 
-          SET status = 'synced', synced_at = CURRENT_TIMESTAMP 
-          WHERE id = ?
-        `, [row.id]);
+      if (res && (res.success || res.transactionId)) {
+        await run(`UPDATE fiscal_queue SET status = 'synced' WHERE id = ?`, [row.id]);
         pushedCount++;
       }
     } catch (e) {
-      console.warn('[BackendSync] Flush single order error:', e.message);
+      console.warn('[BackendSync] Offline order flush error:', e.message);
     }
   }
 
@@ -891,13 +982,14 @@ function setBroadcastCallback(cb) {
 
 // Poll getpos.uz for tables in 'busy' / 'bill_requested' status to sync orders and print kitchen & pre-checks
 async function pollCloudBillRequests() {
-  try {
-    const cfg = await getConfig();
-    if (!cfg.is_external_active || !cfg.api_url) return;
-    const baseUrl = cfg.api_url.replace(/\/+$/, '');
-    const token = await ensureAuthToken();
-    if (!token) return;
+  const cfg = await getConfig();
+  if (!cfg.api_url) return;
 
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  if (!token) return;
+
+  try {
     const res = await makeRequest({
       url: `${baseUrl}/api/v1/cafe/tables/`,
       method: 'GET',
@@ -908,7 +1000,8 @@ async function pollCloudBillRequests() {
     if (res.status === 200 && res.data) {
       const tables = res.data.results || (Array.isArray(res.data) ? res.data : []);
       
-      // If server just started, populate locally known items from SQLite so we only print genuinely new waiter orders
+      // Dastur yangi yoqilganda (startup) bulutdagi barcha eski buyurtma va pre-cheklarni xotiraga yozib olamiz
+      // Bu server har safar o'chib yonganda eski cheklarni qayta chop etib qog'oz isrof qilishining oldini oladi!
       if (isInitialCloudScan) {
         isInitialCloudScan = false;
         try {
@@ -917,8 +1010,29 @@ async function pollCloudBillRequests() {
             lastPrintedCloudKitchenItems.add(`${row.order_id}_${row.product_name}_${row.quantity}`);
             lastPrintedCloudKitchenItems.add(String(row.product_name));
           }
+          for (const t of tables) {
+            const tableNum = String(t.number || t.name || t.id);
+            if (t.active_order) {
+              const orderId = t.active_order.id || t.active_order_id;
+              const updatedTime = t.active_order.updated_at || t.active_order.created_at || 'startup';
+              if (orderId) {
+                lastPrintedCloudOrders.add(`${orderId}_${updatedTime}`);
+                lastPrintedCloudOrders.add(String(orderId));
+                markTablePrintedLocally(tableNum, orderId);
+              }
+              const cloudItems = t.active_order.items || [];
+              for (const ci of cloudItems) {
+                const ciName = ci.product_name || ci.name || 'Taom';
+                const ciQty = Number(ci.quantity || 1);
+                const ciItemId = ci.id || `${orderId}_${ciName}_${ciQty}`;
+                lastPrintedCloudKitchenItems.add(String(ciItemId));
+                lastPrintedCloudKitchenItems.add(`${ciItemId}_diff_${ciQty}`);
+                lastPrintedCloudKitchenItems.add(`${orderId}_${ciName}_${ciQty}`);
+              }
+            }
+          }
         } catch (e) {}
-        console.log(`[BackendSync] Dastlabki bulut skaneri tayyorlandi (${tables.length} ta stol)`);
+        console.log(`[BackendSync] Dastlabki skaner tayyorlandi (${tables.length} ta stol). Eski cheklar avtomatik bloklandi.`);
       }
 
       for (const t of tables) {
@@ -933,26 +1047,45 @@ async function pollCloudBillRequests() {
 
           if (t.status === 'bill_requested' || t.status === 'busy' || t.active_order) {
             const currentStatus = t.status === 'free' ? 'busy' : t.status;
+            const orderId = t.active_order?.id || t.active_order_id;
+
+            // Check if this order was already PAID locally
+            let localOrder = null;
+            if (orderId) {
+              localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+            }
+            if (!localOrder) {
+              localOrder = await get(
+                `SELECT * FROM orders WHERE table_id = ? ORDER BY id DESC LIMIT 1`,
+                [localTable.id]
+              );
+            }
+
+            // If localTable is already 'free' AND (the order is paid locally OR table was just closed),
+            // do NOT reopen the table as busy/bill_requested! Instead, notify cloud to close it!
+            if (localTable.status === 'free' && (!localOrder || localOrder.status === 'paid')) {
+              // Ensure cloud table also gets closed
+              if (orderId || localTable.remote_id) {
+                pushCloseOrderToCloud({
+                  orderId,
+                  tableId: localTable.id,
+                  tableNumber: localTable.number,
+                }).catch(() => {});
+              }
+              continue;
+            }
+
             if (localTable.status !== currentStatus) {
               await run(`UPDATE tables SET status = ? WHERE id = ?`, [currentStatus, localTable.id]);
               tableChanged = true;
             }
 
             if (t.active_order) {
-              const orderId = t.active_order.id || t.active_order_id;
               const orderTotal = Number(t.active_order.total_amount || t.active_order.subtotal || 0);
               const waiterName = t.current_waiter_name || t.active_order.waiter_name || 'Ofitsiant';
 
-              let localOrder = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
-              if (!localOrder) {
-                localOrder = await get(
-                  `SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`,
-                  [localTable.id]
-                );
-              }
-
               let currentEffectiveOrderId = orderId;
-              if (localOrder) {
+              if (localOrder && localOrder.status !== 'paid') {
                 currentEffectiveOrderId = localOrder.id;
                 await run(
                   `UPDATE orders SET status = ?, total_amount = ?, waiter_name = ? WHERE id = ?`,
@@ -962,7 +1095,7 @@ async function pollCloudBillRequests() {
                   await run(`UPDATE tables SET current_order_id = ? WHERE id = ?`, [localOrder.id, localTable.id]);
                   tableChanged = true;
                 }
-              } else {
+              } else if (!localOrder || localOrder.status !== 'paid') {
                 const newOrderId = orderId || `ord_${localTable.id}_${Date.now()}`;
                 currentEffectiveOrderId = newOrderId;
                 await run(
@@ -1059,8 +1192,9 @@ async function pollCloudBillRequests() {
                 const updatedTime = t.active_order.updated_at || t.active_order.created_at || Date.now();
                 const printKey = `${orderId}_${updatedTime}`;
 
-                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey)) {
+                if (!isTableRecentlyPrinted(tableNum, orderId) && !lastPrintedCloudOrders.has(printKey) && !lastPrintedCloudOrders.has(String(orderId))) {
                   lastPrintedCloudOrders.add(printKey);
+                  lastPrintedCloudOrders.add(String(orderId));
                   markTablePrintedLocally(tableNum, orderId);
                   if (lastPrintedCloudOrders.size > 200) {
                     const firstKey = lastPrintedCloudOrders.values().next().value;
@@ -1444,6 +1578,88 @@ async function pushCloseOrderToCloud({ orderId, tableId, paymentMethod, totalAmo
   }
 }
 
+// Delete product from Central Backend (getpos.uz)
+async function deleteProductFromCloud(remoteId) {
+  if (!remoteId) return { success: false, error: 'No remoteId' };
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { success: false, error: 'No backend URL' };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+
+  try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/products/${remoteId}/`,
+      method: 'DELETE',
+      headers,
+      timeoutMs: 6000,
+    });
+
+    console.log(`[BackendSync] Cloud delete product ${remoteId}: status ${res.status}`);
+    return { success: res.status >= 200 && res.status < 300 };
+  } catch (err) {
+    console.warn('[BackendSync] deleteProductFromCloud error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Push newly created or updated product to Central Backend (getpos.uz)
+async function pushProductToCloud(product) {
+  const cfg = await getConfig();
+  if (!cfg.api_url) return { success: false, error: 'No backend URL' };
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const tenantId = cfg.tenant_id;
+  const token = await ensureAuthToken();
+
+  const payload = {
+    tenant_id: tenantId,
+    tenant: tenantId,
+    name: product.name,
+    price_per_sale_unit: String(product.price || 0),
+    barcode: product.barcode || null,
+    is_active: product.is_available !== false && product.is_available !== 0,
+  };
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let res = null;
+    if (product.remote_id) {
+      res = await makeRequest({
+        url: `${baseUrl}/api/v1/products/${product.remote_id}/`,
+        method: 'PATCH',
+        headers,
+        body: payload,
+        timeoutMs: 6000,
+      });
+    }
+
+    if (!res || res.status >= 400) {
+      res = await makeRequest({
+        url: `${baseUrl}/api/v1/products/`,
+        method: 'POST',
+        headers,
+        body: payload,
+        timeoutMs: 6000,
+      });
+    }
+
+    if (res && res.status >= 200 && res.status < 300 && res.data) {
+      const returnedId = res.data.id;
+      if (returnedId && product.id) {
+        await run(`UPDATE products SET remote_id = ? WHERE id = ?`, [returnedId, product.id]);
+      }
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res?.data || `Status ${res?.status}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -1459,6 +1675,8 @@ module.exports = {
   pushCloseOrderToCloud,
   pushStaffMember,
   deleteStaffMember,
+  deleteProductFromCloud,
+  pushProductToCloud,
   startPeriodicSync,
   stopPeriodicSync,
   fetchActiveBaskets,
