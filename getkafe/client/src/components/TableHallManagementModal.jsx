@@ -12,6 +12,7 @@ import {
   Building2,
   Sparkles
 } from 'lucide-react';
+import { useDialog } from '../context/DialogContext';
 
 export default function TableHallManagementModal({ 
   isOpen, 
@@ -21,6 +22,7 @@ export default function TableHallManagementModal({
   onTablesUpdated,
   onHallsUpdated
 }) {
+  const dialog = useDialog();
   const [activeTab, setActiveTab] = useState('tables'); // 'tables' | 'halls'
   const [selectedHallFilter, setSelectedHallFilter] = useState('all');
 
@@ -148,9 +150,14 @@ export default function TableHallManagementModal({
       return;
     }
 
-    if (!window.confirm(`${table.name} (${table.hall}) stolini o'chirishni tasdiqlaysizmi?`)) {
-      return;
-    }
+    const ok = await dialog.confirm({
+      title: "Stolni o'chirish",
+      message: `${table.name} (${table.hall}) stolini o'chirishni tasdiqlaysizmi?`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      type: "danger",
+    });
+    if (!ok) return;
 
     setLoading(true);
     try {
@@ -226,9 +233,14 @@ export default function TableHallManagementModal({
   };
 
   const handleDeleteHall = async (hall) => {
-    if (!window.confirm(`"${hall.name}" zalini o'chirishni tasdiqlaysizmi? Undagi stollar avtomatik "Asosiy Zal"ga o'tkaziladi.`)) {
-      return;
-    }
+    const ok = await dialog.confirm({
+      title: "Zalni o'chirish",
+      message: `"${hall.name}" zalini o'chirishni tasdiqlaysizmi?\nUndagi stollar avtomatik "Asosiy Zal"ga o'tkaziladi.`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      type: "danger",
+    });
+    if (!ok) return;
 
     setLoading(true);
     try {

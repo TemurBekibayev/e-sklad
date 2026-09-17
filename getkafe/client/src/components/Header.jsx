@@ -83,29 +83,33 @@ export default function Header({
 
       {/* Navigation tabs for roles */}
       <nav className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto">
-        <button
-          onClick={() => setCurrentTab('cashier')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'cashier'
-              ? 'bg-blue-600 text-white shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Monitor className="w-4 h-4" />
-          <span>{t('tab_cashier', 'Kassa (POS)')}</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'cashier' || !currentUser) && (
+          <button
+            onClick={() => setCurrentTab('cashier')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              currentTab === 'cashier'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Monitor className="w-4 h-4" />
+            <span>{t('tab_cashier', 'Kassa (POS)')}</span>
+          </button>
+        )}
 
-        <button
-          onClick={() => setCurrentTab('waiter')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'waiter'
-              ? 'bg-emerald-500 text-slate-950 shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Smartphone className="w-4 h-4" />
-          <span>{t('tab_waiter', 'Ofitsiant')}</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'waiter' || currentUser?.role === 'worker' || currentUser?.role === 'cashier' || !currentUser) && (
+          <button
+            onClick={() => setCurrentTab('waiter')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              currentTab === 'waiter'
+                ? 'bg-emerald-500 text-slate-950 shadow-md'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Smartphone className="w-4 h-4" />
+            <span>{t('tab_waiter', 'Ofitsiant')}</span>
+          </button>
+        )}
 
         <button
           onClick={() => setCurrentTab('kitchen')}
@@ -119,74 +123,82 @@ export default function Header({
           <span>{t('tab_kitchen', 'Oshxona (KDS)')}</span>
         </button>
 
-        <button
-          onClick={() => setCurrentTab('inventory')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'inventory'
-              ? 'bg-amber-600 text-white shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Package className="w-4 h-4" />
-          <span>{t('tab_inventory', 'Ombor (Sklad)')}</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+          <>
+            <button
+              onClick={() => setCurrentTab('inventory')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                currentTab === 'inventory'
+                  ? 'bg-amber-600 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span>{t('tab_inventory', 'Ombor (Sklad)')}</span>
+            </button>
 
-        <button
-          onClick={() => setCurrentTab('menu')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'menu'
-              ? 'bg-[#ea580c] text-white shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <UtensilsCrossed className="w-4 h-4" />
-          <span>{t('tab_menu', 'Menyu')}</span>
-        </button>
+            <button
+              onClick={() => setCurrentTab('menu')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                currentTab === 'menu'
+                  ? 'bg-[#ea580c] text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <UtensilsCrossed className="w-4 h-4" />
+              <span>{t('tab_menu', 'Menyu')}</span>
+            </button>
 
-        <button
-          onClick={() => setCurrentTab('mxik')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'mxik'
-              ? 'bg-indigo-500 text-white shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <QrCode className="w-4 h-4" />
-          <span>{t('tab_mxik', 'Soliq MXIK')}</span>
-        </button>
+            <button
+              onClick={() => setCurrentTab('mxik')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                currentTab === 'mxik'
+                  ? 'bg-indigo-500 text-white shadow-md'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <QrCode className="w-4 h-4" />
+              <span>{t('tab_mxik', 'Soliq MXIK')}</span>
+            </button>
+          </>
+        )}
       </nav>
 
       {/* Quick Settings & User Status */}
       <div className="flex items-center gap-2">
-        {/* Stollar / Zallar Boshqaruvi Button */}
-        <button
-          onClick={onOpenTableManageModal}
-          title={t('th_title', 'Stollar va Zallar')}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
-        >
-          <Building2 className="w-3.5 h-3.5 text-orange-400" />
-          <span className="hidden xl:inline">{t('btn_tables_halls', 'Stollar')}</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+          <>
+            {/* Stollar / Zallar Boshqaruvi Button */}
+            <button
+              onClick={onOpenTableManageModal}
+              title={t('th_title', 'Stollar va Zallar')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
+            >
+              <Building2 className="w-3.5 h-3.5 text-orange-400" />
+              <span className="hidden xl:inline">{t('btn_tables_halls', 'Stollar')}</span>
+            </button>
 
-        {/* Xodimlar Button */}
-        <button
-          onClick={onOpenStaffModal}
-          title={t('staff_title', 'Xodimlarni boshqarish')}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
-        >
-          <Users className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden xl:inline">{t('btn_staff', 'Xodimlar')}</span>
-        </button>
+            {/* Xodimlar Button */}
+            <button
+              onClick={onOpenStaffModal}
+              title={t('staff_title', 'Xodimlarni boshqarish')}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
+            >
+              <Users className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden xl:inline">{t('btn_staff', 'Xodimlar')}</span>
+            </button>
 
-        {/* Printer Button */}
-        <button
-          onClick={onOpenPrinterSettings}
-          title="Chek va Printer Sozlamalari"
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
-        >
-          <Printer className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden xl:inline">Printer</span>
-        </button>
+            {/* Printer Button */}
+            <button
+              onClick={onOpenPrinterSettings}
+              title="Chek va Printer Sozlamalari"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 shadow-sm transition-all"
+            >
+              <Printer className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden xl:inline">Printer</span>
+            </button>
+          </>
+        )}
 
         {/* Language Switcher */}
         <LanguageSwitcher />

@@ -5,11 +5,6 @@ const { get, all, run } = require('./db');
 
 let syncTimer = null;
 let cachedAuthToken = null;
-let broadcastCallback = null;
-
-function setBroadcastCallback(cb) {
-  broadcastCallback = cb;
-}
 
 let lastSyncResult = {
   status: 'idle', // 'idle', 'synced', 'error'
@@ -686,17 +681,6 @@ async function syncFromBackend() {
     };
 
     await run(`UPDATE backend_config SET last_sync_time = CURRENT_TIMESTAMP WHERE id = 1`);
-
-    if (broadcastCallback) {
-      try {
-        if (productsSynced > 0) broadcastCallback('PRODUCTS_UPDATED', {});
-        if (tablesSynced > 0) broadcastCallback('TABLES_UPDATED', {});
-        if (usersSynced > 0) broadcastCallback('STAFF_UPDATED', {});
-      } catch (wsErr) {
-        console.warn('[BackendSync] WS broadcast error:', wsErr.message);
-      }
-    }
-
     return lastSyncResult;
   } catch (err) {
     console.error('[BackendSync] SyncFromBackend Error:', err.message);
@@ -915,6 +899,12 @@ function isTableRecentlyPrinted(tableNumber, orderId) {
     }
   }
   return false;
+}
+
+let broadcastCallback = null;
+
+function setBroadcastCallback(cb) {
+  broadcastCallback = cb;
 }
 
 // Poll getpos.uz for tables in 'busy' / 'bill_requested' status to sync orders and print kitchen & pre-checks
@@ -1472,68 +1462,84 @@ async function pushCloseOrderToCloud({ orderId, tableId, paymentMethod, totalAmo
   }
 }
 
-// Delete a product on getpos.uz cloud
+// Delete product from Central Backend (getpos.uz)
 async function deleteProductFromCloud(remoteId) {
-  if (!remoteId) return { success: false, error: 'remoteId missing' };
+  if (!remoteId) return { success: false, error: 'No remoteId' };
   const cfg = await getConfig();
-  if (!cfg.is_external_active || !cfg.api_url) return { skipped: true };
-
+  if (!cfg.api_url) return { success: false, error: 'No backend URL' };
   const baseUrl = cfg.api_url.replace(/\/+$/, '');
   const token = await ensureAuthToken();
-  const headers = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   try {
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await makeRequest({
       url: `${baseUrl}/api/v1/products/${remoteId}/`,
       method: 'DELETE',
       headers,
+      timeoutMs: 6000,
     });
-    return { success: res.status >= 200 && res.status < 300, status: res.status };
+
+    console.log(`[BackendSync] Cloud delete product ${remoteId}: status ${res.status}`);
+    return { success: res.status >= 200 && res.status < 300 };
   } catch (err) {
     console.warn('[BackendSync] deleteProductFromCloud error:', err.message);
     return { success: false, error: err.message };
   }
 }
 
-// Create or update product on getpos.uz cloud
+// Push newly created or updated product to Central Backend (getpos.uz)
 async function pushProductToCloud(product) {
   const cfg = await getConfig();
-  if (!cfg.is_external_active || !cfg.api_url) return { skipped: true };
-
+  if (!cfg.api_url) return { success: false, error: 'No backend URL' };
   const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const tenantId = cfg.tenant_id;
   const token = await ensureAuthToken();
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const payload = {
+    tenant_id: tenantId,
+    tenant: tenantId,
     name: product.name,
-    price_per_sale_unit: product.price,
-    sale_unit: product.unit || 'dona',
-    purchase_unit: product.unit || 'dona',
+    price_per_sale_unit: String(product.price || 0),
     barcode: product.barcode || null,
+    is_active: product.is_available !== false && product.is_available !== 0,
   };
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    let res = null;
     if (product.remote_id) {
-      const res = await makeRequest({
+      res = await makeRequest({
         url: `${baseUrl}/api/v1/products/${product.remote_id}/`,
-        method: 'PUT',
+        method: 'PATCH',
         headers,
         body: payload,
+        timeoutMs: 6000,
       });
-      return { success: res.status >= 200 && res.status < 300, data: res.data };
-    } else {
-      const res = await makeRequest({
+    }
+
+    if (!res || res.status >= 400) {
+      res = await makeRequest({
         url: `${baseUrl}/api/v1/products/`,
         method: 'POST',
         headers,
         body: payload,
+        timeoutMs: 6000,
       });
-      return { success: res.status >= 200 && res.status < 300, data: res.data };
     }
+
+    if (res && res.status >= 200 && res.status < 300 && res.data) {
+      const returnedId = res.data.id;
+      if (returnedId && product.id) {
+        await run(`UPDATE products SET remote_id = ? WHERE id = ?`, [returnedId, product.id]);
+      }
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res?.data || `Status ${res?.status}` };
   } catch (err) {
-    console.warn('[BackendSync] pushProductToCloud error:', err.message);
     return { success: false, error: err.message };
   }
 }

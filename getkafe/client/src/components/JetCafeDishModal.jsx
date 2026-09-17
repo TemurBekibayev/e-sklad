@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useDialog } from '../context/DialogContext';
 
 export default function JetCafeDishModal({ isOpen, onClose, dish = null, categories = [], onSave, onDelete }) {
+  const dialog = useDialog();
   const [activeTab, setActiveTab] = useState('dish'); // 'dish' or 'ikpu'
   const [form, setForm] = useState({
     name: '',
@@ -487,7 +489,14 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
                 type="button"
                 disabled={isSaving}
                 onClick={async () => {
-                  if (window.confirm(`Вы действительно хотите удалить "${dish.name}"?`)) {
+                  const ok = await dialog.confirm({
+                    title: "Taomni o'chirish",
+                    message: `Haqiqatan ham "${dish.name}" taomini o'chirmoqchimisiz?`,
+                    confirmText: "Ha, o'chirish",
+                    cancelText: "Bekor qilish",
+                    type: "danger",
+                  });
+                  if (ok) {
                     setIsSaving(true);
                     try {
                       const prodId =
@@ -498,12 +507,12 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
                         dish.id;
                       const res = await onDelete(prodId);
                       if (res && res.success === false) {
-                        alert('Ошибка при удалении: ' + (res.error || res.message || 'Не удалось удалить'));
+                        dialog.alert({ title: "Xatolik", message: "O'chirishda xatolik: " + (res.error || res.message || 'O\'chirib bo\'lmadi'), type: "error" });
                       } else {
                         onClose();
                       }
                     } catch (err) {
-                      alert('Ошибка: ' + err.message);
+                      dialog.alert({ title: "Xatolik", message: "Xatolik: " + err.message, type: "error" });
                     } finally {
                       setIsSaving(false);
                     }

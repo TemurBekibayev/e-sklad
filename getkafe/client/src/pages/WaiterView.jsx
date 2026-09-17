@@ -291,24 +291,25 @@ export default function WaiterView({
               )}
             </div>
 
-            {/* Table & Hall Management Button */}
-            <button
-              onClick={() => setShowTableManageModal(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-sm active:scale-95 transition"
-            >
-              <Building2 className="w-4 h-4 text-orange-400" />
-              <span>⚙️ Stollar / Zallar</span>
-            </button>
+            {/* Table & Hall Management & Add Dish Buttons (Manager Only) */}
+            {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+              <>
+                <button
+                  onClick={() => setShowTableManageModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black shadow-sm active:scale-95 transition"
+                >
+                  <Building2 className="w-4 h-4 text-orange-400" />
+                  <span>⚙️ Stollar / Zallar</span>
+                </button>
 
-            {/* Add Dish Button */}
-            {(currentUser?.role === 'admin' || currentUser?.role === 'manager' || !currentUser) && (
-              <button
-                onClick={() => (onOpenAddDish ? onOpenAddDish() : setShowAddDishModal(true))}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black shadow-md shadow-orange-500/25 active:scale-95 transition"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>➕ Taom qo'shish</span>
-              </button>
+                <button
+                  onClick={() => (onOpenAddDish ? onOpenAddDish() : setShowAddDishModal(true))}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-black shadow-md shadow-orange-500/25 active:scale-95 transition"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>➕ Taom qo'shish</span>
+                </button>
+              </>
             )}
           </div>
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useDialog } from '../context/DialogContext';
 
 export default function JetCafeCategoryModal({
   isOpen,
@@ -8,6 +9,7 @@ export default function JetCafeCategoryModal({
   onSaveCategory,
   onDeleteCategory,
 }) {
+  const dialog = useDialog();
   const [selectedCat, setSelectedCat] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState({
@@ -100,7 +102,14 @@ export default function JetCafeCategoryModal({
   const handleDelete = async (catToDelete = null) => {
     const target = catToDelete || selectedCat;
     if (!target) return;
-    if (window.confirm(`Вы действительно хотите удалить категорию "${target.name}"?`)) {
+    const ok = await dialog.confirm({
+      title: "Toifani o'chirish",
+      message: `Haqiqatan ham "${target.name}" toifasini o'chirmoqchimisiz?`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      type: "danger",
+    });
+    if (ok) {
       const catId = target.id || target.rawId;
       await onDeleteCategory(catId);
       if (selectedCat && (selectedCat.id === catId || selectedCat.rawId === catId)) {
@@ -112,7 +121,7 @@ export default function JetCafeCategoryModal({
 
   const handleSave = async () => {
     if (!form.name.trim()) {
-      alert('Пожалуйста, укажите название категории!');
+      dialog.alert({ title: "Ogohlantirish", message: "Iltimos, toifa nomini kiriting!", type: "warning" });
       return;
     }
     setIsSaving(true);
@@ -120,7 +129,7 @@ export default function JetCafeCategoryModal({
       await onSaveCategory(form, selectedCat?.id || selectedCat?.rawId);
       setIsEditing(false);
     } catch (err) {
-      alert('Ошибка при сохранении: ' + err.message);
+      dialog.alert({ title: "Xatolik", message: "Saqlashda xatolik: " + err.message, type: "error" });
     } finally {
       setIsSaving(false);
     }

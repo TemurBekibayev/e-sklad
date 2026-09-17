@@ -7,6 +7,7 @@ import JetCafeOrdersJournalModal from '../components/JetCafeOrdersJournalModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
 import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
+import { useDialog } from '../context/DialogContext';
 import { Maximize2, Minimize2 } from 'lucide-react';
 
 export default function JetCafePosView({
@@ -35,6 +36,7 @@ export default function JetCafePosView({
   onOpenManageTables,
 }) {
   const { t, tr, lang } = useLanguage();
+  const dialog = useDialog();
 
   // Active table state
   const currentTable = selectedTable || (tables && tables.length > 0 ? tables[0] : { id: null, number: '-', name: "Stollar yo'q (Stol qo'shing)", status: 'free' });
@@ -544,39 +546,43 @@ export default function JetCafePosView({
             {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
 
-          {/* Quick Add Dish button */}
-          <button
-            type="button"
-            onClick={() => {
-              setEditingDish(null);
-              setIsDishModalOpen(true);
-            }}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-blue-700 shadow-sm transition active:scale-95"
-          >
-            <span>➕</span>
-            <span>{t('pos_dish', 'Taom')}</span>
-          </button>
+          {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+            <>
+              {/* Quick Add Dish button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingDish(null);
+                  setIsDishModalOpen(true);
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-blue-700 shadow-sm transition active:scale-95"
+              >
+                <span>➕</span>
+                <span>{t('pos_dish', 'Taom')}</span>
+              </button>
 
-          {/* Quick Categories button */}
-          <button
-            type="button"
-            onClick={() => setIsCategoryModalOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-slate-700 shadow-sm transition active:scale-95"
-          >
-            <span>📂</span>
-            <span>{t('pos_categories', 'Toifalar')}</span>
-          </button>
+              {/* Quick Categories button */}
+              <button
+                type="button"
+                onClick={() => setIsCategoryModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-slate-700 shadow-sm transition active:scale-95"
+              >
+                <span>📂</span>
+                <span>{t('pos_categories', 'Toifalar')}</span>
+              </button>
 
-          {/* Quick Printer Button */}
-          <button
-            type="button"
-            onClick={onOpenPrinterSettings}
-            title="Chek va Printer Sozlamalari (80mm / 58mm)"
-            className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition active:scale-95"
-          >
-            <span>🖨️</span>
-            <span>{t('printer', 'Printer')}</span>
-          </button>
+              {/* Quick Printer Button */}
+              <button
+                type="button"
+                onClick={onOpenPrinterSettings}
+                title="Chek va Printer Sozlamalari (80mm / 58mm)"
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition active:scale-95"
+              >
+                <span>🖨️</span>
+                <span>{t('printer', 'Printer')}</span>
+              </button>
+            </>
+          )}
 
           {/* Settings Menu Dropdown */}
           <div className="relative">
@@ -610,82 +616,89 @@ export default function JetCafePosView({
                     </div>
                     <span className="text-[10px] text-blue-600">▶</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      if (onOpenManageTables) onOpenManageTables();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-bold text-amber-900"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🏛️</span>
-                      <span>Stollar va Zallar sozlamalari</span>
-                    </div>
-                    <span className="text-[10px] text-amber-600">▶</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      if (onOpenStaffModal) onOpenStaffModal();
-                      else if (onNavigateTab) onNavigateTab('staff');
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
-                  >
-                    <span>👥</span>
-                    <span>{t('staff_management', 'Xodimlar va PIN-kodlar')}</span>
-                  </button>
+
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSettingsMenuOpen(false);
+                          if (onOpenManageTables) onOpenManageTables();
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-bold text-amber-900"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>🏛️</span>
+                          <span>Stollar va Zallar sozlamalari</span>
+                        </div>
+                        <span className="text-[10px] text-amber-600">▶</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSettingsMenuOpen(false);
+                          if (onOpenStaffModal) onOpenStaffModal();
+                          else if (onNavigateTab) onNavigateTab('staff');
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
+                      >
+                        <span>👥</span>
+                        <span>{t('staff_management', 'Xodimlar va PIN-kodlar')}</span>
+                      </button>
+                    </>
+                  )}
                 </div>
 
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      if (onOpenPrinterSettings) onOpenPrinterSettings();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-medium text-amber-950"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🖨️</span>
-                      <span>Chek & Printer Sozlamalari</span>
-                    </div>
-                    <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
-                      {serviceFeePercent}% xizmat
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      if (onOpenSettings) onOpenSettings();
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
-                  >
-                    <span>⚙️</span>
-                    <span>Soliq MXIK & Kassa Sozlamalari</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      setIsBackendModalOpen(true);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between font-medium text-slate-700"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>🌐</span>
-                      <span>Server & Backend API</span>
-                    </div>
-                    <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
-                  </button>
-                </div>
+                {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsSettingsMenuOpen(false);
+                        if (onOpenPrinterSettings) onOpenPrinterSettings();
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-medium text-amber-950"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>🖨️</span>
+                        <span>Chek & Printer Sozlamalari</span>
+                      </div>
+                      <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                        {serviceFeePercent}% xizmat
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsSettingsMenuOpen(false);
+                        if (onOpenSettings) onOpenSettings();
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
+                    >
+                      <span>⚙️</span>
+                      <span>Soliq MXIK & Kassa Sozlamalari</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsSettingsMenuOpen(false);
+                        setIsBackendModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between font-medium text-slate-700"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>🌐</span>
+                        <span>Server & Backend API</span>
+                      </div>
+                      <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1041,48 +1054,59 @@ export default function JetCafePosView({
                 )}
               </div>
               <div className="flex items-center gap-1.5">
-                {selectedCategoryObj && (
+                {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
                   <>
+                    {selectedCategoryObj && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCategory(selectedCategoryObj);
+                            setIsCategoryModalOpen(true);
+                          }}
+                          className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[10px] text-slate-700 font-bold transition flex items-center gap-1 shadow-sm"
+                          title="Tanlangan toifani tahrirlash"
+                        >
+                          <span>✏️</span>
+                          <span>Tahrirlash</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ok = await dialog.confirm({
+                              title: "Toifani o'chirish",
+                              message: `Haqiqatan ham "${selectedCategoryObj.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`,
+                              confirmText: "Ha, o'chirish",
+                              cancelText: "Bekor qilish",
+                              type: "danger",
+                            });
+                            if (ok) {
+                              const catIdToDelete = selectedCategoryObj.id || selectedCategoryObj.rawId;
+                              await onDeleteCategory(catIdToDelete);
+                              setSelectedCategoryId(null);
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 hover:text-rose-800 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm active:scale-95"
+                          title="Tanlangan toifani o'chirish"
+                        >
+                          <span>🗑️</span>
+                          <span>Toifani o'chirish</span>
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
-                        setEditingCategory(selectedCategoryObj);
+                        setEditingCategory(null);
                         setIsCategoryModalOpen(true);
                       }}
-                      className="px-2 py-0.5 bg-white hover:bg-slate-100 border border-slate-300 rounded text-[10px] text-slate-700 font-bold transition flex items-center gap-1 shadow-sm"
-                      title="Tanlangan toifani tahrirlash"
+                      className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-400 rounded text-[10px] text-blue-700 font-bold transition flex items-center gap-1 shadow-sm"
                     >
-                      <span>✏️</span>
-                      <span>Tahrirlash</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (window.confirm(`Haqiqatan ham "${selectedCategoryObj.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`)) {
-                          const catIdToDelete = selectedCategoryObj.id || selectedCategoryObj.rawId;
-                          await onDeleteCategory(catIdToDelete);
-                          setSelectedCategoryId(null);
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 hover:text-rose-800 rounded text-[10px] font-bold transition flex items-center gap-1 shadow-sm active:scale-95"
-                      title="Tanlangan toifani o'chirish"
-                    >
-                      <span>🗑️</span>
-                      <span>Toifani o'chirish</span>
+                      <span>➕</span>
+                      <span>Toifa qo'shish</span>
                     </button>
                   </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingCategory(null);
-                    setIsCategoryModalOpen(true);
-                  }}
-                  className="px-2 py-0.5 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-400 rounded text-[10px] text-blue-700 font-bold transition flex items-center gap-1 shadow-sm"
-                >
-                  <span>➕</span>
-                  <span>Toifa qo'shish</span>
-                </button>
               </div>
             </div>
             
@@ -1107,7 +1131,7 @@ export default function JetCafePosView({
               </button>
 
               {/* If no categories yet */}
-              {categories.length === 0 && (
+              {categories.length === 0 && (currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1157,23 +1181,32 @@ export default function JetCafePosView({
                     </button>
 
                     {/* Quick delete button on card */}
-                    <button
-                      type="button"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`"${c.name}" toifasini o'chirishni tasdiqlaysizmi?`)) {
-                          const catIdToDelete = c.id || c.rawId;
-                          await onDeleteCategory(catIdToDelete);
-                          if (isSelected) setSelectedCategoryId(null);
-                        }
-                      }}
-                      className={`absolute top-1 right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md transition z-10 ${
-                        isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}
-                      title={`"${c.name}" toifasini o'chirish`}
-                    >
-                      ✕
-                    </button>
+                    {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const ok = await dialog.confirm({
+                            title: "Toifani o'chirish",
+                            message: `"${c.name}" toifasini o'chirishni tasdiqlaysizmi?`,
+                            confirmText: "Ha, o'chirish",
+                            cancelText: "Bekor qilish",
+                            type: "danger",
+                          });
+                          if (ok) {
+                            const catIdToDelete = c.id || c.rawId;
+                            await onDeleteCategory(catIdToDelete);
+                            if (isSelected) setSelectedCategoryId(null);
+                          }
+                        }}
+                        className={`absolute top-1 right-1 w-5 h-5 bg-rose-600 hover:bg-rose-700 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-md transition z-10 ${
+                          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                        }`}
+                        title={`"${c.name}" toifasini o'chirish`}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -1184,17 +1217,19 @@ export default function JetCafePosView({
           <div className="flex-1 flex flex-col min-h-0 bg-[#eef1f6]">
             <div className="flex items-center justify-between font-bold text-[11px] text-slate-600 py-1 px-3 bg-[#dfe5ee] border-b border-[#b0b9c7] uppercase tracking-wide">
               <span>{t('tab_menu', 'Menyu')}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingDish(null);
-                  setIsDishModalOpen(true);
-                }}
-                className="px-2 py-0.5 bg-white hover:bg-orange-50 border border-slate-300 hover:border-orange-400 rounded text-[10px] text-orange-700 font-bold transition flex items-center gap-1 shadow-sm"
-              >
-                <span>➕</span>
-                <span>Taom qo'shish</span>
-              </button>
+              {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDish(null);
+                    setIsDishModalOpen(true);
+                  }}
+                  className="px-2 py-0.5 bg-white hover:bg-orange-50 border border-slate-300 hover:border-orange-400 rounded text-[10px] text-orange-700 font-bold transition flex items-center gap-1 shadow-sm"
+                >
+                  <span>➕</span>
+                  <span>Taom qo'shish</span>
+                </button>
+              )}
             </div>
 
             {/* 4-column cards grid */}
@@ -1204,19 +1239,25 @@ export default function JetCafePosView({
                   <div className="text-4xl opacity-40">🍽️</div>
                   <div className="text-center max-w-sm">
                     <p className="font-bold text-slate-700 text-sm">{t('pos_no_dishes', 'Taomlar mavjud emas')}</p>
-                    <p className="text-[11px] text-slate-500 mt-1">Baza toza holatda. Yangi taom kiritish uchun quyidagi tugmani bosing.</p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'manager')
+                        ? 'Baza toza holatda. Yangi taom kiritish uchun quyidagi tugmani bosing.'
+                        : 'Menyuda hozircha taomlar mavjud emas.'}
+                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingDish(null);
-                      setIsDishModalOpen(true);
-                    }}
-                    className="px-4 py-2 bg-[#ea580c] hover:bg-[#d94e08] text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5"
-                  >
-                    <span>➕</span>
-                    <span>Yangi taom kiritish</span>
-                  </button>
+                  {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingDish(null);
+                        setIsDishModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-[#ea580c] hover:bg-[#d94e08] text-white font-bold rounded-xl text-xs shadow-md transition flex items-center gap-1.5"
+                    >
+                      <span>➕</span>
+                      <span>Yangi taom kiritish</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2.5">
@@ -1226,8 +1267,10 @@ export default function JetCafePosView({
                       onClick={() => handleAddDish(dish)}
                       onContextMenu={(e) => {
                         e.preventDefault();
-                        setEditingDish(dish);
-                        setIsDishModalOpen(true);
+                        if (currentUser?.role === 'admin' || currentUser?.role === 'manager') {
+                          setEditingDish(dish);
+                          setIsDishModalOpen(true);
+                        }
                       }}
                       className="group relative bg-white border border-[#b8c2d1] hover:border-blue-500 rounded p-2 flex flex-col justify-between h-36 cursor-pointer shadow-sm hover:shadow-md transition transform active:scale-95"
                     >

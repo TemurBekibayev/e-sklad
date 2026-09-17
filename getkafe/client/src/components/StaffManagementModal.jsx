@@ -18,8 +18,10 @@ import {
   Mail,
   User as UserIcon
 } from 'lucide-react';
+import { useDialog } from '../context/DialogContext';
 
 export default function StaffManagementModal({ isOpen, onClose, onStaffUpdated }) {
+  const dialog = useDialog();
   const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -128,7 +130,14 @@ export default function StaffManagementModal({ isOpen, onClose, onStaffUpdated }
   };
 
   const handleDeleteStaff = async (id, name) => {
-    if (!window.confirm(`${name} nomli xodimni o'chirishni tasdiqlaysizmi?`)) return;
+    const ok = await dialog.confirm({
+      title: "Xodimni o'chirish",
+      message: `${name} nomli xodimni o'chirishni tasdiqlaysizmi?`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      type: "danger",
+    });
+    if (!ok) return;
     try {
       const res = await fetch(`/api/staff/${id}`, { method: 'DELETE' });
       const data = await res.json();
@@ -139,7 +148,7 @@ export default function StaffManagementModal({ isOpen, onClose, onStaffUpdated }
         if (onStaffUpdated) onStaffUpdated();
       }
     } catch (e) {
-      alert('O\'chirishda xatolik: ' + e.message);
+      dialog.alert({ title: "Xatolik", message: "O'chirishda xatolik: " + e.message, type: "error" });
     }
   };
 

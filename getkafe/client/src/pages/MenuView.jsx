@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UtensilsCrossed, PlusCircle, Search, Edit3, Trash2, Tag, Sparkles, CheckCircle2, XCircle, Layers } from 'lucide-react';
 import JetCafeDishModal from '../components/JetCafeDishModal';
 import JetCafeCategoryModal from '../components/JetCafeCategoryModal';
+import { useDialog } from '../context/DialogContext';
 
 export default function MenuView({
   products = [],
@@ -13,6 +14,7 @@ export default function MenuView({
   onDeleteCategory,
   currentUser,
 }) {
+  const dialog = useDialog();
   const [selectedCategory, setSelectedCategory] = useState(0);
   const [editingCategory, setEditingCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,7 +58,14 @@ export default function MenuView({
 
   const handleDeleteClick = async (e, prod) => {
     e.stopPropagation();
-    if (window.confirm(`Haqiqatan ham "${prod.name}" taomini o'chirmoqchimisiz?`)) {
+    const ok = await dialog.confirm({
+      title: "Taomni o'chirish",
+      message: `Haqiqatan ham "${prod.name}" taomini o'chirmoqchimisiz?`,
+      confirmText: "Ha, o'chirish",
+      cancelText: "Bekor qilish",
+      type: "danger",
+    });
+    if (ok) {
       if (onDeleteProduct) {
         const prodId =
           prod.rawId ||
@@ -204,7 +213,14 @@ export default function MenuView({
               <button
                 type="button"
                 onClick={async () => {
-                  if (window.confirm(`Haqiqatan ham "${activeCat.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`)) {
+                  const ok = await dialog.confirm({
+                    title: "Toifani o'chirish",
+                    message: `Haqiqatan ham "${activeCat.name}" toifasini o'chirmoqchimisiz?\n(Ushbu toifadagi taomlar saqlanib qoladi)`,
+                    confirmText: "Ha, o'chirish",
+                    cancelText: "Bekor qilish",
+                    type: "danger",
+                  });
+                  if (ok) {
                     await onDeleteCategory(activeCat.id || activeCat.rawId);
                     setSelectedCategory(0);
                   }

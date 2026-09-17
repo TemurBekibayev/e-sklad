@@ -537,13 +537,31 @@ export default function App() {
     }
   };
 
+  // Strict Role-Based Tab Guard
+  useEffect(() => {
+    if (!currentUser) return;
+    const role = (currentUser.role || '').toLowerCase();
+    const isManager = role === 'admin' || role === 'manager';
+    const isCook = role === 'cook';
+    const isWaiter = role === 'waiter' || role === 'worker';
+
+    if (isCook && currentTab !== 'kitchen') {
+      setCurrentTab('kitchen');
+    } else if (isWaiter && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
+      setCurrentTab('waiter');
+    } else if (!isManager && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
+      setCurrentTab('cashier');
+    }
+  }, [currentUser, currentTab]);
+
   // Auth login handler (Full Login via Login + Parol)
   const handleFullLogin = (user) => {
     setCurrentUser(user);
     setIsScreenLocked(false);
-    if (user.role === 'waiter') {
+    const role = (user.role || '').toLowerCase();
+    if (role === 'waiter' || role === 'worker') {
       setCurrentTab('waiter');
-    } else if (user.role === 'cook') {
+    } else if (role === 'cook') {
       setCurrentTab('kitchen');
     } else {
       setCurrentTab('cashier');
