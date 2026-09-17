@@ -70,25 +70,39 @@ class ApiService {
       final dio = await _getDio();
 
       Response<dynamic>? res;
+      final payload = {
+        'login': login.trim(),
+        'email': login.trim(),
+        'username': login.trim(),
+        'password': password.trim(),
+        'pin': password.trim(),
+      };
+
       try {
         res = await dio.post(
           'https://getpos.uz/api/v1/auth/login/',
-          data: {
-            'login': login.trim(),
-            'password': password.trim(),
-          },
+          data: payload,
+          options: Options(headers: {'Content-Type': 'application/json'}),
         );
-      } catch (_) {
-        res = await dio.post(
-          'https://getpos.uz/api/auth/login/',
-          data: {
-            'login': login.trim(),
-            'password': password.trim(),
-          },
-        );
+      } catch (e1) {
+        if (e1 is DioException && e1.response != null && e1.response!.statusCode != null) {
+          res = e1.response;
+        } else {
+          try {
+            res = await dio.post(
+              'https://getpos.uz/api/auth/login/',
+              data: payload,
+              options: Options(headers: {'Content-Type': 'application/json'}),
+            );
+          } catch (e2) {
+            if (e2 is DioException && e2.response != null) {
+              res = e2.response;
+            }
+          }
+        }
       }
 
-      if ((res.statusCode == 200 || res.statusCode == 201) && res.data != null) {
+      if (res != null && (res.statusCode == 200 || res.statusCode == 201) && res.data != null) {
         final data = res.data;
         final token = data['token'] ?? data['access'];
         final userData = data['user'] ?? data;
@@ -108,11 +122,20 @@ class ApiService {
 
         return {'success': true, 'waiter': waiter};
       }
+
+      if (res != null && res.data != null && res.data is Map) {
+        final msg = res.data['message'] ?? res.data['detail'] ?? res.data['error'] ?? res.data['non_field_errors'];
+        if (msg != null) {
+          final strMsg = msg is List ? msg.join(', ') : msg.toString();
+          return {'success': false, 'message': strMsg};
+        }
+      }
     } on DioException catch (e) {
       if (e.response?.data != null && e.response?.data is Map) {
-        final msg = e.response!.data['message'] ?? e.response!.data['detail'] ?? e.response!.data['error'];
+        final msg = e.response!.data['message'] ?? e.response!.data['detail'] ?? e.response!.data['error'] ?? e.response!.data['non_field_errors'];
         if (msg != null) {
-          return {'success': false, 'message': msg.toString()};
+          final strMsg = msg is List ? msg.join(', ') : msg.toString();
+          return {'success': false, 'message': strMsg};
         }
       }
       return {'success': false, 'message': 'Internet aloqasi mavjud emas yoki server javob bermadi.'};
