@@ -5,6 +5,11 @@ const { get, all, run } = require('./db');
 
 let syncTimer = null;
 let cachedAuthToken = null;
+let broadcastCallback = null;
+
+function setBroadcastCallback(cb) {
+  broadcastCallback = cb;
+}
 
 let lastSyncResult = {
   status: 'idle', // 'idle', 'synced', 'error'
@@ -681,6 +686,17 @@ async function syncFromBackend() {
     };
 
     await run(`UPDATE backend_config SET last_sync_time = CURRENT_TIMESTAMP WHERE id = 1`);
+
+    if (broadcastCallback) {
+      try {
+        if (productsSynced > 0) broadcastCallback('PRODUCTS_UPDATED', {});
+        if (tablesSynced > 0) broadcastCallback('TABLES_UPDATED', {});
+        if (usersSynced > 0) broadcastCallback('STAFF_UPDATED', {});
+      } catch (wsErr) {
+        console.warn('[BackendSync] WS broadcast error:', wsErr.message);
+      }
+    }
+
     return lastSyncResult;
   } catch (err) {
     console.error('[BackendSync] SyncFromBackend Error:', err.message);
