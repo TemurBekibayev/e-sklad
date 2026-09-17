@@ -72,16 +72,16 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           tenantId: currentStore?.id || undefined,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         onLogin(data.user);
       } else {
-        const errMsg = Array.isArray(data.message) ? data.message.join(' ') : (data.message || t('pin_wrong', "Noto'g'ri PIN-kod!"));
+        const errMsg = data.message || (data.error ? data.error : t('pin_wrong', "Noto'g'ri PIN-kod! (Agar PIN o'rnatmagan bo'lsangiz, Login & Parol bilan kiring)"));
         setError(errMsg);
         setPin('');
       }
     } catch (err) {
-      setError(t('pin_server_error', 'Server bilan aloqa uzilgan'));
+      setError(t('pin_wrong', "Noto'g'ri PIN-kod yoki server javob bermadi. Login va parol bilan kiring"));
     } finally {
       setLoading(false);
     }
@@ -103,6 +103,15 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pin]);
+
+  const handleFullLogoutClick = () => {
+    if (roleHint && typeof roleHint === 'function') {
+      roleHint();
+    } else if (onLogin && typeof onLogin === 'function') {
+      localStorage.removeItem('getpos_user');
+      window.location.reload();
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 select-none font-sans">
@@ -129,7 +138,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
 
         {/* User Prompt / Hint */}
         <p className="text-xs text-slate-400 mb-4">
-          {t('pin_hint_default', 'Kassani faollashtirish uchun 4 xonali PIN-kodni tering')}
+          {t('pin_hint_default', 'Kassani faollashtirish uchun PIN-kodni tering')}
         </p>
 
         {/* PIN display dots */}
@@ -148,7 +157,7 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
 
         {/* Error message */}
         {error && (
-          <div className="mb-4 text-xs font-bold text-rose-400 bg-rose-500/10 py-2 px-3 rounded-xl border border-rose-500/20 animate-shake">
+          <div className="mb-4 text-xs font-bold text-rose-400 bg-rose-500/10 py-2.5 px-3 rounded-xl border border-rose-500/20 animate-shake">
             {error}
           </div>
         )}
@@ -200,24 +209,19 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           {loading ? t('pin_checking', 'Tekshirilmoqda...') : t('pin_unlock_btn', 'QULFDAN CHIQARISH (PIN)')}
         </button>
 
-        {/* Full Logout Button */}
-        <div className="mt-3 pt-3 border-t border-slate-800">
+        {/* Full Logout / Switch to Login & Password Button */}
+        <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col items-center gap-1.5">
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm("Tizimdan to'liq chiqmoqchimisiz? (Keyingi safar Login va Parol so'raladi)")) {
-                if (roleHint && typeof roleHint === 'function') {
-                  roleHint(); // or onFullLogout
-                } else if (onLogin && typeof onLogin === 'function') {
-                  localStorage.removeItem('getpos_user');
-                  window.location.reload();
-                }
-              }
-            }}
-            className="text-xs text-slate-400 hover:text-rose-400 transition font-medium underline-offset-4 hover:underline"
+            onClick={handleFullLogoutClick}
+            className="w-full py-2.5 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-amber-400 hover:text-amber-300 transition text-xs font-bold border border-slate-700/60 flex items-center justify-center gap-1.5"
           >
-            🚪 {t('full_logout_btn', 'Tizimdan to\'liq chiqish (Login & Parol)')}
+            <span>🔑</span>
+            <span>Login va Parol bilan kirish</span>
           </button>
+          <span className="text-[10px] text-slate-500">
+            Agar hali PIN-kod o'rnatmagan bo'lsangiz, Login & Parol orqali kiring
+          </span>
         </div>
       </div>
     </div>
