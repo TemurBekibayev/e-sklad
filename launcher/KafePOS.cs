@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -88,9 +89,25 @@ namespace KafePOS
             return baseDir;
         }
 
-        public static string FindNodeExecutable()
+        public static string FindNodeExecutable(string customProjectDir = null)
         {
-            string[] candidates = new string[]
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            List<string> candidates = new List<string>
+            {
+                Path.Combine(baseDir, "node.exe"),
+                Path.Combine(baseDir, "runtime", "node.exe"),
+                Path.Combine(baseDir, "runtime", "bin", "node.exe"),
+                Path.Combine(baseDir, "getkafe", "node.exe")
+            };
+
+            if (!string.IsNullOrEmpty(customProjectDir))
+            {
+                candidates.Add(Path.Combine(customProjectDir, "node.exe"));
+                candidates.Add(Path.Combine(customProjectDir, "runtime", "node.exe"));
+                candidates.Add(Path.Combine(customProjectDir, "getkafe", "node.exe"));
+            }
+
+            candidates.AddRange(new string[]
             {
                 @"C:\Program Files\nodejs\node.exe",
                 @"C:\Program Files (x86)\nodejs\node.exe",
@@ -98,11 +115,32 @@ namespace KafePOS
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"npm\node.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"nodejs\node.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"nodejs\node.exe")
-            };
+            });
+
+            // Check PATH environment variable
+            try
+            {
+                string pathEnv = Environment.GetEnvironmentVariable("PATH");
+                if (!string.IsNullOrEmpty(pathEnv))
+                {
+                    string[] paths = pathEnv.Split(';');
+                    foreach (string p in paths)
+                    {
+                        if (string.IsNullOrWhiteSpace(p)) continue;
+                        try
+                        {
+                            string testPath = Path.Combine(p.Trim(), "node.exe");
+                            if (File.Exists(testPath)) candidates.Add(testPath);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
 
             foreach (string p in candidates)
             {
-                if (File.Exists(p)) return p;
+                if (!string.IsNullOrEmpty(p) && File.Exists(p)) return p;
             }
 
             return "node.exe";
@@ -642,7 +680,7 @@ namespace KafePOS
 
                 if (File.Exists(serverJs))
                 {
-                    string nodeExe = PosApplicationContext.FindNodeExecutable();
+                    string nodeExe = PosApplicationContext.FindNodeExecutable(projectDir);
                     ProcessStartInfo psi = new ProcessStartInfo();
                     psi.WorkingDirectory = projectDir;
                     psi.FileName = nodeExe;
@@ -657,9 +695,13 @@ namespace KafePOS
                     catch
                     {
                         // Agar to'g'ridan-to'g'ri node.exe topilmasa, cmd orqali
-                        psi.FileName = "cmd.exe";
-                        psi.Arguments = "/c node \"" + serverJs + "\"";
-                        spawnedServerProcess = Process.Start(psi);
+                        try
+                        {
+                            psi.FileName = "cmd.exe";
+                            psi.Arguments = "/c node \"" + serverJs + "\"";
+                            spawnedServerProcess = Process.Start(psi);
+                        }
+                        catch { }
                     }
                 }
 
@@ -685,7 +727,8 @@ namespace KafePOS
                 else
                 {
                     MessageBox.Show(
-                        "KafePOS serverini ishga tushirishda xatolik yuz berdi.\nIltimos, Node.js o'rnatilganligini tekshiring.",
+                        "KafePOS lokal serverini ishga tushirishda xatolik yuz berdi.\n\n" +
+                        "Dastur mustaqil ishlashi uchun to'liq o'rnatuvchi (GetPOS_Kafe_Setup.exe) orqali o'rnatilishi yoki 'node.exe' dastur papkasida mavjud bo'lishi kerak.",
                         "GetPOS Kafe Xatosi",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error
