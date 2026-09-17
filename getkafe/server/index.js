@@ -15,10 +15,11 @@ const {
   getPendingCount,
   syncPendingQueue,
   generateFiscalSign,
+  getOrGenerateReceiptForOrder,
   COMPANY_INFO,
 } = require('./soliq');
 const printerService = require('./printer');
-const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = printerService;
+const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, updateKitchenTicketStatus, removeKitchenTicketItem, recordFiscalReceipt } = printerService;
 const telegram = require('./telegram');
 const backendSync = require('./backendSync');
 const imageHelper = require('./imageHelper');
@@ -1554,9 +1555,10 @@ app.get(['/api/orders', '/orders', '/api/orders/active', '/orders/active'], asyn
 });
 
 // 5.2. ID bo'yicha bitta buyurtmani olish (GET /api/orders/:id)
-app.get(['/api/orders/:id', '/orders/:id'], async (req, res) => {
+app.get(['/api/orders/:id', '/orders/:id'], async (req, res, next) => {
   try {
     const { id } = req.params;
+    if (id === 'journal') return next();
     const order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
     if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
 
@@ -1660,13 +1662,16 @@ app.post([
       const itemWaiterId = item.waiter_id || item.waiterId || body.waiterId || body.waiter_id || body.userId || body.user_id || req.user?.id || 1;
       const itemWaiterName = (item.waiter_name || item.waiterName || body.waiterName || body.waiter_name || body.userName || body.user_name || req.user?.name || 'Ofitsiant').trim();
 
-      await run(
+      const itemRes = await run(
         `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status, waiter_id, waiter_name) 
          VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?)`,
         [targetOrderId, pId || 1, pName, itemQty, itemPrice, itemComment, itemWaiterId, itemWaiterName]
       );
 
       addedItemsForKitchen.push({
+        id: itemRes.lastID,
+        productId: pId,
+        product_id: pId,
         product_name: pName,
         quantity: itemQty,
         comment: itemComment,
@@ -2179,17 +2184,20 @@ app.get('/api/orders/journal', async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
     let sql = `
-      SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.created_at as paid_at
+      SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.debt_amount, p.created_at as paid_at,
+             p.fiscal_sign, p.fiscal_qr_url, p.receipt_seq, p.id as payment_id
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
       LEFT JOIN payments p ON o.id = p.order_id
     `;
     const params = [];
     if (dateFrom && dateTo) {
-      sql += ` WHERE o.created_at >= ? AND o.created_at <= ?`;
-      params.push(dateFrom.replace('T', ' '), dateTo.replace('T', ' '));
+      const fromStr = dateFrom.replace('T', ' ').slice(0, 16) + ':00';
+      const toStr = dateTo.replace('T', ' ').slice(0, 16) + ':59';
+      sql += ` WHERE (o.created_at >= ? AND o.created_at <= ?) OR (p.created_at >= ? AND p.created_at <= ?) OR (o.updated_at >= ? AND o.updated_at <= ?)`;
+      params.push(fromStr, toStr, fromStr, toStr, fromStr, toStr);
     }
-    sql += ` ORDER BY o.created_at DESC LIMIT 200`;
+    sql += ` ORDER BY o.created_at DESC LIMIT 500`;
 
     const orders = await all(sql, params);
 
@@ -2218,27 +2226,47 @@ app.get('/api/orders/journal', async (req, res) => {
       });
     }
 
-    const formatted = orders.map((o, idx) => ({
-      id: o.id,
-      shift_id: Math.floor(new Date(o.created_at).getTime() / 86400000) - 19000,
-      number: idx + 1,
-      table: `STOL ${o.table_number || 1}`,
-      hall: o.hall || 'Основной',
-      client: '—',
-      waiter: o.waiter_name || 'Системный Администратор',
-      opened_at: o.created_at,
-      closed_at: o.paid_at || (o.status === 'paid' ? o.updated_at : null),
-      status: o.status === 'paid' ? 'Закрыт' : o.status === 'open' ? 'Открыт' : o.status,
-      service_percent: 10,
-      total_amount: o.total_amount || 0,
-      to_pay: Math.round((o.total_amount || 0) * 1.1),
-      discount: 0,
-      cash: o.cash_amount || (o.payment_method === 'cash' ? Math.round((o.total_amount || 0) * 1.1) : 0),
-      card: o.card_amount || (o.payment_method === 'card' ? Math.round((o.total_amount || 0) * 1.1) : 0),
-      debt: 0,
-      comment: '',
-      items: itemsByOrder[o.id] || [],
-    }));
+    const formatted = orders.map((o, idx) => {
+      const isPaid = o.status === 'paid' || Boolean(o.paid_at) || Boolean(o.payment_method);
+      const isOpenOrd = !isPaid && o.status !== 'cancelled';
+      let displayStatus = 'Открыт';
+      if (isPaid) {
+        displayStatus = 'Закрыт';
+      } else if (o.status === 'bill_requested') {
+        displayStatus = 'Hisob so\'ralgan';
+      } else if (o.status === 'cancelled') {
+        displayStatus = 'Отменен';
+      }
+      const totalPay = Math.round((o.total_amount || 0) * 1.1);
+      return {
+        id: o.id,
+        shift_id: Math.floor(new Date(o.created_at).getTime() / 86400000) - 19000,
+        number: idx + 1,
+        table: `STOL ${o.table_number || 1}`,
+        hall: o.hall || 'Asosiy Zal',
+        client: '—',
+        waiter: o.waiter_name || 'Boshqaruvchi',
+        opened_at: o.created_at,
+        closed_at: o.paid_at || (isPaid ? o.updated_at : null),
+        status: displayStatus,
+        raw_status: o.status,
+        is_paid: isPaid,
+        is_open: isOpenOrd,
+        service_percent: 10,
+        total_amount: o.total_amount || 0,
+        to_pay: totalPay,
+        discount: 0,
+        cash: o.cash_amount !== null && o.cash_amount !== undefined ? o.cash_amount : (isPaid && o.payment_method === 'cash' ? totalPay : 0),
+        card: o.card_amount !== null && o.card_amount !== undefined ? o.card_amount : (isPaid && o.payment_method === 'card' ? totalPay : 0),
+        debt: o.debt_amount !== null && o.debt_amount !== undefined ? o.debt_amount : (isPaid && o.payment_method === 'debt' ? totalPay : 0),
+        fiscal_sign: o.fiscal_sign || null,
+        fiscal_qr_url: o.fiscal_qr_url || null,
+        receipt_seq: o.receipt_seq || null,
+        payment_id: o.payment_id || null,
+        comment: '',
+        items: itemsByOrder[o.id] || [],
+      };
+    });
 
     res.json({ success: true, orders: formatted });
   } catch (err) {
@@ -2246,10 +2274,44 @@ app.get('/api/orders/journal', async (req, res) => {
   }
 });
 
+// 7.3. Buyurtma chekini olish (Fiskal va Oddiy chek ma'lumotlari)
+app.get(['/api/orders/:id/receipt', '/api/orders/:id/receipts'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await getOrGenerateReceiptForOrder(id);
+    if (!data) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[Receipt API] getReceipt error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7.4. Buyurtma chekini printerga qayta chiqarish (Reprint)
+app.post(['/api/orders/:id/reprint', '/api/orders/:id/print'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type = 'fiscal' } = req.body;
+    const data = await getOrGenerateReceiptForOrder(id);
+    if (!data) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    let printResult = null;
+    if (type === 'standard' || type === 'precheck') {
+      printResult = await printerService.printPrecheckReceipt(data.standardReceipt);
+    } else {
+      printResult = await printerService.printThermalReceipt(data.fiscalReceipt);
+    }
+    res.json({ success: true, message: 'Chek chop etishga yuborildi', printResult });
+  } catch (err) {
+    console.error('[Receipt API] reprint error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 8. To'lovni qabul qilish (Kassa) va REGOS Soliq Fiskal chek chiqarish (POST /api/payments)
 app.post('/api/payments', async (req, res) => {
   try {
-    const { orderId, tableId, paymentMethod, cashAmount, cardAmount } = req.body;
+    const { orderId, tableId, paymentMethod, cashAmount, cardAmount, debtAmount, clientName, clientPhone, comment } = req.body;
     if (!orderId || !tableId || !paymentMethod) {
       return res.status(400).json({ success: false, message: "To'lov ma'lumotlari yetarli emas" });
     }
@@ -2276,6 +2338,17 @@ app.post('/api/payments', async (req, res) => {
     });
 
     recordFiscalReceipt(receiptData);
+
+    // Qarzga sotuv bo'lsa - Debts jadvaliga yozish
+    const calcDebt = paymentMethod === 'debt' ? (debtAmount || order.total_amount) : (debtAmount || 0);
+    if (calcDebt > 0 && (clientName || paymentMethod === 'debt')) {
+      const debtId = 'debt_' + Date.now();
+      const debtorName = clientName && clientName.trim() ? clientName.trim() : `Stol ${tableId} mijozi`;
+      await run(`
+        INSERT INTO debts (id, order_id, client_name, client_phone, total_amount, paid_amount, remaining_amount, status, comment, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [debtId, orderId, debtorName, clientPhone || '', calcDebt, calcDebt, comment || '']);
+    }
 
     // Buyurtmani yopish va stolni bo'shatish ('free' - Yashil)
     await run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
@@ -2377,7 +2450,108 @@ app.post('/api/payments', async (req, res) => {
 });
 
 // ==========================================
-// 8.0. THERMAL RECEIPT PRINTER API
+// 8.0. DEBTS (QARZDORLIKLAR) API
+// ==========================================
+
+// 8.1. Debts List & Summary (GET /api/debts)
+app.get('/api/debts', async (req, res) => {
+  try {
+    const debts = await all(`
+      SELECT d.*, o.table_id, t.number as table_number, t.hall as table_hall, o.waiter_name
+      FROM debts d
+      LEFT JOIN orders o ON d.order_id = o.id
+      LEFT JOIN tables t ON o.table_id = t.id
+      ORDER BY d.created_at DESC
+    `);
+    const summary = await get(`
+      SELECT 
+        COALESCE(SUM(total_amount), 0) as total_debt,
+        COALESCE(SUM(paid_amount), 0) as total_paid,
+        COALESCE(SUM(remaining_amount), 0) as total_unpaid
+      FROM debts
+    `);
+    res.json({ success: true, debts, summary });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.2. Pay Debt (POST /api/debts/:id/pay)
+app.post('/api/debts/:id/pay', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, paymentMethod = 'cash' } = req.body;
+    const payAmt = Number(amount);
+    if (!payAmt || payAmt <= 0) {
+      return res.status(400).json({ success: false, message: "To'lov summasi noto'g'ri" });
+    }
+
+    const debt = await get(`SELECT * FROM debts WHERE id = ?`, [id]);
+    if (!debt) return res.status(404).json({ success: false, message: 'Qarzdorlik topilmadi' });
+
+    const newPaid = debt.paid_amount + payAmt;
+    const newRemaining = Math.max(0, debt.total_amount - newPaid);
+    const newStatus = newRemaining === 0 ? 'paid' : 'partially_paid';
+
+    await run(`
+      UPDATE debts 
+      SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `, [newPaid, newRemaining, newStatus, id]);
+
+    await run(`
+      INSERT INTO debt_payments (debt_id, amount, payment_method)
+      VALUES (?, ?, ?)
+    `, [id, payAmt, paymentMethod]);
+
+    broadcast('DEBTS_UPDATED', {});
+
+    res.json({ success: true, message: "Qarz to'lovi muvaffaqiyatli qabul qilindi", debtId: id, newRemaining, newStatus });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.3. Delete Debt (DELETE /api/debts/:id)
+app.delete('/api/debts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await run(`DELETE FROM debts WHERE id = ?`, [id]);
+    await run(`DELETE FROM debt_payments WHERE debt_id = ?`, [id]);
+    broadcast('DEBTS_UPDATED', {});
+    res.json({ success: true, message: "Qarz ma'lumoti o'chirildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.4. Force Close Order and Free Table (POST /api/orders/:id/force-close)
+app.post('/api/orders/:id/force-close', async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    await run(`UPDATE orders SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [orderId]);
+    await run(`UPDATE tables SET status = 'free', current_order_id = NULL WHERE id = ?`, [order.table_id]);
+
+    const updatedTable = await get(`SELECT *, NULL as order_id FROM tables WHERE id = ?`, [order.table_id]);
+    broadcast('TABLE_UPDATED', updatedTable);
+    broadcast('TABLES_UPDATED', {});
+
+    backendSync.pushCloseOrderToCloud({
+      orderId,
+      tableId: order.table_id,
+    }).catch(() => {});
+
+    res.json({ success: true, message: "Buyurtma yopildi va stol bo'shatildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 8.5. THERMAL RECEIPT PRINTER API
 // ==========================================
 
 // O'rnatilgan printerlar va joriy sozlamalarni olish
@@ -2593,6 +2767,123 @@ app.post('/api/sync/offline-orders', async (req, res) => {
 // 9. Oshxona chiptalari tarixi
 app.get('/api/kitchen/tickets', (req, res) => {
   res.json({ success: true, tickets: getRecentKitchenTickets() });
+});
+
+// 9.1. Oshxona chiptasi statusini yangilash (Qabul qilish / Tayyor)
+app.post('/api/kitchen/tickets/:id/status', async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const { status } = req.body; // 'in_progress', 'ready', 'completed'
+    const updated = updateKitchenTicketStatus(ticketId, status);
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Chek topilmadi' });
+    }
+
+    if (status === 'ready') {
+      broadcast('KITCHEN_TICKET_READY', {
+        ticketId,
+        tableNumber: updated.tableNumber,
+        waiterName: updated.waiterName,
+        orderId: updated.orderId,
+        timestamp: Date.now(),
+      });
+    } else if (status === 'in_progress') {
+      broadcast('KITCHEN_TICKET_IN_PROGRESS', {
+        ticketId,
+        tableNumber: updated.tableNumber,
+        waiterName: updated.waiterName,
+        orderId: updated.orderId,
+        timestamp: Date.now(),
+      });
+    }
+
+    broadcast('KITCHEN_TICKETS_UPDATED', { tickets: getRecentKitchenTickets() });
+    res.json({ success: true, ticket: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.2. Oshxonada taom yo'qligini belgilash va buyurtmadan chiqarish (Stop-list / Yo'q)
+app.post('/api/kitchen/item-out-of-stock', async (req, res) => {
+  try {
+    const { ticketId, orderId, itemId, productId, productName, tableNumber, waiterName } = req.body;
+
+    if (orderId) {
+      let item = null;
+      if (itemId) {
+        item = await get(`SELECT * FROM order_items WHERE id = ?`, [itemId]);
+      } else if (productId) {
+        item = await get(
+          `SELECT * FROM order_items WHERE order_id = ? AND product_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) ORDER BY id DESC LIMIT 1`,
+          [orderId, productId]
+        );
+      } else if (productName) {
+        item = await get(
+          `SELECT * FROM order_items WHERE order_id = ? AND product_name = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) ORDER BY id DESC LIMIT 1`,
+          [orderId, productName]
+        );
+      }
+
+      if (item) {
+        await run(
+          `UPDATE order_items SET is_cancelled = 1, status = 'cancelled', cancel_reason = ? WHERE id = ?`,
+          ["Oshxonada yo'q", item.id]
+        );
+
+        const allActive = await all(`SELECT price, quantity, is_cancelled FROM order_items WHERE order_id = ?`, [orderId]);
+        let newTotal = 0;
+        allActive.forEach((it) => {
+          if (!it.is_cancelled && it.quantity > 0) {
+            newTotal += it.price * it.quantity;
+          }
+        });
+        await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [newTotal, orderId]);
+
+        const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+        const updatedTableRaw = order ? await get(`
+          SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+          FROM tables t
+          LEFT JOIN orders o ON t.current_order_id = o.id
+          WHERE t.id = ?
+        `, [order.table_id]) : null;
+
+        if (updatedTableRaw) {
+          const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [orderId]);
+          broadcast('TABLE_UPDATED', {
+            ...updatedTableRaw,
+            total_amount: newTotal,
+            totalAmount: newTotal,
+            items: updatedItems,
+            order_items: updatedItems,
+          });
+          broadcast('ORDER_UPDATED', { orderId, tableId: order.table_id, totalAmount: newTotal, items: updatedItems });
+        }
+      }
+    }
+
+    if (ticketId) {
+      removeKitchenTicketItem(ticketId, productId, productName);
+    }
+
+    const outOfStockPayload = {
+      ticketId,
+      orderId,
+      tableNumber: tableNumber || 1,
+      waiterName: waiterName || 'Ofitsiant',
+      productName: productName || 'Taom',
+      message: `${tableNumber || 1}-stol uchun "${productName || 'Taom'}" oshxonada YO'Q! Buyurtmadan o'chirildi.`,
+      timestamp: Date.now(),
+    };
+
+    broadcast('DISH_OUT_OF_STOCK', outOfStockPayload);
+    broadcast('KITCHEN_TICKETS_UPDATED', { tickets: getRecentKitchenTickets() });
+
+    res.json({ success: true, message: 'Taom bekor qilindi va ofitsiantga xabar yuborildi', data: outOfStockPayload });
+  } catch (err) {
+    console.error('Error in item-out-of-stock:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ==========================================

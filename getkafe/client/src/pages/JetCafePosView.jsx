@@ -49,6 +49,14 @@ export default function JetCafePosView({
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedWaiter, setSelectedWaiter] = useState(currentUser?.name || 'Xodim');
 
+  // Security Guard: If current user is a waiter, redirect to waiter view immediately
+  useEffect(() => {
+    const role = (currentUser?.role || '').toLowerCase();
+    if (role === 'waiter' || role === 'worker') {
+      if (onNavigateTab) onNavigateTab('waiter');
+    }
+  }, [currentUser, onNavigateTab]);
+
   useEffect(() => {
     if (currentUser?.name) {
       setSelectedWaiter(currentUser.name);
@@ -78,13 +86,17 @@ export default function JetCafePosView({
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [isOrderItemEditModalOpen, setIsOrderItemEditModalOpen] = useState(false);
   const [isOrdersJournalOpen, setIsOrdersJournalOpen] = useState(false);
+  const [journalInitialTab, setJournalInitialTab] = useState('all');
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isBackendModalOpen, setIsBackendModalOpen] = useState(false);
 
 
   // Payment form state
-  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'split'
+  const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'split', 'debt'
   const [cashGiven, setCashGiven] = useState('');
+  const [debtClientName, setDebtClientName] = useState('');
+  const [debtClientPhone, setDebtClientPhone] = useState('');
+  const [debtComment, setDebtComment] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Time ticker
@@ -425,6 +437,13 @@ export default function JetCafePosView({
       const givenNum = Number(cashGiven) || totalAmount;
       const cashAmt = paymentMethod === 'cash' ? totalAmount : paymentMethod === 'split' ? givenNum : 0;
       const cardAmt = paymentMethod === 'card' ? totalAmount : paymentMethod === 'split' ? Math.max(0, totalAmount - givenNum) : 0;
+      const debtAmt = paymentMethod === 'debt' ? totalAmount : 0;
+
+      if (paymentMethod === 'debt' && !debtClientName.trim()) {
+        alert("Qarzga berish uchun qarzdor mijoz ismini kiritishingiz shart!");
+        setIsProcessingPayment(false);
+        return;
+      }
 
       await onCompletePayment({
         orderId: ordId,
@@ -432,11 +451,18 @@ export default function JetCafePosView({
         paymentMethod,
         cashAmount: cashAmt,
         cardAmount: cardAmt,
+        debtAmount: debtAmt,
+        clientName: debtClientName,
+        clientPhone: debtClientPhone,
+        comment: debtComment,
       });
 
       setIsPaymentModalOpen(false);
       setOrderItems([]);
       setSelectedItemIndex(null);
+      setDebtClientName('');
+      setDebtClientPhone('');
+      setDebtComment('');
     } catch (err) {
       alert('Тўловни амалга оширишда хатолик: ' + err.message);
     } finally {
@@ -512,6 +538,34 @@ export default function JetCafePosView({
               ←
             </span>
             <span className="text-xs">{t('pos_tables', 'Stollar')}</span>
+          </button>
+
+          {/* 📋 Buyurtmalar button */}
+          <button
+            type="button"
+            onClick={() => {
+              setJournalInitialTab('all');
+              setIsOrdersJournalOpen(true);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
+            title="Barcha buyurtmalar jurnali"
+          >
+            <span className="text-xs">📋</span>
+            <span className="text-xs">Buyurtmalar</span>
+          </button>
+
+          {/* 💳 To'lovlar tarixi button */}
+          <button
+            type="button"
+            onClick={() => {
+              setJournalInitialTab('paid');
+              setIsOrdersJournalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded shadow transition active:scale-95"
+            title="To'langan buyurtmalar va to'lovlar tarixi"
+          >
+            <span className="text-xs">💳</span>
+            <span className="text-xs">To'lovlar tarixi</span>
           </button>
 
           {/* Table Indicator badge */}
@@ -1463,11 +1517,12 @@ export default function JetCafePosView({
               {/* Payment Method Selector */}
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-700">Способ оплаты:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-1.5">
                   {[
-                    { id: 'cash', label: '💵 Наличные' },
-                    { id: 'card', label: '💳 Карта (Humo/Uzcard)' },
-                    { id: 'split', label: '⚖️ Раздельно' },
+                    { id: 'cash', label: '💵 Naqd' },
+                    { id: 'card', label: '💳 Karta' },
+                    { id: 'split', label: '⚖️ Aralash' },
+                    { id: 'debt', label: '📕 Qarzga' },
                   ].map((m) => (
                     <button
                       key={m.id}
@@ -1484,6 +1539,54 @@ export default function JetCafePosView({
                   ))}
                 </div>
               </div>
+
+              {/* Debt Client Form if Debt */}
+              {paymentMethod === 'debt' && (
+                <div className="space-y-2 bg-rose-50/60 border border-rose-200 p-3 rounded shadow-inner">
+                  <div className="font-bold text-rose-800 text-xs flex items-center gap-1">
+                    <span>📕</span> Qarzga berilayotgan mijoz ma'lumotlari:
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                      Qarzdor Ismi (Mijoz)*:
+                    </label>
+                    <input
+                      type="text"
+                      value={debtClientName}
+                      onChange={(e) => setDebtClientName(e.target.value)}
+                      placeholder="Masalan: Alisher aka"
+                      className="w-full px-2.5 py-1 bg-white border border-rose-300 rounded text-xs font-bold focus:outline-none focus:border-rose-600"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                        Telefon raqami:
+                      </label>
+                      <input
+                        type="text"
+                        value={debtClientPhone}
+                        onChange={(e) => setDebtClientPhone(e.target.value)}
+                        placeholder="+998 90 123 45 67"
+                        className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                        Izoh / Eslatma:
+                      </label>
+                      <input
+                        type="text"
+                        value={debtComment}
+                        onChange={(e) => setDebtComment(e.target.value)}
+                        placeholder="Masalan: haftaga beradi"
+                        className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Cash given input if Cash */}
               {paymentMethod === 'cash' && (
@@ -1584,6 +1687,7 @@ export default function JetCafePosView({
       <JetCafeOrdersJournalModal
         isOpen={isOrdersJournalOpen}
         onClose={() => setIsOrdersJournalOpen(false)}
+        initialTab={journalInitialTab}
       />
 
       {/* 8. Table Selection & Hall Floorplan Modal */}

@@ -7,6 +7,7 @@ import AddDishModal from './components/AddDishModal';
 import StaffManagementModal from './components/StaffManagementModal';
 import TableHallManagementModal from './components/TableHallManagementModal';
 import PrinterSettingsModal from './components/PrinterSettingsModal';
+import JetCafeDebtsModal from './components/JetCafeDebtsModal';
 import JetCafePosView from './pages/JetCafePosView';
 import CashierView from './pages/CashierView';
 import WaiterView from './pages/WaiterView';
@@ -14,6 +15,7 @@ import KitchenView from './pages/KitchenView';
 import MenuView from './pages/MenuView';
 import MxikSettings from './pages/MxikSettings';
 import InventoryView from './pages/InventoryView';
+import { useDialog } from './context/DialogContext';
 
 function isProductMatch(p, targetId) {
   if (!p || targetId === undefined || targetId === null) return false;
@@ -34,6 +36,7 @@ function isProductMatch(p, targetId) {
 }
 
 export default function App() {
+  const dialog = useDialog();
   const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
   
   // Initial session from localStorage
@@ -50,6 +53,7 @@ export default function App() {
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isTableManageModalOpen, setIsTableManageModalOpen] = useState(false);
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
+  const [isDebtsModalOpen, setIsDebtsModalOpen] = useState(false);
 
   // 15-minute Inactivity Auto-Lock timer
   const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
@@ -140,6 +144,14 @@ export default function App() {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(440, audioCtx.currentTime);
         osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+      } else if (type === 'warning') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(320, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
         osc.start();
@@ -261,6 +273,37 @@ export default function App() {
           } else if (ev === 'KITCHEN_NEW_TICKET') {
             setKitchenTickets((prev) => [data, ...prev]);
             playSoundAlert('kitchen');
+          } else if (ev === 'KITCHEN_TICKET_READY') {
+            playSoundAlert('kitchen');
+            if (dialog && dialog.alert) {
+              dialog.alert({
+                title: "🔔 BUYURTMA TAYYOR!",
+                message: `${data.tableNumber}-stol buyurtmasi oshxonada TAYYOR bo'ldi! (Ofitsiant: ${data.waiterName || 'Ofitsiant'})`,
+                type: "success",
+              });
+            }
+          } else if (ev === 'KITCHEN_TICKETS_UPDATED') {
+            if (data && Array.isArray(data.tickets)) {
+              setKitchenTickets(data.tickets);
+            }
+          } else if (ev === 'DISH_OUT_OF_STOCK') {
+            playSoundAlert('warning');
+            if (dialog && dialog.alert) {
+              dialog.alert({
+                title: "⚠️ OSHXONADA TAOM YO'Q!",
+                message: data.message || `${data.tableNumber}-stol uchun "${data.productName}" oshxonada tugaganligi sababli buyurtmadan o'chirildi!`,
+                type: "warning",
+              });
+            }
+            loadTables();
+            if (selectedTable) {
+              fetch(`/api/orders/table/${selectedTable.id}`)
+                .then((r) => r.json())
+                .then((res) => {
+                  if (res.success) setActiveOrder(res);
+                })
+                .catch(() => {});
+            }
           } else if (ev === 'BILL_REQUESTED') {
             playSoundAlert('bill');
           } else if (ev === 'PAYMENT_COMPLETED') {
@@ -424,6 +467,69 @@ export default function App() {
     return await res.json();
   };
 
+  // Kitchen ticket status update (Qabul qilish / Tayyor)
+  const handleUpdateKitchenTicketStatus = async (ticketId, status) => {
+    try {
+      const res = await fetch(`/api/kitchen/tickets/${ticketId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setKitchenTickets((prev) =>
+          prev.map((t) => (t.id === ticketId ? { ...t, status } : t))
+        );
+        if (status === 'ready') {
+          playSoundAlert('kitchen');
+        }
+      }
+    } catch (err) {
+      console.error('Error updating kitchen ticket status:', err);
+    }
+  };
+
+  // Kitchen dish out of stock (Taom yo'q - bekor qilish)
+  const handleKitchenItemOutOfStock = async (ticket, item) => {
+    try {
+      const pId = item.productId || item.product_id || item.id;
+      const pName = item.product_name || item.name;
+      const res = await fetch('/api/kitchen/item-out-of-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          orderId: ticket.orderId,
+          itemId: item.id,
+          productId: pId,
+          productName: pName,
+          tableNumber: ticket.tableNumber,
+          waiterName: ticket.waiterName,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setKitchenTickets((prev) =>
+          prev
+            .map((t) => {
+              if (t.id === ticket.id) {
+                const updatedItems = (t.items || []).filter(
+                  (it) =>
+                    (!pId || (it.productId !== pId && it.product_id !== pId)) &&
+                    (!pName || it.product_name !== pName)
+                );
+                return { ...t, items: updatedItems };
+              }
+              return t;
+            })
+            .filter((t) => (t.items || []).length > 0)
+        );
+      }
+    } catch (err) {
+      console.error('Error reporting item out of stock:', err);
+    }
+  };
+
   // Payment completed (from Cashier)
   const handleCompletePayment = async (paymentPayload) => {
     const res = await fetch('/api/payments', {
@@ -546,11 +652,14 @@ export default function App() {
     const isManager = role === 'admin' || role === 'manager';
     const isCook = role === 'cook';
     const isWaiter = role === 'waiter' || role === 'worker';
+    const isCashier = role === 'cashier';
 
     if (isCook && currentTab !== 'kitchen') {
       setCurrentTab('kitchen');
-    } else if (isWaiter && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
+    } else if (isWaiter && currentTab !== 'waiter') {
       setCurrentTab('waiter');
+    } else if (isCashier && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik' || currentTab === 'kitchen')) {
+      setCurrentTab('cashier');
     } else if (!isManager && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
       setCurrentTab('cashier');
     }
@@ -572,7 +681,15 @@ export default function App() {
 
   // Fast PIN Unlock handler (Unlock from 15-min inactivity or quick lock)
   const handlePinUnlock = (user) => {
-    if (user) setCurrentUser(user);
+    if (user) {
+      setCurrentUser(user);
+      const role = (user.role || '').toLowerCase();
+      if (role === 'waiter' || role === 'worker') {
+        setCurrentTab('waiter');
+      } else if (role === 'cook') {
+        setCurrentTab('kitchen');
+      }
+    }
     setIsScreenLocked(false);
   };
 
@@ -610,6 +727,7 @@ export default function App() {
           onOpenStaffModal={() => setIsStaffModalOpen(true)}
           onOpenTableManageModal={() => setIsTableManageModalOpen(true)}
           onOpenPrinterSettings={() => setIsPrinterModalOpen(true)}
+          onOpenDebtsModal={() => setIsDebtsModalOpen(true)}
         />
       )}
 
@@ -666,6 +784,8 @@ export default function App() {
             tickets={kitchenTickets}
             onPrintTicket={(t) => window.print()}
             onPlayChime={() => playSoundAlert('kitchen')}
+            onUpdateStatus={handleUpdateKitchenTicketStatus}
+            onItemOutOfStock={handleKitchenItemOutOfStock}
           />
         )}
 
@@ -752,6 +872,12 @@ export default function App() {
       <PrinterSettingsModal
         isOpen={isPrinterModalOpen}
         onClose={() => setIsPrinterModalOpen(false)}
+      />
+
+      {/* Debts Management Modal */}
+      <JetCafeDebtsModal
+        isOpen={isDebtsModalOpen}
+        onClose={() => setIsDebtsModalOpen(false)}
       />
     </div>
   );

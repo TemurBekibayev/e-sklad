@@ -159,6 +159,134 @@ async function getPendingCount() {
   return res ? res.count : 0;
 }
 
+/**
+ * Buyurtma uchun fiskal va oddiy chek ma'lumotlarini olish yoki shakllantirish
+ */
+async function getOrGenerateReceiptForOrder(orderId) {
+  if (!orderId) return null;
+
+  const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+  if (!order) return null;
+
+  const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+  const items = await all(`
+    SELECT oi.*, p.mxik_code, p.package_code, p.vat_percent 
+    FROM order_items oi
+    LEFT JOIN products p ON oi.product_id = p.id
+    WHERE oi.order_id = ? AND (oi.is_cancelled = 0 OR oi.is_cancelled IS NULL) AND oi.quantity > 0
+    ORDER BY oi.id ASC
+  `, [orderId]);
+
+  let payment = await get(`SELECT * FROM payments WHERE order_id = ? ORDER BY created_at DESC LIMIT 1`, [orderId]);
+
+  const subtotal = items.reduce((sum, it) => sum + (Number(it.price) * Number(it.quantity)), 0);
+  const serviceFeePercent = 10;
+  const servicePercent = 10;
+  const serviceFee = Math.round((subtotal * servicePercent) / 100);
+  const totalAmount = payment?.total_amount || (subtotal + serviceFee);
+
+  // Agar buyurtma to'langan bo'lsa va payments jadvalida yozuv bo'lmasa, fiskal yozuv yaratamiz
+  if (!payment && (order.status === 'paid' || order.paid_at)) {
+    const lastPayment = await get(`SELECT MAX(receipt_seq) as max_seq FROM payments`);
+    const receiptSeq = (lastPayment && lastPayment.max_seq ? lastPayment.max_seq : 1000) + 1;
+    const fiscalSign = generateFiscalSign();
+    const dateNow = order.updated_at || order.created_at || new Date().toISOString();
+    const paymentId = 'pay_' + Date.now();
+    const fiscalQrUrl = buildSoliqQRUrl({ receiptSeq, totalAmount, fiscalSign, dateStr: dateNow });
+
+    await run(`
+      INSERT INTO payments (
+        id, order_id, table_id, total_amount, payment_method, cash_amount, card_amount,
+        fiscal_sign, fiscal_qr_url, receipt_seq, is_synced_soliq, created_at
+      ) VALUES (?, ?, ?, ?, 'cash', ?, 0, ?, ?, ?, 1, ?)
+    `, [paymentId, order.id, order.table_id, totalAmount, totalAmount, fiscalSign, fiscalQrUrl, receiptSeq, dateNow]);
+
+    payment = await get(`SELECT * FROM payments WHERE id = ?`, [paymentId]);
+  }
+
+  const receiptSeq = payment?.receipt_seq || 1001;
+  const fiscalSign = payment?.fiscal_sign || generateFiscalSign();
+  const paymentDate = payment?.created_at || order.updated_at || order.created_at || new Date().toISOString();
+  const fiscalQrUrl = payment?.fiscal_qr_url || buildSoliqQRUrl({ receiptSeq, totalAmount, fiscalSign, dateStr: paymentDate });
+
+  let qrImageBase64 = '';
+  try {
+    qrImageBase64 = await QRCode.toDataURL(fiscalQrUrl, {
+      margin: 1,
+      width: 200,
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+  } catch (e) {
+    console.warn('QR code generation error:', e.message);
+  }
+
+  const vatAmount = Math.round((totalAmount * 12) / 112);
+  const cleanItems = items.map((it) => ({
+    id: it.id,
+    product_name: it.product_name,
+    quantity: it.quantity,
+    price: it.price,
+    total: it.price * it.quantity,
+    mxik_code: it.mxik_code || '10701001001000000',
+    package_code: it.package_code || '796',
+    vat_percent: it.vat_percent !== undefined ? it.vat_percent : 12,
+  }));
+
+  const fiscalReceipt = {
+    paymentId: payment?.id || ('pay_' + Date.now()),
+    receiptSeq,
+    company: COMPANY_INFO,
+    orderId: order.id,
+    tableNumber: table ? table.number : order.table_id,
+    tableName: table ? (table.name || `${table.number}-STOL`) : `STOL ${order.table_id}`,
+    hallName: table ? (table.hall || 'Asosiy Zal') : 'Asosiy Zal',
+    waiterName: order.waiter_name || 'Ofitsiant',
+    totalAmount,
+    vatAmount,
+    paymentMethod: payment?.payment_method || 'cash',
+    cashAmount: payment?.cash_amount || totalAmount,
+    cardAmount: payment?.card_amount || 0,
+    debtAmount: payment?.debt_amount || 0,
+    fiscalSign,
+    fiscalQrUrl,
+    qrImageBase64,
+    date: paymentDate,
+    isOnline: true,
+    isSynced: payment?.is_synced_soliq || 1,
+    items: cleanItems,
+  };
+
+  const standardReceipt = {
+    type: 'standard',
+    company: COMPANY_INFO,
+    orderId: order.id,
+    orderNumber: order.id.substring(0, 8),
+    tableNumber: table ? table.number : order.table_id,
+    tableName: table ? (table.name || `${table.number}-STOL`) : `STOL ${order.table_id}`,
+    hallName: table ? (table.hall || 'Asosiy Zal') : 'Asosiy Zal',
+    waiterName: order.waiter_name || 'Ofitsiant',
+    openedAt: order.created_at,
+    closedAt: paymentDate,
+    paymentMethod: payment?.payment_method || 'cash',
+    cashAmount: payment?.cash_amount || totalAmount,
+    cardAmount: payment?.card_amount || 0,
+    subtotal,
+    serviceFeePercent,
+    serviceFee,
+    totalAmount,
+    items: cleanItems,
+    footerText: 'Xaridingiz uchun rahmat! Yana kutib qolamiz!',
+  };
+
+  return {
+    order,
+    table,
+    payment,
+    fiscalReceipt,
+    standardReceipt,
+  };
+}
+
 module.exports = {
   COMPANY_INFO,
   setInternetStatus,
@@ -167,4 +295,5 @@ module.exports = {
   syncPendingQueue,
   getPendingCount,
   generateFiscalSign,
+  getOrGenerateReceiptForOrder,
 };

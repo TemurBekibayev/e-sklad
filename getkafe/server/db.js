@@ -138,9 +138,10 @@ async function initDB() {
       order_id TEXT NOT NULL,
       table_id INTEGER NOT NULL,
       total_amount INTEGER NOT NULL,
-      payment_method TEXT NOT NULL, -- 'cash', 'card', 'split'
+      payment_method TEXT NOT NULL, -- 'cash', 'card', 'split', 'debt'
       cash_amount INTEGER DEFAULT 0,
       card_amount INTEGER DEFAULT 0,
+      debt_amount INTEGER DEFAULT 0,
       fiscal_sign TEXT, -- Soliq fiskal belgisi
       fiscal_qr_url TEXT, -- Soliq QR kodi URL manzili
       receipt_seq INTEGER, -- Chek seriya raqami
@@ -150,7 +151,37 @@ async function initDB() {
     )
   `);
 
-  // 8. Soliq Offline Queue (Internet uzilganda cheklar buferi)
+  // 8. Debts (Qarzdorliklar)
+  await run(`
+    CREATE TABLE IF NOT EXISTS debts (
+      id TEXT PRIMARY KEY, -- UUID
+      order_id TEXT,
+      client_name TEXT NOT NULL,
+      client_phone TEXT DEFAULT '',
+      total_amount INTEGER NOT NULL DEFAULT 0,
+      paid_amount INTEGER NOT NULL DEFAULT 0,
+      remaining_amount INTEGER NOT NULL DEFAULT 0,
+      status TEXT DEFAULT 'unpaid', -- 'unpaid', 'partially_paid', 'paid'
+      comment TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (order_id) REFERENCES orders (id)
+    )
+  `);
+
+  // 9. Debt Payments Log (Qarz to'lovlari tarixi)
+  await run(`
+    CREATE TABLE IF NOT EXISTS debt_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      debt_id TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      payment_method TEXT DEFAULT 'cash', -- 'cash', 'card'
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (debt_id) REFERENCES debts (id)
+    )
+  `);
+
+  // 10. Soliq Offline Queue (Internet uzilganda cheklar buferi)
   await run(`
     CREATE TABLE IF NOT EXISTS fiscal_queue (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -280,6 +311,11 @@ async function initDB() {
 }
 
 async function seedInitialData() {
+  // Check payments debt_amount
+  try {
+    await run(`ALTER TABLE payments ADD COLUMN debt_amount INTEGER DEFAULT 0`);
+  } catch (e) {}
+
   // Check printer settings service fee
   try {
     await run(`ALTER TABLE printer_settings ADD COLUMN service_fee_percent REAL DEFAULT 10`);

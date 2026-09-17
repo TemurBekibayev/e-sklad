@@ -23,7 +23,8 @@ export default function Header({
   onLogout, 
   onOpenStaffModal,
   onOpenTableManageModal,
-  onOpenPrinterSettings
+  onOpenPrinterSettings,
+  onOpenDebtsModal
 }) {
   const { t } = useLanguage();
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -111,17 +112,19 @@ export default function Header({
           </button>
         )}
 
-        <button
-          onClick={() => setCurrentTab('kitchen')}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-            currentTab === 'kitchen'
-              ? 'bg-orange-500 text-slate-950 shadow-md'
-              : 'text-slate-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <ChefHat className="w-4 h-4" />
-          <span>{t('tab_kitchen', 'Oshxona (KDS)')}</span>
-        </button>
+        {(currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'cook' || !currentUser) && (
+          <button
+            onClick={() => setCurrentTab('kitchen')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+              currentTab === 'kitchen'
+                ? 'bg-orange-500 text-slate-950 shadow-md'
+                : 'text-slate-300 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <ChefHat className="w-4 h-4" />
+            <span>{t('tab_kitchen', 'Oshxona (KDS)')}</span>
+          </button>
+        )}
 
         {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
           <>
@@ -196,6 +199,16 @@ export default function Header({
             >
               <Printer className="w-3.5 h-3.5 text-amber-400" />
               <span className="hidden xl:inline">Printer</span>
+            </button>
+
+            {/* Qarzdorlik Button */}
+            <button
+              onClick={onOpenDebtsModal}
+              title="Qarzdorlik Bo'limi va Mijozlar Hisobi"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-100 hover:text-white font-bold text-xs border border-rose-700 shadow-sm transition-all"
+            >
+              <span>📕</span>
+              <span className="hidden xl:inline">Qarzdorlik</span>
             </button>
           </>
         )}

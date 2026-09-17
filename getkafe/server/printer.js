@@ -167,20 +167,37 @@ async function printThermalReceipt(receiptData) {
     comment: it.comment ? String(it.comment) : '',
   })) : [];
 
-  // Rekvizitlarni birlashtirish
+  // Rekvizitlarni to'liq xavfsiz sanitizatsiya qilish (Null deserialization xatolarini oldini olish)
   const payload = {
-    ...receiptData,
+    paymentId: String(receiptData?.paymentId || 'pay_' + Date.now()),
     receiptSeq: Number(receiptData?.receiptSeq) || 1001,
+    company: {
+      name: String(receiptData?.company?.name || settings.header_title || 'KAFE "MILLIY TAOMLAR" MCHJ'),
+      inn: String(receiptData?.company?.inn || settings.inn || '307849201'),
+      terminalId: String(receiptData?.company?.terminalId || 'VG298430008256'),
+      fiscalModuleId: String(receiptData?.company?.fiscalModuleId || settings.fm || 'FM99882211'),
+      address: String(receiptData?.company?.address || settings.header_address || 'Toshkent sh.'),
+    },
+    orderId: String(receiptData?.orderId || ''),
+    tableNumber: String(receiptData?.tableNumber || receiptData?.tableId || ''),
+    waiterName: String(receiptData?.waiterName || 'Ofitsiant'),
     totalAmount: Number(receiptData?.totalAmount) || 0,
     vatAmount: Number(receiptData?.vatAmount) || 0,
+    paymentMethod: String(receiptData?.paymentMethod || 'cash'),
     cashAmount: Number(receiptData?.cashAmount) || 0,
     cardAmount: Number(receiptData?.cardAmount) || 0,
+    fiscalSign: String(receiptData?.fiscalSign || ''),
+    fiscalQrUrl: String(receiptData?.fiscalQrUrl || ''),
+    qrImageBase64: String(receiptData?.qrImageBase64 || ''),
+    date: String(receiptData?.date || receiptData?.dateTime || new Date().toISOString()),
+    isSynced: receiptData?.isSynced ? 1 : 0,
+    isOnline: receiptData?.isOnline ? 1 : 0,
     items: cleanItems,
     printerName: targetPrinter,
-    paperWidth: receiptData?.paperWidth || settings.paper_width || '80mm',
-    headerTitle: settings.header_title,
-    headerAddress: settings.header_address,
-    footerText: settings.footer_text,
+    paperWidth: String(receiptData?.paperWidth || settings.paper_width || '80mm'),
+    headerTitle: String(settings.header_title || 'KAFE "MILLIY TAOMLAR" MCHJ'),
+    headerAddress: String(settings.header_address || 'Toshkent sh.'),
+    footerText: String(settings.footer_text || 'Haridingiz uchun rahmat!'),
     autoCut: true,
   };
 
@@ -293,6 +310,7 @@ async function printToKitchen({ orderId, tableNumber, waiterName, items, printer
     items,
     ticketText,
     timestamp: new Date().toISOString(),
+    status: 'pending', // 'pending', 'in_progress', 'ready', 'completed'
   };
 
   recentKitchenTickets.unshift(ticketRecord);
@@ -558,6 +576,30 @@ function recordFiscalReceipt(receiptData) {
   return receiptData;
 }
 
+function updateKitchenTicketStatus(ticketId, newStatus) {
+  const ticket = recentKitchenTickets.find(t => String(t.id) === String(ticketId));
+  if (ticket) {
+    ticket.status = newStatus;
+    ticket.updatedAt = new Date().toISOString();
+    return ticket;
+  }
+  return null;
+}
+
+function removeKitchenTicketItem(ticketId, productId, productName) {
+  const ticket = recentKitchenTickets.find(t => String(t.id) === String(ticketId));
+  if (ticket && Array.isArray(ticket.items)) {
+    ticket.items = ticket.items.filter(it => {
+      const itPid = it.productId || it.product_id || it.id;
+      if (productId && itPid && String(itPid) === String(productId)) return false;
+      if (productName && it.product_name && it.product_name.trim().toLowerCase() === String(productName).trim().toLowerCase()) return false;
+      return true;
+    });
+    return ticket;
+  }
+  return null;
+}
+
 module.exports = {
   getInstalledPrinters,
   getPrinterSettings,
@@ -571,5 +613,7 @@ module.exports = {
   printKitchenCancellationTicket,
   recordFiscalReceipt,
   getRecentKitchenTickets: () => recentKitchenTickets,
+  updateKitchenTicketStatus,
+  removeKitchenTicketItem,
   getRecentFiscalReceipts: () => recentFiscalReceipts,
 };

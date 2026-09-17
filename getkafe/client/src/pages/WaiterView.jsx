@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import TableHallManagementModal from '../components/TableHallManagementModal';
 import { useLanguage } from '../i18n/LanguageContext';
+import { useDialog } from '../context/DialogContext';
 
 export default function WaiterView({ 
   tables = [], 
@@ -38,6 +39,7 @@ export default function WaiterView({
   onSelectTable,
 }) {
   const { t, tr } = useLanguage();
+  const dialog = useDialog();
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedHall, setSelectedHall] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(0); // 0 = Barchasi
@@ -221,7 +223,7 @@ export default function WaiterView({
     const ordId = selectedTable?.order_id || selectedTable?.current_order_id || existingOrderData?.order?.id;
     if (!ordId && !selectedTable?.id) return;
     try {
-      const validItems = existingOrderData?.items || existingItems || [];
+      const validItems = (existingOrderData?.items || existingItems || []).filter((it) => !it.is_cancelled);
       const payload = {
         orderId: ordId || `ord_${selectedTable.id}`,
         tableId: selectedTable.id,
@@ -247,13 +249,36 @@ export default function WaiterView({
     if (!selectedTable?.id) return;
     try {
       const res = await fetch(`/api/tables/${selectedTable.id}/reopen`, { method: 'POST' });
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (e) {
+        data = { success: false, message: "Serverdan kutilmagan javob keldi" };
+      }
       if (data.success) {
         setSelectedTable((prev) => ({ ...prev, status: 'busy' }));
         if (onRefreshTables) onRefreshTables();
+      } else {
+        if (dialog && dialog.alert) {
+          dialog.alert({
+            title: "Qayta Ochish Xatosi",
+            message: data.message || "Buyurtmani qayta ochish imkoni bo'lmadi",
+            type: "error"
+          });
+        } else {
+          alert('Qayta ochishda xatolik: ' + (data.message || 'Xatolik yuz berdi'));
+        }
       }
     } catch (err) {
-      alert('Qayta ochishda xatolik: ' + err.message);
+      if (dialog && dialog.alert) {
+        dialog.alert({
+          title: "Qayta Ochish Xatosi",
+          message: err.message || "Tizim xatoligi yuz berdi",
+          type: "error"
+        });
+      } else {
+        alert('Qayta ochishda xatolik: ' + err.message);
+      }
     }
   };
 
@@ -460,9 +485,7 @@ export default function WaiterView({
   }
 
   // ----------------------------------------------------
-  // STEP 2: Menu Ordering Screen with Active Order Items
-  // ----------------------------------------------------
-  const existingItems = existingOrderData?.items || [];
+  const existingItems = (existingOrderData?.items || []).filter((it) => !it.is_cancelled);
 
   return (
     <div className="p-3 sm:p-5 lg:p-6 w-full min-h-full flex-1 bg-[#f3f6fa] text-slate-800 flex flex-col lg:flex-row gap-5">

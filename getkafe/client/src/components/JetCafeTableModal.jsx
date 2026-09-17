@@ -37,15 +37,15 @@ export default function JetCafeTableModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[1px] select-none p-4">
       {/* Container matching JetCafe floor plan window */}
-      <div className="w-full max-w-5xl h-[85vh] bg-[#eff1f5] border-2 border-[#b0b8c5] rounded-xl shadow-2xl flex flex-col text-slate-800 text-xs font-sans overflow-hidden">
+      <div className="w-[98vw] max-w-[1920px] h-[96vh] bg-[#eff1f5] border-2 border-[#b0b8c5] rounded-xl shadow-2xl flex flex-col text-slate-800 text-xs font-sans overflow-hidden">
         
         {/* Title Bar */}
-        <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-3 py-1.5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2 font-semibold text-slate-700 tracking-wide text-xs">
-            <span className="font-black text-slate-800">GetPOS</span>
+        <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-4 py-2.5 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2 font-bold text-slate-800 tracking-wide text-base">
+            <span className="font-black text-slate-900">GetPOS</span>
             <span className="text-amber-600 font-black">Kafe</span>
             <span className="text-slate-400">|</span>
-            <span>Stollar (Zallar va o'rindiqlar sxemasi)</span>
+            <span className="font-extrabold text-slate-800">Stollar (Zallar va o'rindiqlar sxemasi)</span>
           </div>
           <div className="flex items-center gap-2">
             {onOpenManageTables && (
@@ -54,15 +54,15 @@ export default function JetCafeTableModal({
                   onClose();
                   onOpenManageTables();
                 }}
-                className="px-2.5 py-0.5 bg-slate-700 hover:bg-slate-800 text-white rounded text-[11px] font-bold flex items-center gap-1 transition"
+                className="px-3 py-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition shadow"
               >
-                <Settings className="w-3 h-3 text-orange-400" />
+                <Settings className="w-4 h-4 text-orange-400" />
                 <span>Stol/Zal sozlash</span>
               </button>
             )}
             <button
               onClick={onClose}
-              className="w-5 h-5 flex items-center justify-center text-xs font-bold text-slate-600 hover:bg-rose-500 hover:text-white rounded transition"
+              className="w-7 h-7 flex items-center justify-center text-base font-black text-slate-600 hover:bg-rose-500 hover:text-white rounded-lg transition"
             >
               ✕
             </button>
@@ -70,12 +70,12 @@ export default function JetCafeTableModal({
         </div>
 
         {/* Halls Tabs */}
-        <div className="bg-[#dfe5ee] px-3 pt-2 flex items-center justify-between border-b border-[#c2cbd8] shrink-0 overflow-x-auto">
-          <div className="flex gap-1">
+        <div className="bg-[#dfe5ee] px-4 pt-2 flex items-center justify-between border-b border-[#c2cbd8] shrink-0 overflow-x-auto">
+          <div className="flex gap-1.5">
             <button
               type="button"
               onClick={() => setActiveHall('all')}
-              className={`px-4 py-2 text-xs rounded-t font-bold transition whitespace-nowrap ${
+              className={`px-5 py-2.5 text-xs rounded-t-lg font-extrabold transition whitespace-nowrap ${
                 activeHall === 'all'
                   ? 'bg-[#eff1f5] border-t-2 border-l border-r border-[#a8b3c4] border-t-blue-600 -mb-[1px] text-slate-900 shadow-sm'
                   : 'bg-[#d2d9e4] text-slate-600 hover:bg-[#dce3ec]'
@@ -91,7 +91,7 @@ export default function JetCafeTableModal({
                   key={h}
                   type="button"
                   onClick={() => setActiveHall(h)}
-                  className={`px-4 py-2 text-xs rounded-t font-bold transition whitespace-nowrap ${
+                  className={`px-5 py-2.5 text-xs rounded-t-lg font-extrabold transition whitespace-nowrap ${
                     isActive
                       ? 'bg-[#eff1f5] border-t-2 border-l border-r border-[#a8b3c4] border-t-blue-600 -mb-[1px] text-slate-900 shadow-sm'
                       : 'bg-[#d2d9e4] text-slate-600 hover:bg-[#dce3ec]'
@@ -104,12 +104,12 @@ export default function JetCafeTableModal({
           </div>
 
           {/* Quick status counters */}
-          <div className="flex items-center gap-1.5 pb-1.5 text-[11px] shrink-0 ml-2">
+          <div className="flex items-center gap-2 pb-1.5 text-xs shrink-0 ml-2">
             <button
               type="button"
               onClick={() => setFilter('all')}
-              className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition ${
-                filter === 'all' ? 'bg-blue-600 text-white border-blue-700' : 'bg-white text-slate-700 border-slate-300'
+              className={`px-3.5 py-1.5 rounded-lg border font-extrabold transition ${
+                filter === 'all' ? 'bg-blue-600 text-white border-blue-700 shadow-sm' : 'bg-white text-slate-700 border-slate-300'
               }`}
             >
               Barchasi ({tables.length})
@@ -117,8 +117,8 @@ export default function JetCafeTableModal({
             <button
               type="button"
               onClick={() => setFilter('free')}
-              className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition ${
-                filter === 'free' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-emerald-700 border-slate-300'
+              className={`px-3.5 py-1.5 rounded-lg border font-extrabold transition ${
+                filter === 'free' ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm' : 'bg-white text-emerald-700 border-slate-300'
               }`}
             >
               ● Bo'sh ({tables.filter((t) => t.status === 'free').length})
@@ -126,8 +126,8 @@ export default function JetCafeTableModal({
             <button
               type="button"
               onClick={() => setFilter('busy')}
-              className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition ${
-                filter === 'busy' ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-rose-700 border-slate-300'
+              className={`px-3.5 py-1.5 rounded-lg border font-extrabold transition ${
+                filter === 'busy' ? 'bg-rose-600 text-white border-rose-700 shadow-sm' : 'bg-white text-rose-700 border-slate-300'
               }`}
             >
               ● Band ({tables.filter((t) => t.status === 'busy').length})
@@ -135,8 +135,8 @@ export default function JetCafeTableModal({
             <button
               type="button"
               onClick={() => setFilter('bill_requested')}
-              className={`px-2.5 py-0.5 rounded border text-[10px] font-bold transition ${
-                filter === 'bill_requested' ? 'bg-amber-600 text-white border-amber-700' : 'bg-white text-amber-700 border-slate-300'
+              className={`px-3.5 py-1.5 rounded-lg border font-extrabold transition ${
+                filter === 'bill_requested' ? 'bg-amber-600 text-white border-amber-700 shadow-sm' : 'bg-white text-amber-700 border-slate-300'
               }`}
             >
               ● Hisob so'ralgan ({tables.filter((t) => t.status === 'bill_requested').length})
@@ -145,9 +145,9 @@ export default function JetCafeTableModal({
         </div>
 
         {/* Tables Floor Grid */}
-        <div className="flex-1 p-6 overflow-y-auto bg-[#c5ccd8] flex flex-wrap content-start gap-4">
+        <div className="flex-1 p-6 overflow-y-auto bg-[#c5ccd8] flex flex-wrap content-start gap-5">
           {filteredTables.length === 0 ? (
-            <div className="w-full h-full flex items-center justify-center text-slate-500 font-semibold text-sm">
+            <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-base">
               Tanlangan filtr bo'yicha stollar topilmadi
             </div>
           ) : (
@@ -160,7 +160,7 @@ export default function JetCafeTableModal({
               // Card styling depending on exact status
               let cardBgClass = 'bg-[#1b7a2b] hover:bg-[#166c25] border-[#13571f] text-white'; // default free green
               if (isBillRequested) {
-                cardBgClass = 'bg-[#d68910] hover:bg-[#c37b0b] border-[#996515] text-white ring-1 ring-amber-300';
+                cardBgClass = 'bg-[#d68910] hover:bg-[#c37b0b] border-[#996515] text-white ring-2 ring-amber-300';
               } else if (isBusy) {
                 cardBgClass = 'bg-[#c0392b] hover:bg-[#a93226] border-[#922b21] text-white';
               }
@@ -172,14 +172,14 @@ export default function JetCafeTableModal({
                     onSelectTable(t);
                     onClose();
                   }}
-                  className={`w-36 h-36 rounded-xl border cursor-pointer transition transform hover:scale-[1.02] active:scale-95 flex flex-col justify-between p-3 shadow-md ${
+                  className={`w-56 h-48 sm:w-60 sm:h-52 rounded-2xl border-2 cursor-pointer transition transform hover:scale-[1.04] active:scale-95 flex flex-col justify-between p-4 shadow-lg ${
                     isCurrent ? 'ring-4 ring-blue-500 ring-offset-2' : ''
                   } ${cardBgClass}`}
                 >
                   {/* Top: STOL X :order */}
-                  <div className="flex items-center justify-between font-black text-sm">
-                    <span>{t.name || `STOL ${t.number}`}</span>
-                    <span className="text-[11px] opacity-90 font-mono">
+                  <div className="flex items-center justify-between font-black text-base tracking-wide border-b border-white/20 pb-1.5">
+                    <span className="drop-shadow-sm">{t.name || `STOL ${t.number}`}</span>
+                    <span className="text-xs opacity-90 font-mono bg-black/20 px-1.5 py-0.5 rounded">
                       {!isFree && t.order_id ? `:${String(t.order_id).slice(-2)}` : ''}
                     </span>
                   </div>
