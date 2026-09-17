@@ -157,11 +157,27 @@ async function printThermalReceipt(receiptData) {
     } catch (e) {}
   }
 
+  const cleanItems = Array.isArray(receiptData?.items) ? receiptData.items.map(it => ({
+    product_name: String(it.product_name || it.name || 'Taom'),
+    quantity: Number(it.quantity) || 1,
+    price: Number(it.price) || 0,
+    mxik_code: it.mxik_code ? String(it.mxik_code) : '',
+    package_code: it.package_code ? String(it.package_code) : '796',
+    vat_percent: (it.vat_percent !== undefined && it.vat_percent !== null && it.vat_percent !== '') ? Number(it.vat_percent) : 12,
+    comment: it.comment ? String(it.comment) : '',
+  })) : [];
+
   // Rekvizitlarni birlashtirish
   const payload = {
     ...receiptData,
+    receiptSeq: Number(receiptData?.receiptSeq) || 1001,
+    totalAmount: Number(receiptData?.totalAmount) || 0,
+    vatAmount: Number(receiptData?.vatAmount) || 0,
+    cashAmount: Number(receiptData?.cashAmount) || 0,
+    cardAmount: Number(receiptData?.cardAmount) || 0,
+    items: cleanItems,
     printerName: targetPrinter,
-    paperWidth: receiptData.paperWidth || settings.paper_width || '80mm',
+    paperWidth: receiptData?.paperWidth || settings.paper_width || '80mm',
     headerTitle: settings.header_title,
     headerAddress: settings.header_address,
     footerText: settings.footer_text,

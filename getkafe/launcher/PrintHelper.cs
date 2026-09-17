@@ -12,12 +12,45 @@ namespace KafePOS.Printer
     public class ReceiptItem
     {
         public string product_name { get; set; }
-        public int quantity { get; set; }
-        public double price { get; set; }
+        public object quantity { get; set; }
+        public object price { get; set; }
         public string mxik_code { get; set; }
         public string package_code { get; set; }
-        public int vat_percent { get; set; }
+        public object vat_percent { get; set; }
         public string comment { get; set; }
+
+        public double PriceVal
+        {
+            get
+            {
+                if (price == null) return 0;
+                double d;
+                if (double.TryParse(price.ToString(), out d)) return d;
+                return 0;
+            }
+        }
+
+        public double QtyVal
+        {
+            get
+            {
+                if (quantity == null) return 1;
+                double d;
+                if (double.TryParse(quantity.ToString(), out d)) return d;
+                return 1;
+            }
+        }
+
+        public int VatVal
+        {
+            get
+            {
+                if (vat_percent == null) return 12;
+                int i;
+                if (int.TryParse(vat_percent.ToString(), out i)) return i;
+                return 12;
+            }
+        }
     }
 
     public class CompanyInfo
@@ -32,16 +65,16 @@ namespace KafePOS.Printer
     public class ReceiptData
     {
         public string paymentId { get; set; }
-        public int receiptSeq { get; set; }
+        public object receiptSeq { get; set; }
         public CompanyInfo company { get; set; }
         public string orderId { get; set; }
         public string tableNumber { get; set; }
         public string waiterName { get; set; }
-        public double totalAmount { get; set; }
-        public double vatAmount { get; set; }
+        public object totalAmount { get; set; }
+        public object vatAmount { get; set; }
         public string paymentMethod { get; set; }
-        public double cashAmount { get; set; }
-        public double cardAmount { get; set; }
+        public object cashAmount { get; set; }
+        public object cardAmount { get; set; }
         public string fiscalSign { get; set; }
         public string fiscalQrUrl { get; set; }
         public string qrImageBase64 { get; set; }
@@ -68,6 +101,39 @@ namespace KafePOS.Printer
         public string headerAddress { get; set; }
         public string footerText { get; set; }
         public object autoCut { get; set; }
+
+        public double TotalAmountVal
+        {
+            get
+            {
+                if (totalAmount == null) return 0;
+                double d;
+                if (double.TryParse(totalAmount.ToString(), out d)) return d;
+                return 0;
+            }
+        }
+
+        public double VatAmountVal
+        {
+            get
+            {
+                if (vatAmount == null) return 0;
+                double d;
+                if (double.TryParse(vatAmount.ToString(), out d)) return d;
+                return 0;
+            }
+        }
+
+        public int ReceiptSeqVal
+        {
+            get
+            {
+                if (receiptSeq == null) return 1001;
+                int i;
+                if (int.TryParse(receiptSeq.ToString(), out i)) return i;
+                return 1001;
+            }
+        }
     }
 
     public class KitchenTicketData
@@ -362,7 +428,7 @@ namespace KafePOS.Printer
             drawDivider();
 
             // 2. Receipt metadata
-            string seqStr = "CHEK № " + (r.receiptSeq > 0 ? r.receiptSeq.ToString() : "1001");
+            string seqStr = "CHEK № " + (r.ReceiptSeqVal > 0 ? r.ReceiptSeqVal.ToString() : "1001");
             string timeStr = DateTime.Now.ToString("HH:mm:ss");
             if (!string.IsNullOrEmpty(r.date))
             {
@@ -394,14 +460,14 @@ namespace KafePOS.Printer
                 int idx = 1;
                 foreach (var it in r.items)
                 {
-                    double itemTotal = it.price * it.quantity;
-                    string itemHeader = string.Format("{0}. {1} x {2}", idx++, it.product_name, it.quantity);
+                    double itemTotal = it.PriceVal * it.QtyVal;
+                    string itemHeader = string.Format("{0}. {1} x {2}", idx++, it.product_name ?? "Taom", it.QtyVal);
                     string priceText = itemTotal.ToString("#,##0");
                     drawTwoCols(itemHeader, priceText, fontRegular);
 
                     if (!string.IsNullOrEmpty(it.mxik_code))
                     {
-                        string mxikText = "MXIK: " + it.mxik_code + " | Qadoq: " + (it.package_code ?? "796") + " | QQS: " + it.vat_percent + "%";
+                        string mxikText = "MXIK: " + it.mxik_code + " | Qadoq: " + (it.package_code ?? "796") + " | QQS: " + it.VatVal + "%";
                         g.DrawString(mxikText, fontSmall, Brushes.DimGray, 5, y);
                         y += g.MeasureString(mxikText, fontSmall).Height;
                     }
@@ -412,12 +478,12 @@ namespace KafePOS.Printer
             drawDivider();
 
             // 4. Totals
-            drawTwoCols("JAMI TO'LOV:", r.totalAmount.ToString("#,##0") + " UZS", fontTotal);
+            drawTwoCols("JAMI TO'LOV:", r.TotalAmountVal.ToString("#,##0") + " UZS", fontTotal);
             y += 2;
 
-            if (r.vatAmount > 0)
+            if (r.VatAmountVal > 0)
             {
-                drawTwoCols("Shu jumladan QQS (12%):", r.vatAmount.ToString("#,##0") + " UZS", fontRegular);
+                drawTwoCols("Shu jumladan QQS (12%):", r.VatAmountVal.ToString("#,##0") + " UZS", fontRegular);
             }
 
             string payMethodText = "NAQD PUL";
@@ -552,8 +618,8 @@ namespace KafePOS.Printer
                 int idx = 1;
                 foreach (var it in k.items)
                 {
-                    string qtyText = (it.quantity > 0 ? it.quantity.ToString() : (it.quantity).ToString()) + " ta";
-                    drawTwoCols(string.Format("{0}. {1}", idx++, it.product_name), qtyText, fontBig);
+                    string qtyText = (it.QtyVal > 0 ? it.QtyVal.ToString() : "1") + " ta";
+                    drawTwoCols(string.Format("{0}. {1}", idx++, it.product_name ?? "Taom"), qtyText, fontBig);
                     if (!string.IsNullOrEmpty(it.comment))
                     {
                         g.DrawString("   >>> IZOH: " + it.comment, fontItalic, brush, 5, y);

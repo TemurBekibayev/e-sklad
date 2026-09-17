@@ -157,11 +157,27 @@ async function printThermalReceipt(receiptData) {
     } catch (e) {}
   }
 
+  const cleanItems = Array.isArray(receiptData?.items) ? receiptData.items.map(it => ({
+    product_name: String(it.product_name || it.name || 'Taom'),
+    quantity: Number(it.quantity) || 1,
+    price: Number(it.price) || 0,
+    mxik_code: it.mxik_code ? String(it.mxik_code) : '',
+    package_code: it.package_code ? String(it.package_code) : '796',
+    vat_percent: (it.vat_percent !== undefined && it.vat_percent !== null && it.vat_percent !== '') ? Number(it.vat_percent) : 12,
+    comment: it.comment ? String(it.comment) : '',
+  })) : [];
+
   // Rekvizitlarni birlashtirish
   const payload = {
     ...receiptData,
+    receiptSeq: Number(receiptData?.receiptSeq) || 1001,
+    totalAmount: Number(receiptData?.totalAmount) || 0,
+    vatAmount: Number(receiptData?.vatAmount) || 0,
+    cashAmount: Number(receiptData?.cashAmount) || 0,
+    cardAmount: Number(receiptData?.cardAmount) || 0,
+    items: cleanItems,
     printerName: targetPrinter,
-    paperWidth: receiptData.paperWidth || settings.paper_width || '80mm',
+    paperWidth: receiptData?.paperWidth || settings.paper_width || '80mm',
     headerTitle: settings.header_title,
     headerAddress: settings.header_address,
     footerText: settings.footer_text,
@@ -438,10 +454,29 @@ async function printKitchenCancellationTicket({ orderId, tableNumber, hallName, 
   return cancelRecord;
 }
 
+const recentPrecheckPrints = new Map(); // key -> timestamp
+
 /**
  * Pre-chek (Xaridor uchun oraliq hisob-kitob cheki) chiqarish
  */
 async function printPrecheckReceipt(precheckData) {
+  const rawItems = precheckData?.items || [];
+  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
+  const subtotal = precheckData?.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
+  const servicePercent = precheckData?.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
+  const serviceFee = precheckData?.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+  const totalAmount = precheckData?.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
+
+  // Anti-duplicate protection: 4 soniya ichida bir xil buyurtmani 2-3 marta chiqarishni bloklash
+  const dedupeKey = `${precheckData?.tableNumber || ''}_${precheckData?.orderId || ''}_${totalAmount}`;
+  const now = Date.now();
+  const lastTime = recentPrecheckPrints.get(dedupeKey);
+  if (lastTime && (now - lastTime < 4000)) {
+    console.log(`[Printer] Pre-chek dublikati bloklandi (4 soniya ichida qayta chaqirildi): ${dedupeKey}`);
+    return { success: true, message: 'Pre-chek allaqachon chop etildi' };
+  }
+  recentPrecheckPrints.set(dedupeKey, now);
+
   const settings = await getPrinterSettings();
   const helperPath = getPrintHelperPath();
 
@@ -457,13 +492,6 @@ async function printPrecheckReceipt(precheckData) {
       if (thermal) targetPrinter = thermal.name;
     } catch (e) {}
   }
-
-  const rawItems = precheckData.items || [];
-  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
-  const subtotal = precheckData.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
-  const servicePercent = precheckData.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
-  const serviceFee = precheckData.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
-  const totalAmount = precheckData.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
 
   const payload = {
     receiptSeq: 0,
