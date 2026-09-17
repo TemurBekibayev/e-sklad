@@ -553,36 +553,54 @@ async function syncFromBackend() {
       }
     }
 
-    // 2. SYNC PRODUCTS (GET /api/products/?tenantId=...)
+    // 2. SYNC PRODUCTS (GET /api/v1/products/?page_size=200)
     const token = await ensureAuthToken();
     const productHeaders = {};
     if (token) productHeaders['Authorization'] = `Bearer ${token}`;
 
-    const prodsRes = await makeRequest({
-      url: `${baseUrl}/api/products/?tenantId=${tenantId}`,
+    let prodsRes = await makeRequest({
+      url: `${baseUrl}/api/v1/products/?page_size=200`,
       method: 'GET',
       headers: productHeaders,
     });
 
-    if (prodsRes.status === 200) {
+    if (!prodsRes || prodsRes.status !== 200 || !prodsRes.data) {
+      prodsRes = await makeRequest({
+        url: `${baseUrl}/api/products/?tenantId=${tenantId}`,
+        method: 'GET',
+        headers: productHeaders,
+      });
+    }
+
+    if (prodsRes && prodsRes.status === 200) {
       const prodList = prodsRes.data?.results || (Array.isArray(prodsRes.data) ? prodsRes.data : []);
 
       if (prodList.length > 0) {
-        // Ensure a "Do'kon tovarlari / Bar" category exists
-        let storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
-        if (!storeCat) {
-          await run(`
-            INSERT INTO categories (name, slug, icon, order_index)
-            VALUES ('BAR VA ICHIMLIKLAR', 'store_goods', '🥤', 7)
-          `);
-          storeCat = await get(`SELECT id FROM categories WHERE slug = 'store_goods'`);
+        // Fetch all categories
+        const allCats = await all(`SELECT id, name, slug FROM categories`);
+        const catMap = {};
+        for (const c of allCats) {
+          catMap[c.slug || c.id] = c.id;
         }
-        const catId = storeCat?.id || 7;
 
         for (const p of prodList) {
           const rawPrice = p.price_per_sale_unit || p.price || 0;
           const priceNum = Math.round(parseFloat(rawPrice)) || 0;
           const barcodeVal = p.barcode || p.qr_code || null;
+          const pNameLower = (p.name || '').toLowerCase();
+
+          // Determine category
+          let targetCatId = catMap['taomlar'] || 1;
+          if (/\b(choy|kofe|coffee|qahva|cola|fanta|pepsi|sharbat|suv|water|sok|sprite|redbull|limonad|ayron|kompot|bar|ichimlik)\b/i.test(pNameLower) || /ichimlik|pepsi|coca-cola|fanta|mineral/.test(pNameLower)) {
+            // Prevent food with 'choyxona' in name from being categorized as drinks
+            if (!/oshi|palov|kabob|manti|lagmon|shashlik|somsa|sho'rva|lavash|burger/.test(pNameLower)) {
+              targetCatId = catMap['ichimliklar'] || 2;
+            }
+          } else if (/salat|chuchuk|bahor|suzma|achchiq|olivye|sezar|grek/.test(pNameLower)) {
+            targetCatId = catMap['salatlar'] || 3;
+          } else if (/shirinlik|tort|cake|pirojnoe|desert|muzqaymoq|pahlava|cheesecake|medovik/.test(pNameLower)) {
+            targetCatId = catMap['shirinliklar'] || 4;
+          }
 
           // Check if product exists by remote_id or name
           const existingProd = await get(
@@ -599,8 +617,8 @@ async function syncFromBackend() {
           } else {
             await run(`
               INSERT INTO products (category_id, name, price, cost_price, workshop, product_type, mxik_code, package_code, vat_percent, is_available, remote_id, barcode)
-              VALUES (?, ?, ?, ?, 'Бар', 'Товар', '10702002001000000', '796', 12, 1, ?, ?)
-            `, [catId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
+              VALUES (?, ?, ?, ?, 'Oshxona', 'Taom', '10702002001000000', '796', 12, 1, ?, ?)
+            `, [targetCatId, p.name, priceNum, Math.round(priceNum * 0.7), p.id, barcodeVal]);
           }
           productsSynced++;
         }
