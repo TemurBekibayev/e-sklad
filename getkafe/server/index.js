@@ -1095,10 +1095,18 @@ app.delete(['/api/products/:id', '/products/:id'], async (req, res) => {
     const numericId = parseInt(String(id).replace(/\D/g, ''), 10);
     const targetId = !isNaN(numericId) && numericId > 0 ? numericId : id;
 
-    // 1. Foreign Key cheklovlarini tozalash (stock_movements jadvalidan tozalash)
+    // 1. Remote ID ni topish va bulutdan ham o'chirish
+    const existing = await get(`SELECT id, remote_id FROM products WHERE id = ? OR id = ?`, [targetId, id]);
+    if (existing && existing.remote_id) {
+      backendSync.deleteProductFromCloud(existing.remote_id).catch((e) => {
+        console.warn('[Server] Cloud product delete warning:', e.message);
+      });
+    }
+
+    // 2. Foreign Key cheklovlarini tozalash (stock_movements jadvalidan tozalash)
     await run(`DELETE FROM stock_movements WHERE product_id = ? OR product_id = ?`, [targetId, id]);
 
-    // 2. Mahsulotni o'chirish
+    // 3. Mahsulotni lokal bazadan o'chirish
     await run(`DELETE FROM products WHERE id = ? OR id = ?`, [targetId, id]);
 
     broadcast('PRODUCT_DELETED', { id: targetId, rawId: targetId });
@@ -1107,6 +1115,154 @@ app.delete(['/api/products/:id', '/products/:id'], async (req, res) => {
   } catch (err) {
     console.error('Delete product error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// INVENTORY & STOCK MANAGEMENT (SKLAD VA QOLDIQLAR)
+// ----------------------------------------------------
+app.get('/api/inventory', async (req, res) => {
+  try {
+    const items = await all(`
+      SELECT p.id, p.name, p.price, COALESCE(p.cost_price, 0) as cost_price,
+             COALESCE(p.stock_quantity, 100) as stock_quantity,
+             COALESCE(p.unit, 'dona') as unit,
+             COALESCE(p.min_stock_alert, 5) as min_stock_alert,
+             p.image, p.mxik_code, p.category_id,
+             COALESCE(c.name, 'Taomlar') as category_name,
+             p.is_available,
+             CASE 
+               WHEN COALESCE(p.stock_quantity, 0) <= 0 THEN 'out_of_stock'
+               WHEN COALESCE(p.stock_quantity, 0) <= COALESCE(p.min_stock_alert, 5) THEN 'low_stock'
+               ELSE 'in_stock'
+             END as status
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      ORDER BY p.id ASC
+    `);
+
+    let totalStockValue = 0;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    items.forEach((i) => {
+      i.image = resolveImageUrl(req, i.image);
+      const itemCost = Number(i.cost_price) > 0 ? Number(i.cost_price) : Math.round(Number(i.price) * 0.7);
+      totalStockValue += itemCost * (Number(i.stock_quantity) || 0);
+      if (i.status === 'low_stock') lowStockCount++;
+      if (i.status === 'out_of_stock') outOfStockCount++;
+    });
+
+    res.json({
+      success: true,
+      items,
+      summary: {
+        totalItems: items.length,
+        totalStockValue: Math.round(totalStockValue),
+        lowStockCount,
+        outOfStockCount,
+      },
+    });
+  } catch (err) {
+    console.error('[Inventory API] get error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/inventory/movements', async (req, res) => {
+  try {
+    const movements = await all(`
+      SELECT sm.*, COALESCE(p.name, 'O\'chirilgan taom') as product_name, COALESCE(p.unit, 'dona') as unit
+      FROM stock_movements sm
+      LEFT JOIN products p ON sm.product_id = p.id
+      ORDER BY sm.id DESC
+      LIMIT 100
+    `);
+    res.json({ success: true, movements });
+  } catch (err) {
+    console.error('[Inventory API] movements error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/inventory/inflow', async (req, res) => {
+  try {
+    const { productId, quantity, costPrice, supplier, note, createdBy } = req.body;
+    const prod = await get(`SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: 'Mahsulot topilmadi' });
+
+    const prevStock = Number(prod.stock_quantity) || 0;
+    const addQty = Number(quantity) || 0;
+    const newStock = prevStock + addQty;
+    const unitCost = costPrice ? Number(costPrice) : (prod.cost_price || 0);
+
+    await run(`UPDATE products SET stock_quantity = ?, cost_price = COALESCE(NULLIF(?, 0), cost_price) WHERE id = ?`, [
+      newStock, unitCost, productId,
+    ]);
+
+    await run(`
+      INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, supplier, note, created_by)
+      VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [productId, addQty, prevStock, newStock, unitCost, unitCost * addQty, supplier || '', note || 'Omborga kirim (prihod)', createdBy || 'Admin']);
+
+    broadcast('INVENTORY_UPDATED', { product: { id: productId, stock_quantity: newStock, cost_price: unitCost } });
+    broadcast('PRODUCTS_UPDATED', {});
+    res.json({ success: true, message: 'Kirim muvaffaqiyatli saqlandi' });
+  } catch (err) {
+    console.error('[Inventory API] inflow error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/inventory/adjustment', async (req, res) => {
+  try {
+    const { productId, newStock, note, createdBy } = req.body;
+    const prod = await get(`SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: 'Mahsulot topilmadi' });
+
+    const prevStock = Number(prod.stock_quantity) || 0;
+    const finalStock = Number(newStock) || 0;
+    const diff = finalStock - prevStock;
+
+    await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [finalStock, productId]);
+
+    await run(`
+      INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, supplier, note, created_by)
+      VALUES (?, 'adjustment', ?, ?, ?, ?, ?, '', ?, ?)
+    `, [productId, diff, prevStock, finalStock, prod.cost_price || 0, 0, note || 'Inventarizatsiya orqali to\'g\'rilandi', createdBy || 'Admin']);
+
+    broadcast('INVENTORY_UPDATED', { product: { id: productId, stock_quantity: finalStock } });
+    broadcast('PRODUCTS_UPDATED', {});
+    res.json({ success: true, message: 'Qoldiq to\'g\'rilandi' });
+  } catch (err) {
+    console.error('[Inventory API] adjustment error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/inventory/waste', async (req, res) => {
+  try {
+    const { productId, quantity, note, createdBy } = req.body;
+    const prod = await get(`SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?`, [productId]);
+    if (!prod) return res.status(404).json({ success: false, message: 'Mahsulot topilmadi' });
+
+    const prevStock = Number(prod.stock_quantity) || 0;
+    const wasteQty = Number(quantity) || 0;
+    const newStock = Math.max(0, prevStock - wasteQty);
+
+    await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newStock, productId]);
+
+    await run(`
+      INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, supplier, note, created_by)
+      VALUES (?, 'waste', ?, ?, ?, ?, ?, '', ?, ?)
+    `, [productId, wasteQty, prevStock, newStock, prod.cost_price || 0, (prod.cost_price || 0) * wasteQty, note || 'Spisanie (Brak)', createdBy || 'Admin']);
+
+    broadcast('INVENTORY_UPDATED', { product: { id: productId, stock_quantity: newStock } });
+    broadcast('PRODUCTS_UPDATED', {});
+    res.json({ success: true, message: 'Hisobdan chiqarildi (spisanie)' });
+  } catch (err) {
+    console.error('[Inventory API] waste error:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

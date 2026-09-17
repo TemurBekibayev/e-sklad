@@ -1472,6 +1472,72 @@ async function pushCloseOrderToCloud({ orderId, tableId, paymentMethod, totalAmo
   }
 }
 
+// Delete a product on getpos.uz cloud
+async function deleteProductFromCloud(remoteId) {
+  if (!remoteId) return { success: false, error: 'remoteId missing' };
+  const cfg = await getConfig();
+  if (!cfg.is_external_active || !cfg.api_url) return { skipped: true };
+
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  const headers = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  try {
+    const res = await makeRequest({
+      url: `${baseUrl}/api/v1/products/${remoteId}/`,
+      method: 'DELETE',
+      headers,
+    });
+    return { success: res.status >= 200 && res.status < 300, status: res.status };
+  } catch (err) {
+    console.warn('[BackendSync] deleteProductFromCloud error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Create or update product on getpos.uz cloud
+async function pushProductToCloud(product) {
+  const cfg = await getConfig();
+  if (!cfg.is_external_active || !cfg.api_url) return { skipped: true };
+
+  const baseUrl = cfg.api_url.replace(/\/+$/, '');
+  const token = await ensureAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const payload = {
+    name: product.name,
+    price_per_sale_unit: product.price,
+    sale_unit: product.unit || 'dona',
+    purchase_unit: product.unit || 'dona',
+    barcode: product.barcode || null,
+  };
+
+  try {
+    if (product.remote_id) {
+      const res = await makeRequest({
+        url: `${baseUrl}/api/v1/products/${product.remote_id}/`,
+        method: 'PUT',
+        headers,
+        body: payload,
+      });
+      return { success: res.status >= 200 && res.status < 300, data: res.data };
+    } else {
+      const res = await makeRequest({
+        url: `${baseUrl}/api/v1/products/`,
+        method: 'POST',
+        headers,
+        body: payload,
+      });
+      return { success: res.status >= 200 && res.status < 300, data: res.data };
+    }
+  } catch (err) {
+    console.warn('[BackendSync] pushProductToCloud error:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -1487,6 +1553,8 @@ module.exports = {
   pushCloseOrderToCloud,
   pushStaffMember,
   deleteStaffMember,
+  deleteProductFromCloud,
+  pushProductToCloud,
   startPeriodicSync,
   stopPeriodicSync,
   fetchActiveBaskets,
