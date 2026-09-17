@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/transliteration_helper.dart';
+import '../../../core/localization/app_translations.dart';
 import '../../../models/order.dart';
 import '../../../providers/order_provider.dart';
 import '../../../providers/tables_provider.dart';
+import '../../../providers/settings_provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../core/services/waiter_stats_service.dart';
 import '../../bill/bill_dialog.dart';
 
 class OrderCartSheet extends StatelessWidget {
@@ -14,6 +20,7 @@ class OrderCartSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final orderProv = context.watch<OrderProvider>();
     final tablesProv = context.read<TablesProvider>();
+    final lang = context.watch<SettingsProvider>().currentLanguage;
     final order = orderProv.currentOrder;
     final table = orderProv.currentTable;
 
@@ -54,7 +61,7 @@ class OrderCartSheet extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        table.number,
+                        TransliterationHelper.adapt(table.number, lang),
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -62,7 +69,7 @@ class OrderCartSheet extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'Ofitsiyant: ${order.waiterName}',
+                        '${AppTranslations.get('waiter', lang)}: ${TransliterationHelper.adapt(order.waiterName, lang)}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
@@ -153,7 +160,9 @@ class OrderCartSheet extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                isCancelled ? 'Bekor' : '${item.course}-kurs',
+                                isCancelled
+                                    ? (lang == 'oz' ? 'Бекор' : (lang == 'ru' ? 'Отмена' : 'Bekor'))
+                                    : '${item.course}-${lang == 'oz' ? 'курс' : (lang == 'ru' ? 'курс' : 'kurs')}',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
@@ -171,7 +180,7 @@ class OrderCartSheet extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    item.productName,
+                                    TransliterationHelper.adapt(item.productName, lang),
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -451,18 +460,34 @@ class OrderCartSheet extends StatelessWidget {
                           : () async {
                               final success = await orderProv.sendToKitchen(tablesProv);
                               if (context.mounted) {
+                                final settingsProv = context.read<SettingsProvider>();
                                 if (success) {
+                                  final auth = context.read<AuthProvider>();
+                                  WaiterStatsService().recordOrderSent(
+                                    waiterId: auth.currentWaiter?.id ?? '1',
+                                    tableNumber: table.number,
+                                    orderTotal: order.grandTotal,
+                                    guestCount: order.guestCount,
+                                    items: order.items,
+                                  ).catchError((_) {});
+
+                                  if (settingsProv.isHapticEnabled) {
+                                    HapticFeedback.heavyImpact();
+                                  }
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Buyurtma oshxonaga yuborildi!'),
+                                    SnackBar(
+                                      content: Text(settingsProv.tr('order_sent_success')),
                                       backgroundColor: AppColors.success,
                                     ),
                                   );
                                   Navigator.pop(context);
                                 } else {
+                                  if (settingsProv.isHapticEnabled) {
+                                    HapticFeedback.vibrate();
+                                  }
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Buyurtmani yuborishda xatolik yuz berdi. Server aloqasini tekshiring.'),
+                                    SnackBar(
+                                      content: Text(settingsProv.tr('order_sent_error')),
                                       backgroundColor: AppColors.error,
                                     ),
                                   );

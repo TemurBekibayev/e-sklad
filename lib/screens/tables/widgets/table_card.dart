@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/transliteration_helper.dart';
+import '../../../core/localization/app_translations.dart';
+import '../../../providers/settings_provider.dart';
 import '../../../models/hall_table.dart';
+import '../../../models/order.dart';
 import 'table_status_badge.dart';
 
 class TableCard extends StatelessWidget {
@@ -16,6 +21,7 @@ class TableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsProvider>().currentLanguage;
     Color borderColor;
     Color topBarColor;
 
@@ -84,7 +90,7 @@ class TableCard extends StatelessWidget {
                         children: [
                           Flexible(
                             child: Text(
-                              table.number,
+                              TransliterationHelper.adapt(table.number, lang),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -127,15 +133,45 @@ class TableCard extends StatelessWidget {
                         ],
                       ),
 
+                      // Kitchen Ready Notification Badge
+                      if (table.items.any((i) => i.status == OrderItemStatus.ready)) ...[
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.green.shade400, width: 0.8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.notifications_active_rounded, color: Colors.green, size: 12),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  '${table.items.where((i) => i.status == OrderItemStatus.ready).length} ${AppTranslations.get('items_count', lang)} ${AppTranslations.get('dish_ready', lang)}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       // Bottom Info (Total Amount or Free message)
                       if (table.status == TableStatus.free) ...[
                         Row(
                           children: [
                             Icon(Icons.add_circle_outline, size: 16, color: AppColors.tableFree.withOpacity(0.8)),
                             const SizedBox(width: 4),
-                            const Text(
-                              'Buyurtma ochish',
-                              style: TextStyle(
+                            Text(
+                              lang == 'oz' ? 'Буюртма очиш' : (lang == 'ru' ? 'Открыть заказ' : 'Buyurtma ochish'),
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.tableFree,
                                 fontWeight: FontWeight.w600,
@@ -149,7 +185,7 @@ class TableCard extends StatelessWidget {
                           children: [
                             if (table.activeWaiterName != null)
                               Text(
-                                table.activeWaiterName!,
+                                TransliterationHelper.adapt(table.activeWaiterName!, lang),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
@@ -159,7 +195,7 @@ class TableCard extends StatelessWidget {
                               ),
                             const SizedBox(height: 2),
                             Text(
-                              Formatters.formatCurrency(table.totalAmount),
+                              Formatters.formatCurrency(table.totalAmount, AppTranslations.get('currency', lang)),
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,

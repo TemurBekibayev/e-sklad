@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/localization/app_translations.dart';
+import '../../core/utils/transliteration_helper.dart';
 import '../../providers/menu_provider.dart';
 import '../../providers/order_provider.dart';
+import '../../providers/settings_provider.dart';
 import 'widgets/category_list.dart';
 import 'widgets/product_grid.dart';
 import 'widgets/order_cart_sheet.dart';
@@ -51,6 +54,7 @@ class _OrderScreenState extends State<OrderScreen> {
   Widget build(BuildContext context) {
     final menuProv = context.watch<MenuProvider>();
     final orderProv = context.watch<OrderProvider>();
+    final lang = context.watch<SettingsProvider>().currentLanguage;
     final table = orderProv.currentTable;
 
     return Scaffold(
@@ -60,8 +64,8 @@ class _OrderScreenState extends State<OrderScreen> {
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Taom yoki ichimlik qidirish...',
+                decoration: InputDecoration(
+                  hintText: AppTranslations.get('search_dishes', lang),
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
@@ -73,7 +77,9 @@ class _OrderScreenState extends State<OrderScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    table?.number ?? 'Buyurtma',
+                    table?.number != null
+                        ? TransliterationHelper.adapt(table!.number, lang)
+                        : AppTranslations.get('order_cart', lang),
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -81,7 +87,7 @@ class _OrderScreenState extends State<OrderScreen> {
                     ),
                   ),
                   Text(
-                    '${orderProv.totalItemsCount} ta taom · ${Formatters.currency(orderProv.grandTotal)}',
+                    '${orderProv.totalItemsCount} ${AppTranslations.get('items_count', lang)} · ${Formatters.currency(orderProv.grandTotal, AppTranslations.get('currency', lang))}',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.textSecondary,
@@ -92,7 +98,7 @@ class _OrderScreenState extends State<OrderScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.textPrimary),
-            tooltip: 'Yangilash',
+            tooltip: AppTranslations.get('refresh', lang),
             onPressed: () => orderProv.refreshCurrentOrder(),
           ),
           IconButton(
@@ -210,7 +216,7 @@ class _OrderScreenState extends State<OrderScreen> {
                           Row(
                             children: [
                               Text(
-                                '${orderProv.totalItemsCount} ta taom',
+                                '${orderProv.totalItemsCount} ${AppTranslations.get('items_count', lang)}',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,
@@ -225,7 +231,7 @@ class _OrderScreenState extends State<OrderScreen> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '+${orderProv.draftItemsCount} yangi',
+                                    '+${orderProv.draftItemsCount} ${lang == 'oz' ? 'янги' : (lang == 'ru' ? 'новых' : 'yangi')}',
                                     style: const TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
@@ -237,7 +243,7 @@ class _OrderScreenState extends State<OrderScreen> {
                             ],
                           ),
                           Text(
-                            Formatters.formatCurrency(orderProv.grandTotal),
+                            Formatters.formatCurrency(orderProv.grandTotal, AppTranslations.get('currency', lang)),
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -256,11 +262,11 @@ class _OrderScreenState extends State<OrderScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.shopping_bag_outlined, size: 18),
-                          SizedBox(width: 6),
-                          Text('Buyurtma'),
+                          const Icon(Icons.shopping_bag_outlined, size: 18),
+                          const SizedBox(width: 6),
+                          Text(AppTranslations.get('order_cart', lang)),
                         ],
                       ),
                     ),

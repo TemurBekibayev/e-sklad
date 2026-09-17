@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/localization/app_translations.dart';
+import '../../../core/utils/transliteration_helper.dart';
+import '../../../providers/settings_provider.dart';
 import '../../../models/category.dart';
 
 class CategoryList extends StatelessWidget {
@@ -36,6 +40,8 @@ class CategoryList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<SettingsProvider>().currentLanguage;
+
     return Container(
       height: 52,
       color: Colors.white,
@@ -46,6 +52,9 @@ class CategoryList extends StatelessWidget {
         itemBuilder: (context, index) {
           final cat = categories[index];
           final isSelected = cat.id == selectedCategoryId;
+          final displayName = (cat.name == 'Barchasi' || cat.id == 'c1')
+              ? AppTranslations.get('all', lang)
+              : TransliterationHelper.adapt(cat.name, lang);
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -55,7 +64,7 @@ class CategoryList extends StatelessWidget {
                 size: 16,
                 color: isSelected ? Colors.white : AppColors.primary,
               ),
-              label: Text(cat.name),
+              label: Text(displayName),
               selected: isSelected,
               onSelected: (_) => onSelectCategory(cat.id),
               selectedColor: AppColors.primary,

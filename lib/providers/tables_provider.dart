@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/hall_table.dart';
+import '../models/order.dart';
 import '../core/network/api_service.dart';
 
 class TablesProvider extends ChangeNotifier {
@@ -43,9 +44,32 @@ class TablesProvider extends ChangeNotifier {
     }
   }
 
+  final Set<String> _notifiedReadyItemIds = {};
+  String? _latestReadyNotification;
+  String? get latestReadyNotification => _latestReadyNotification;
+
+  void clearLatestNotification() {
+    _latestReadyNotification = null;
+  }
+
   Future<void> _loadHallsAndTables() async {
     final fetchedHalls = await _apiService.getHalls();
-    _allTables = await _apiService.getTables();
+    final newTables = await _apiService.getTables();
+
+    // Check for new ready dishes from kitchen
+    for (final table in newTables) {
+      for (final item in table.items) {
+        if (item.status == OrderItemStatus.ready) {
+          final uniqueKey = '${table.id}_${item.id}';
+          if (!_notifiedReadyItemIds.contains(uniqueKey)) {
+            _notifiedReadyItemIds.add(uniqueKey);
+            _latestReadyNotification = '${table.number}: "${item.productName}" tayyor!';
+          }
+        }
+      }
+    }
+
+    _allTables = newTables;
     if (fetchedHalls.isNotEmpty) {
       final cleanHalls = fetchedHalls.where((h) => h.name != 'Barchasi' && h.id != 'all').toList();
       _halls = [

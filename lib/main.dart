@@ -36,10 +36,15 @@ class WaiterPosApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+
     return MaterialApp(
-      title: 'Ofitsiyant POS',
+      title: 'Getcafe',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.buildTheme(
+        isDark: settings.isDarkMode,
+        colorTheme: settings.colorTheme,
+      ),
       home: const LoginScreen(),
     );
   }

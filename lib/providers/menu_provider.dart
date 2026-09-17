@@ -44,8 +44,8 @@ class MenuProvider extends ChangeNotifier {
       final menuData = await _apiService.getMenu();
       _categories = menuData['categories'] as List<Category>;
       _allProducts = menuData['products'] as List<Product>;
-      // Background Wi-Fi Image Preload into phone flash storage
-      ImageCacheService().preloadProductImages(_allProducts).catchError((_) => <String, int>{});
+      // Autonomous Background Image Preload & Sync into phone storage
+      ImageCacheService().syncProductImages(_allProducts).catchError((_) => <String, int>{});
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -71,7 +71,7 @@ class MenuProvider extends ChangeNotifier {
     final menuData = await _apiService.getMenu();
     _categories = menuData['categories'] as List<Category>;
     _allProducts = menuData['products'] as List<Product>;
-    ImageCacheService().preloadProductImages(_allProducts).catchError((_) => <String, int>{});
+    ImageCacheService().syncProductImages(_allProducts).catchError((_) => <String, int>{});
     notifyListeners();
   }
 }

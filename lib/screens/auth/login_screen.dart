@@ -7,7 +7,6 @@ import '../../providers/menu_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../core/network/server_discovery_service.dart';
 import '../tables/tables_screen.dart';
-import '../settings/settings_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -65,22 +64,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: AppColors.textSecondary),
-            tooltip: 'Kassa sozlamalari',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-          ),
-        ],
-      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -119,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   // Title
                   const Center(
                     child: Text(
-                      'GetPOS Kafe',
+                      'Getcafe',
                       style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
@@ -318,35 +301,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             'Tizimga kirish',
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Test Credentials Hint Card
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withOpacity(0.12)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.info_outline, size: 16, color: AppColors.primary),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Sinov uchun: bekzod / mypassword123',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),

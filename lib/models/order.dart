@@ -1,3 +1,5 @@
+import '../core/storage/app_preferences.dart';
+
 enum OrderItemStatus {
   draft, // Yangi qo'shilgan, oshxonaga ketmagan
   sent,  // Oshxonaga yuborilgan (KDS / printer)
@@ -5,15 +7,16 @@ enum OrderItemStatus {
   cancelled;
 
   String get label {
+    final lang = AppPreferences.cachedLanguage;
     switch (this) {
       case OrderItemStatus.draft:
-        return 'Yangi';
+        return lang == 'oz' ? 'Янги' : (lang == 'ru' ? 'Новый' : 'Yangi');
       case OrderItemStatus.sent:
-        return 'Oshxonada';
+        return lang == 'oz' ? 'Ошхонада' : (lang == 'ru' ? 'На кухне' : 'Oshxonada');
       case OrderItemStatus.ready:
-        return 'Tayyor';
+        return lang == 'oz' ? 'Тайёр' : (lang == 'ru' ? 'Готово' : 'Tayyor');
       case OrderItemStatus.cancelled:
-        return 'Bekor qilingan';
+        return lang == 'oz' ? 'Бекор қилинган' : (lang == 'ru' ? 'Отменено' : 'Bekor qilingan');
     }
   }
 }

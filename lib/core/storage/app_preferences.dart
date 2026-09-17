@@ -134,4 +134,78 @@ class AppPreferences {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyUseMockData, value);
   }
+
+  static const String _keyLanguage = 'pos_app_language';
+  static const String _keyHaptic = 'pos_haptic_feedback';
+  static const String _keyMenuLayout = 'pos_menu_layout';
+  static const String _keyKitchenNotify = 'pos_kitchen_notifications';
+
+  static String _cachedLanguage = 'uz';
+
+  static String get cachedLanguage => _cachedLanguage;
+
+  static Future<String> getLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    _cachedLanguage = prefs.getString(_keyLanguage) ?? 'uz';
+    return _cachedLanguage;
+  }
+
+  static Future<void> setLanguage(String lang) async {
+    _cachedLanguage = lang;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLanguage, lang);
+  }
+
+  static Future<bool> isHapticEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyHaptic) ?? true;
+  }
+
+  static Future<void> setHapticEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyHaptic, enabled);
+  }
+
+  static Future<bool> isKitchenNotificationEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyKitchenNotify) ?? true;
+  }
+
+  static Future<void> setKitchenNotificationEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyKitchenNotify, enabled);
+  }
+
+  static const String _keyIsDarkMode = 'pos_theme_is_dark';
+  static const String _keyColorTheme = 'pos_theme_color';
+
+  static Future<bool> isDarkMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyIsDarkMode) ?? false;
+  }
+
+  static Future<void> setDarkMode(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyIsDarkMode, isDark);
+  }
+
+  static Future<String> getColorTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyColorTheme) ?? 'blue';
+  }
+
+  static Future<void> setColorTheme(String theme) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyColorTheme, theme);
+  }
+
+  static Future<String> getMenuLayout() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyMenuLayout) ?? 'grid2';
+  }
+
+  static Future<void> setMenuLayout(String layout) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyMenuLayout, layout);
+  }
 }

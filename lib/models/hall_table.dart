@@ -1,4 +1,6 @@
 import 'order.dart';
+import '../core/storage/app_preferences.dart';
+import '../core/localization/app_translations.dart';
 
 enum TableStatus {
   free,
@@ -7,15 +9,16 @@ enum TableStatus {
   reserved;
 
   String get label {
+    final lang = AppPreferences.cachedLanguage;
     switch (this) {
       case TableStatus.free:
-        return 'Bo\'sh';
+        return AppTranslations.get('free', lang);
       case TableStatus.busy:
-        return 'Band';
+        return AppTranslations.get('busy', lang);
       case TableStatus.billRequested:
-        return 'Hisob so\'ralgan';
+        return AppTranslations.get('bill_requested', lang);
       case TableStatus.reserved:
-        return 'Band qilingan';
+        return AppTranslations.get('reserved', lang);
     }
   }
 
