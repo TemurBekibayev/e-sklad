@@ -1867,6 +1867,51 @@ app.post(['/api/orders/:id/bill-request', '/api/orders/bill-request'], async (re
   }
 });
 
+// 7.01. Hisob so'rovini bekor qilish / Buyurtmani qayta ochish (POST /api/orders/:id/reopen)
+app.post(['/api/orders/:id/reopen', '/api/tables/:id/reopen'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    let order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
+    let table = null;
+
+    if (order) {
+      table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+    } else {
+      table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [id, id]);
+      if (table && table.current_order_id) {
+        order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
+      }
+      if (!order && table) {
+        order = await get(`SELECT * FROM orders WHERE table_id = ? AND status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`, [table.id]);
+      }
+    }
+
+    if (order) {
+      await run(`UPDATE orders SET status = 'open', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [order.id]);
+    }
+    if (table) {
+      await run(`UPDATE tables SET status = 'busy', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [table.id]);
+    }
+
+    const updatedTable = table ? await get(`
+      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+      FROM tables t
+      LEFT JOIN orders o ON t.current_order_id = o.id
+      WHERE t.id = ?
+    `, [table.id]) : null;
+
+    if (updatedTable) {
+      broadcast('TABLE_UPDATED', updatedTable);
+      broadcast('TABLES_UPDATED', {});
+    }
+
+    res.json({ success: true, message: "Stol band holatiga qaytarildi", table: updatedTable });
+  } catch (err) {
+    console.error('[Reopen Order] Xatolik:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 7.1. Taomni qisman yoki to'liq bekor qilish (Отмена / Возврат блюда) - Video 2 dagi funksiya
 app.post('/api/orders/:id/cancel-item', async (req, res) => {
   try {

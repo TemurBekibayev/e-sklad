@@ -654,6 +654,8 @@ export default function App() {
             onAddNewDish={(prod) => setProducts((prev) => [prod, ...prev])}
             onRefreshTables={loadTables}
             onRefreshHalls={loadHalls}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
+            onSelectTable={(tbl) => setSelectedTable(tbl)}
           />
         )}
 

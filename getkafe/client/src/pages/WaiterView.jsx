@@ -33,7 +33,9 @@ export default function WaiterView({
   onAddNewDish,
   onOpenAddDish,
   onRefreshTables,
-  onRefreshHalls
+  onRefreshHalls,
+  onNavigateTab,
+  onSelectTable,
 }) {
   const { t, tr } = useLanguage();
   const [selectedTable, setSelectedTable] = useState(null);
@@ -217,13 +219,27 @@ export default function WaiterView({
 
   const handleBillRequest = async () => {
     const ordId = selectedTable?.order_id || selectedTable?.current_order_id || existingOrderData?.order?.id;
-    if (!ordId) return;
+    if (!ordId && !selectedTable?.id) return;
     try {
-      await onRequestBill(ordId);
+      await onRequestBill(ordId || selectedTable.id);
       setSelectedTable((prev) => ({ ...prev, status: 'bill_requested' }));
       if (onRefreshTables) onRefreshTables();
     } catch (err) {
       alert('Hisob so\'rashda xatolik: ' + err.message);
+    }
+  };
+
+  const handleReopenOrder = async () => {
+    if (!selectedTable?.id) return;
+    try {
+      const res = await fetch(`/api/tables/${selectedTable.id}/reopen`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedTable((prev) => ({ ...prev, status: 'busy' }));
+        if (onRefreshTables) onRefreshTables();
+      }
+    } catch (err) {
+      alert('Qayta ochishda xatolik: ' + err.message);
     }
   };
 
@@ -776,17 +792,54 @@ export default function WaiterView({
               <Send className="w-4 h-4" />
               <span>{isSending ? t('pin_checking', 'Yuborilmoqda...') : `${t('pos_send_kitchen', 'OSHXONAGA YUBORISH')} (+${formatPrice(newCartTotal)} UZS)`}</span>
             </button>
-          ) : (
-            selectedTable.status === 'busy' && (
-              <button
-                onClick={handleBillRequest}
-                className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition"
-              >
-                <BellRing className="w-4 h-4" />
-                <span>{t('pos_print_precheck', 'MIJOZ UCHUN HISOB SO\'RASH (PRE-CHEK)')}</span>
-              </button>
-            )
-          )}
+          ) : selectedTable.status === 'bill_requested' ? (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-center space-y-2.5">
+              <div className="flex items-center justify-center gap-1.5 text-amber-800 font-bold text-xs">
+                <span className="animate-pulse">⏳</span>
+                <span>Hisob so'ralgan (Pre-chek chiqarilgan)</span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">
+                Mijoz to'lovi kutilmoqda. Kassir to'lovni qabul qilgach stol avtomatik bo'shaydi.
+              </p>
+              <div className="flex gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleBillRequest}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 shadow-sm active:scale-95 transition"
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>Qayta Pre-chek</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReopenOrder}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition"
+                >
+                  <span>↩️ Qayta ochish</span>
+                </button>
+              </div>
+              {onNavigateTab && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onSelectTable) onSelectTable(selectedTable);
+                    onNavigateTab('cashier');
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 active:scale-95 transition"
+                >
+                  <span>💵 Kassaga o'tish (To'lovni qabul qilish)</span>
+                </button>
+              )}
+            </div>
+          ) : selectedTable.status === 'busy' ? (
+            <button
+              onClick={handleBillRequest}
+              className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 transition"
+            >
+              <BellRing className="w-4 h-4" />
+              <span>{t('pos_print_precheck', 'MIJOZ UCHUN HISOB SO\'RASH (PRE-CHEK)')}</span>
+            </button>
+          ) : null}
         </div>
       </div>
 
