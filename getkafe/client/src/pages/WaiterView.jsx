@@ -221,7 +221,28 @@ export default function WaiterView({
     const ordId = selectedTable?.order_id || selectedTable?.current_order_id || existingOrderData?.order?.id;
     if (!ordId && !selectedTable?.id) return;
     try {
-      await onRequestBill(ordId || selectedTable.id);
+      const validItems = existingOrderData?.items || existingItems || [];
+      const payload = {
+        orderId: ordId || `ord_${selectedTable.id}`,
+        tableId: selectedTable.id,
+        tableNumber: selectedTable.number || selectedTable.name,
+        waiterName: existingOrderData?.order?.waiter_name || selectedTable?.waiter_name || currentUser?.name || 'Ofitsiant',
+        items: validItems,
+        subtotal: existingOrderTotal,
+        serviceFeePercent: 10,
+        serviceFee: Math.round((existingOrderTotal * 10) / 100),
+        totalAmount: grandTotal || (existingOrderTotal + Math.round((existingOrderTotal * 10) / 100)),
+      };
+
+      // 1. Direct call to printer API to ensure thermal receipt is printed immediately
+      await fetch('/api/printers/print-precheck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then((r) => r.json()).catch(() => ({}));
+
+      // 2. Update order/table status in backend
+      await onRequestBill(ordId || selectedTable.id, payload);
       setSelectedTable((prev) => ({ ...prev, status: 'bill_requested' }));
       if (onRefreshTables) onRefreshTables();
     } catch (err) {

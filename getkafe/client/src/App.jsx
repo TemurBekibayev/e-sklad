@@ -415,9 +415,11 @@ export default function App() {
   };
 
   // Request bill (from Waiter)
-  const handleRequestBill = async (orderId) => {
+  const handleRequestBill = async (orderId, payload = {}) => {
     const res = await fetch(`/api/orders/${orderId}/bill-request`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
     return await res.json();
   };
