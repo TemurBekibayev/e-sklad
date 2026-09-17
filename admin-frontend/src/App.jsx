@@ -7,11 +7,13 @@ import TenantDetailPage from './pages/TenantDetailPage';
 import ProductsPage from './pages/ProductsPage';
 import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
+import LandingPage from './pages/LandingPage';
 import { apiFetch } from './utils/api';
+import { ArrowLeft, Zap } from 'lucide-react';
 
-function Login({ onLoginSuccess }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+function Login({ onLoginSuccess, onBackToHome }) {
+  const [email, setEmail] = useState('admin@getpos.uz');
+  const [password, setPassword] = useState('getpos4321');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,16 +44,27 @@ function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 relative">
+      {onBackToHome && (
+        <button
+          onClick={onBackToHome}
+          className="absolute top-6 left-6 flex items-center space-x-2 text-xs font-bold text-slate-400 hover:text-white px-4 py-2 rounded-xl bg-slate-800/80 border border-slate-700 transition"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Asosiy saytga qaytish</span>
+        </button>
+      )}
+
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 border border-slate-100 animate-in fade-in zoom-in duration-150">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white mb-3 shadow-lg shadow-blue-500/20">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900">SotuvPro</h2>
-          <p className="text-sm text-slate-500 mt-1">Platforma Admin Paneli</p>
+          <img 
+            src="/getpos-logo.png" 
+            alt="GetPOS Logo" 
+            className="w-16 h-16 rounded-2xl object-contain mb-3 shadow-lg shadow-blue-500/20 bg-slate-50 p-1 border border-slate-100" 
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Get<span className="text-blue-600">POS</span></h2>
+          <p className="text-sm text-slate-500 mt-1">Platforma Super Admin Paneli</p>
         </div>
 
         {error && (
@@ -68,7 +81,7 @@ function Login({ onLoginSuccess }) {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@sotuvpro.uz"
+              placeholder="admin@getpos.uz"
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
             />
           </div>
@@ -99,6 +112,15 @@ function Login({ onLoginSuccess }) {
 }
 
 export default function App() {
+  const getInitialRoute = () => {
+    const p = window.location.pathname.toLowerCase();
+    if (p.startsWith('/admin') || p.startsWith('/login')) {
+      return 'admin';
+    }
+    return 'landing';
+  };
+
+  const [route, setRoute] = useState(getInitialRoute());
   const [token, setToken] = useState(localStorage.getItem('admin_access_token'));
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedTenantId, setSelectedTenantId] = useState(null);
@@ -106,10 +128,30 @@ export default function App() {
   const [loadingTenants, setLoadingTenants] = useState(false);
 
   useEffect(() => {
-    if (token) {
+    const handlePopState = () => {
+      const p = window.location.pathname.toLowerCase();
+      if (p.startsWith('/admin') || p.startsWith('/login')) {
+        setRoute('admin');
+      } else {
+        setRoute('landing');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (token && route === 'admin') {
       loadTenants();
     }
-  }, [token]);
+  }, [token, route]);
+
+  const navigateTo = (targetRoute, urlPath) => {
+    setRoute(targetRoute);
+    if (urlPath && window.location.pathname !== urlPath) {
+      window.history.pushState({}, '', urlPath);
+    }
+  };
 
   const loadTenants = async () => {
     setLoadingTenants(true);
@@ -132,6 +174,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('admin_access_token');
     setToken(null);
+    navigateTo('landing', '/');
   };
 
   const getPageTitle = () => {
@@ -153,10 +196,26 @@ export default function App() {
     }
   };
 
-  if (!token) {
-    return <Login onLoginSuccess={(t) => setToken(t)} />;
+  // 1. If on Landing Page Route
+  if (route === 'landing') {
+    return (
+      <LandingPage
+        onGoToAdmin={() => navigateTo('admin', '/admin-panel')}
+      />
+    );
   }
 
+  // 2. If on Admin Route but Not Authenticated
+  if (!token) {
+    return (
+      <Login
+        onLoginSuccess={(t) => setToken(t)}
+        onBackToHome={() => navigateTo('landing', '/')}
+      />
+    );
+  }
+
+  // 3. Admin Panel Authenticated Dashboard
   return (
     <div className="flex min-h-screen bg-[#F8FAFC]">
       {/* Sidebar */}
@@ -164,6 +223,18 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
+        <div className="bg-white border-b border-slate-200/80 px-8 py-3 flex items-center justify-between">
+          <button
+            onClick={() => navigateTo('landing', '/')}
+            className="flex items-center space-x-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition"
+          >
+            <span>🌐 Asosiy saytga o'tish (getpos.uz)</span>
+          </button>
+          <span className="text-[11px] font-semibold text-slate-400">
+            Super Admin Rejimi (/admin-panel)
+          </span>
+        </div>
+
         <Header title={getPageTitle()} />
 
         <main className="flex-1 p-8 max-w-7xl w-full mx-auto">

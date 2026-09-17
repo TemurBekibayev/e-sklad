@@ -7,7 +7,7 @@ export default function SettingsPage() {
       <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-6">
         <div>
           <h3 className="text-lg font-bold text-slate-900">Platforma Sozlamalari</h3>
-          <p className="text-xs text-slate-500 mt-1">SotuvPro tizimi xavfsizlik va umumiy parametrlarini boshqarish</p>
+          <p className="text-xs text-slate-500 mt-1">GetPOS tizimi xavfsizlik va umumiy parametrlarini boshqarish</p>
         </div>
 
         <div className="space-y-4">

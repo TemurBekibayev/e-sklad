@@ -20,6 +20,8 @@ urlpatterns = [
     path('api/v1/transactions/', include('apps.transactions.urls')),
     path('api/v1/debts/', include('apps.debts.urls')),
     path('api/v1/reports/', include('apps.reports.urls_reports')),
+    path('api/v1/cafe/', include('apps.cafe.urls')),
+    path('api/cafe/', include('apps.cafe.urls')),
     path('api/v1/admin/reports/', AdminReportsView.as_view(), name='admin_reports'),
     path('api/v1/admin/stats/', AdminDashboardStatsView.as_view(), name='admin_stats'),
     path('api/v1/admin/', include('apps.reports.urls_admin')),

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'apps.transactions.apps.TransactionsConfig',
     'apps.debts.apps.DebtsConfig',
     'apps.reports.apps.ReportsConfig',
+    'apps.cafe.apps.CafeConfig',
 ]
 
 MIDDLEWARE = [
@@ -190,13 +191,20 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
-from celery.schedules import crontab
-CELERY_BEAT_SCHEDULE = {
-    'send-daily-debt-reminders': {
-        'task': 'apps.debts.tasks.send_debt_reminders_task',
-        'schedule': crontab(hour=9, minute=0),  # Har kuni ertalab 09:00 da
-    },
-}
+try:
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        'send-daily-debt-reminders': {
+            'task': 'apps.debts.tasks.send_debt_reminders_task',
+            'schedule': crontab(hour=9, minute=0),  # Har kuni ertalab 09:00 da
+        },
+        'check-subscription-expiry': {
+            'task': 'apps.core.tasks.check_subscriptions_task',
+            'schedule': crontab(hour=1, minute=0),  # Har kuni kechasi 01:00 da
+        },
+    }
+except ImportError:
+    CELERY_BEAT_SCHEDULE = {}
 
 # Eskiz.uz SMS Gateway Configuration
 ESKIZ_EMAIL = env('ESKIZ_EMAIL', default='')
@@ -206,9 +214,9 @@ ESKIZ_IS_TEST = env.bool('ESKIZ_IS_TEST', default=True)
 
 # OpenAPI / Swagger Documentation
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'SotuvPro API',
-    'DESCRIPTION': 'SotuvPro ko\'p-tenantli sklad, savdo va qarz nazorati tizimi REST & WebSocket API',
-    'VERSION': '1.0.0',
+    'TITLE': 'GetPOS API',
+    'DESCRIPTION': 'GetPOS ko\'p-tenantli sklad, savdo, kafe va qarz nazorati tizimi REST & WebSocket API',
+    'VERSION': '2.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
 

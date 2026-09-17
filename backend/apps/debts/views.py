@@ -119,7 +119,7 @@ class DebtViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
 
         custom_message = serializer.validated_data.get('message', '').strip()
-        store_name = debt.tenant.name if debt.tenant else "SotuvPro"
+        store_name = debt.tenant.name if debt.tenant else "GetPOS"
         amount_formatted = f"{debt.remaining_debt:,.0f}".replace(',', ' ')
         due_date_str = debt.due_date.strftime('%d.%m.%Y') if debt.due_date else "belgilanmagan"
 
@@ -164,8 +164,8 @@ class DebtViewSet(viewsets.ModelViewSet):
         cache_key = f"debt_otp:{cleaned_phone}"
         cache.set(cache_key, code, timeout=300)
 
-        store_name = request.user.tenant.name if getattr(request.user, 'tenant', None) else "SotuvPro"
-        sms_text = f"SotuvPro ({store_name}): Qarzni tasdiqlash kodi: {code}. Bu kodni begonalarga bermang!"
+        store_name = request.user.tenant.name if getattr(request.user, 'tenant', None) else "GetPOS"
+        sms_text = f"GetPOS ({store_name}): Qarzni tasdiqlash kodi: {code}. Bu kodni begonalarga bermang!"
 
         send_single_sms_task.delay(
             phone=cleaned_phone,

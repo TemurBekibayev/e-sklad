@@ -14,16 +14,23 @@ class Command(BaseCommand):
         self.stdout.write("Baza uchun sinov ma'lumotlarini yuklash boshlandi...")
 
         # 1. Platform Super Admin
-        admin_email = "admin@sotuvpro.uz"
+        admin_email = "admin@getpos.uz"
         admin_user = User.objects.filter(email=admin_email).first()
         if not admin_user:
             admin_user = User.objects.create_superuser(
                 email=admin_email,
                 name="Aziz Karimov",
-                password="adminpassword2026",
+                password="getpos4321",
                 role=UserRole.ADMIN
             )
-            self.stdout.write(self.style.SUCCESS(f"Platforma Super Admin yaratildi: {admin_email} / adminpassword2026"))
+            self.stdout.write(self.style.SUCCESS(f"Platforma Super Admin yaratildi: {admin_email} / getpos4321"))
+        else:
+            admin_user.set_password("getpos4321")
+            admin_user.role = UserRole.ADMIN
+            admin_user.is_superuser = True
+            admin_user.is_staff = True
+            admin_user.save()
+            self.stdout.write(self.style.SUCCESS(f"Platforma Super Admin paroli yangilandi: {admin_email} / getpos4321"))
 
         # 2. Demo Tenant 1: Toshkent Elektron
         toshkent_tenant, created = Tenant.objects.get_or_create(

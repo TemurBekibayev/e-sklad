@@ -42,6 +42,33 @@ class Tenant(models.Model):
         default=Decimal('100.00'),
         verbose_name="Bitta SMS narxi (so'mda)"
     )
+    paid_until = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="To'langan muddat (gacha)"
+    )
+    auto_freeze_on_expiry = models.BooleanField(
+        default=True,
+        verbose_name="Muddat o'tganda avtomatik bloklash"
+    )
+    last_payment_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Oxirgi to'lov sanasi"
+    )
+    last_payment_amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Oxirgi to'lov summasi"
+    )
+    freeze_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name="Muzlatish sababi"
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Qo'shilgan sana")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Yangilangan sana")
 
@@ -53,6 +80,59 @@ class Tenant(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_status_display()})"
+
+    @property
+    def is_subscription_active(self) -> bool:
+        if not self.paid_until:
+            return True
+        return self.paid_until >= timezone.now().date()
+
+    @property
+    def days_left(self) -> int:
+        if not self.paid_until:
+            return 9999
+        delta = self.paid_until - timezone.now().date()
+        return delta.days
+
+    def check_and_update_subscription(self, save=True):
+        """
+        Oylik to'lov muddatini tekshirish:
+        - Agar paid_until o'tib ketgan bo'lsa va auto_freeze_on_expiry bo'lsa -> FROZEN holatiga o'tkazish
+        - Agar paid_until kelajakda bo'lsa va to'lov tufayli muzlatilgan bo'lsa -> ACTIVE holatiga qaytarish
+        """
+        if not self.auto_freeze_on_expiry or not self.paid_until:
+            return self.status
+
+        today = timezone.now().date()
+        if self.paid_until < today:
+            if self.status != TenantStatus.FROZEN:
+                self.status = TenantStatus.FROZEN
+                self.freeze_reason = f"Oylik to'lov muddati tugagan ({self.paid_until.strftime('%Y-%m-%d')})"
+                if save:
+                    self.save(update_fields=['status', 'freeze_reason', 'updated_at'])
+                    try:
+                        AuditLog.objects.create(
+                            tenant=self,
+                            action='tenant_auto_frozen',
+                            details={'reason': self.freeze_reason, 'paid_until': str(self.paid_until)}
+                        )
+                    except Exception:
+                        pass
+        else:
+            if self.status == TenantStatus.FROZEN and ('to\'lov' in self.freeze_reason.lower() or 'tolov' in self.freeze_reason.lower() or not self.freeze_reason):
+                self.status = TenantStatus.ACTIVE
+                self.freeze_reason = ''
+                if save:
+                    self.save(update_fields=['status', 'freeze_reason', 'updated_at'])
+                    try:
+                        AuditLog.objects.create(
+                            tenant=self,
+                            action='tenant_auto_unfrozen',
+                            details={'reason': "To'lov amal qilmoqda", 'paid_until': str(self.paid_until)}
+                        )
+                    except Exception:
+                        pass
+        return self.status
 
 
 class TenantQuerySet(models.QuerySet):
@@ -244,3 +324,68 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at.strftime('%Y-%m-%d %H:%M')} | {self.action} | User: {self.user_id}"
+
+
+class SubscriptionPayment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name='subscription_payments',
+        verbose_name="Do'kon"
+    )
+    amount = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        verbose_name="To'lov summasi (so'mda)"
+    )
+    months_paid = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Necha oylik to'lov"
+    )
+    paid_from = models.DateField(
+        verbose_name="Boshlanish sanasi"
+    )
+    paid_until = models.DateField(
+        verbose_name="Yangi to'langan muddat (gacha)"
+    )
+    payment_method = models.CharField(
+        max_length=50,
+        choices=[
+            ('cash', 'Naqd pul'),
+            ('card', 'Bank kartasi / Terminal'),
+            ('bank_transfer', "Bank o'tkazmasi (Hisob raqam)"),
+            ('click', 'Click'),
+            ('payme', 'Payme'),
+            ('admin', 'Admin tomonidan uzaytirildi'),
+        ],
+        default='cash',
+        verbose_name="To'lov usuli"
+    )
+    payment_date = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="To'lov qabul qilingan vaqt"
+    )
+    notes = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Izoh"
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='received_subscription_payments',
+        verbose_name="Qabul qilgan xodim/admin"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'subscription_payments'
+        verbose_name = "Obuna to'lovi"
+        verbose_name_plural = "Obuna to'lovlari"
+        ordering = ['-payment_date']
+
+    def __str__(self):
+        return f"{self.tenant.name} | {self.amount:,.0f} UZS | {self.paid_until}"

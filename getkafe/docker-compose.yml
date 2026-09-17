@@ -1,0 +1,19 @@
+services:
+  kafepos:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kafepos-server
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      # Ma'lumotlar bazasi konteyner o'chganda ham saqlanib qolishi uchun
+      - kafepos_data:/app/server
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+
+volumes:
+  kafepos_data:
+    driver: local

@@ -43,5 +43,14 @@ dist-ssr/
 .packages
 build/
 .flutter-plugins
-.flutter-plugins-dependencies
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+!getkafe/server/kafepos.sqlite
 
+# Binaries
+getkafe/node.exe
+getkafe/installer/payload.zip
+getkafe/installer/payload_stage/
+getkafe/dist_installer/KafePOS_Offline_Files.zip

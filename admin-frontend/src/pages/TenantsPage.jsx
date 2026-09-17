@@ -1,13 +1,25 @@
 import React, { useState } from 'react';
-import { Search, Plus, MoreHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, ChevronLeft, ChevronRight, CreditCard, Calendar, AlertTriangle, CheckCircle2, ShieldAlert, Copy, Check } from 'lucide-react';
 import NewTenantModal from '../components/NewTenantModal';
+import PaymentModal from '../components/PaymentModal';
 import { apiFetch } from '../utils/api';
 
 export default function TenantsPage({ tenants, setTenants, onSelectTenant, loading, refreshTenants }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedTenantForPayment, setSelectedTenantForPayment] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopyId = (e, id) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const handleAddTenant = async (newTenant) => {
     try {
@@ -38,21 +50,94 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
     }
   };
 
+  const handleOpenPayment = (e, tenant) => {
+    e.stopPropagation();
+    setSelectedTenantForPayment(tenant);
+    setIsPaymentModalOpen(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    if (refreshTenants) {
+      refreshTenants();
+    }
+  };
+
+  const getBusinessType = (tenant) => {
+    if (tenant.business_type) return tenant.business_type;
+    if (tenant.settings && typeof tenant.settings === 'object' && tenant.settings.business_type) {
+      return tenant.settings.business_type;
+    }
+    const nameLower = (tenant.name || '').toLowerCase();
+    if (/kafe|cafe|restoran|restaurant|oshxona|qahvaxona|choyxona|bar|pub|fastfood|fast food|lavash|doner/i.test(nameLower)) {
+      return 'cafe';
+    }
+    return 'retail';
+  };
+
   const filteredTenants = (Array.isArray(tenants) ? tenants : []).filter((tenant) => {
     const name = tenant.name || '';
     const address = tenant.address || '';
     const matchesSearch = name.toLowerCase().includes(search.toLowerCase()) ||
                           address.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || 
-                          (statusFilter === 'active' && tenant.status === 'active') ||
-                          (statusFilter === 'inactive' && tenant.status === 'frozen');
-    return matchesSearch && matchesStatus;
+    
+    let matchesStatus = true;
+    if (statusFilter === 'active') {
+      matchesStatus = tenant.status === 'active';
+    } else if (statusFilter === 'inactive') {
+      matchesStatus = tenant.status === 'frozen';
+    } else if (statusFilter === 'overdue') {
+      matchesStatus = tenant.days_left !== undefined && tenant.days_left < 0;
+    }
+
+    let matchesCategory = true;
+    const bType = getBusinessType(tenant);
+    if (categoryFilter === 'retail') {
+      matchesCategory = bType === 'retail';
+    } else if (categoryFilter === 'cafe') {
+      matchesCategory = bType === 'cafe';
+    }
+
+    return matchesSearch && matchesStatus && matchesCategory;
   });
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Category Tabs */}
+      <div className="flex items-center space-x-2 bg-slate-100/80 p-1.5 rounded-2xl w-fit border border-slate-200/60">
+        <button
+          onClick={() => setCategoryFilter('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'all'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Barcha ob'yektlar ({tenants?.length || 0})
+        </button>
+        <button
+          onClick={() => setCategoryFilter('retail')}
+          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'retail'
+              ? 'bg-blue-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>🛍️ Do'konlar</span>
+        </button>
+        <button
+          onClick={() => setCategoryFilter('cafe')}
+          className={`flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition ${
+            categoryFilter === 'cafe'
+              ? 'bg-amber-500 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span>☕ Kafe & Restoranlar</span>
+        </button>
+      </div>
+
       {/* Top action row */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center space-x-4 flex-1 max-w-xl">
           {/* Search */}
           <div className="relative flex-1">
@@ -61,7 +146,7 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Do'kon qidirish..."
+              placeholder="Nomi yoki manzili bo'yicha qidirish..."
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200/90 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
             />
           </div>
@@ -76,7 +161,8 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
             >
               <option value="all">Barchasi</option>
               <option value="active">Faol</option>
-              <option value="inactive">Nofaol</option>
+              <option value="inactive">Muzlatilgan</option>
+              <option value="overdue">Muddati o'tganlar</option>
             </select>
           </div>
         </div>
@@ -84,10 +170,10 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
         {/* Add button */}
         <button
           onClick={() => setIsModalOpen(true)}
-          className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-md shadow-blue-600/20 transition"
+          className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-md shadow-blue-600/20 active:scale-95 transition"
         >
           <Plus className="w-4 h-4" />
-          <span>Yangi do'kon</span>
+          <span>Yangi filial qo'shish</span>
         </button>
       </div>
 
@@ -97,71 +183,130 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-4 px-6">NOMI</th>
+                <th className="py-4 px-6">NOMI VA TURI</th>
                 <th className="py-4 px-6">MANZIL</th>
-                <th className="py-4 px-6">QO'SHILGAN SANA</th>
-                <th className="py-4 px-6">XODIMLAR SONI</th>
+                <th className="py-4 px-6">TO'LOV MUDDATI (HOLATI)</th>
+                <th className="py-4 px-6">XODIMLAR</th>
                 <th className="py-4 px-6">HOLATI</th>
-                <th className="py-4 px-6">OXIRGI FAOLLIK</th>
                 <th className="py-4 px-6 text-right">AMALLAR</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
-              {filteredTenants.map((row) => (
-                <tr
-                  key={row.id}
-                  onClick={() => onSelectTenant(row.id)}
-                  className="hover:bg-slate-50/70 transition cursor-pointer group"
-                >
-                  <td className="py-4 px-6 font-bold text-slate-900 group-hover:text-blue-600 transition">
-                    {row.name}
-                  </td>
-                  <td className="py-4 px-6 text-slate-600">
-                    {row.address}
-                  </td>
-                  <td className="py-4 px-6 text-slate-500 font-medium">
-                    {row.created_at ? new Date(row.created_at).toLocaleDateString('ru-RU') : '-'}
-                  </td>
-                  <td className="py-4 px-6 font-semibold text-slate-900">
-                    {row.users_count} ta
-                  </td>
-                  <td className="py-4 px-6">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleStatus(row.id, row.status);
-                      }}
-                      title="Holatni o'zgartirish"
-                      className="focus:outline-none"
-                    >
-                      {row.status === 'active' ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-amber-50 hover:text-amber-700 transition">
-                          Faol
-                        </span>
+              {filteredTenants.map((row) => {
+                const isPaid = row.paid_until && row.days_left >= 0;
+                const isOverdue = row.paid_until && row.days_left < 0;
+                const bType = getBusinessType(row);
+
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={() => onSelectTenant(row.id)}
+                    className="hover:bg-slate-50/70 transition cursor-pointer group"
+                  >
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col items-start gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 group-hover:text-blue-600 transition">
+                            {row.name}
+                          </span>
+                          {bType === 'cafe' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              ☕ Kafe / Restoran
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              🛍️ Savdo / Do'kon
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyId(e, row.id)}
+                          title="Do'kon ID sini nusxalash"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[11px] font-mono text-slate-500 border border-slate-200/60 transition group/btn"
+                        >
+                          {copiedId === row.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                              <span className="text-emerald-600 font-sans font-semibold">Nusxalandi!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3 text-slate-400 group-hover/btn:text-blue-600 shrink-0" />
+                              <span>ID: {row.id ? `${row.id.slice(0, 8)}...` : '-'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-slate-600">
+                      {row.address || '-'}
+                    </td>
+                    <td className="py-4 px-6">
+                      {row.paid_until ? (
+                        isPaid ? (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-1 rounded-xl w-fit">
+                            <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>{new Date(row.paid_until).toLocaleDateString('ru-RU')}</span>
+                            <span className="text-[10px] text-emerald-600 font-medium">({row.days_left} kun qoldi)</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200/80 px-2.5 py-1 rounded-xl w-fit">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span>Muddati o'tgan ({new Date(row.paid_until).toLocaleDateString('ru-RU')})</span>
+                          </div>
+                        )
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 hover:bg-emerald-50 hover:text-emerald-700 transition">
-                          Muzlatilgan
+                        <span className="text-xs text-slate-400 font-medium bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-lg">
+                          Cheksiz / Sinov
                         </span>
                       )}
-                    </button>
-                  </td>
-                  <td className="py-4 px-6">
-                    <span className={`font-semibold text-xs ${row.is_inactive_warning ? 'text-red-600' : 'text-slate-700'}`}>
-                      {row.last_active || "Faol"}
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-right">
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                      }}
-                      className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
-                    >
-                      <MoreHorizontal className="w-5 h-5" />
-                    </button>
+                    </td>
+                    <td className="py-4 px-6 font-semibold text-slate-900">
+                      {row.users_count} ta
+                    </td>
+                    <td className="py-4 px-6">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleStatus(row.id, row.status);
+                        }}
+                        title="Holatni o'zgartirish (Muzlatish / Faollashtirish)"
+                        className="focus:outline-none"
+                      >
+                        {row.status === 'active' ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-amber-50 hover:text-amber-700 transition">
+                            🟢 Faol
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-emerald-50 hover:text-emerald-700 transition">
+                            🔴 Muzlatilgan
+                          </span>
+                        )}
+                      </button>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => handleOpenPayment(e, row)}
+                          title="Oylik to'lov qabul qilish va ochish"
+                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 rounded-xl text-xs font-bold flex items-center gap-1.5 transition active:scale-95 shadow-xs"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>To'lov</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredTenants.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-slate-400 font-medium">
+                    Hech qanday do'kon topilmadi.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
@@ -169,34 +314,29 @@ export default function TenantsPage({ tenants, setTenants, onSelectTenant, loadi
         {/* Pagination Footer */}
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
           <div>
-            Ko'rsatilmoqda <span className="font-semibold text-slate-800">1-{filteredTenants.length}</span> dan <span className="font-semibold text-slate-800">24</span> tasi
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <button className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-400 hover:text-slate-600 transition">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center shadow-sm">
-              1
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold flex items-center justify-center transition">
-              2
-            </button>
-            <button className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold flex items-center justify-center transition">
-              3
-            </button>
-            <button className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-400 hover:text-slate-600 transition">
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            Jami: <span className="font-bold text-slate-900">{filteredTenants.length}</span> ta do'kon
           </div>
         </div>
       </div>
 
-      {/* Modal */}
+      {/* New Tenant Modal */}
       <NewTenantModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleAddTenant}
       />
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => {
+          setIsPaymentModalOpen(false);
+          setSelectedTenantForPayment(null);
+        }}
+        tenant={selectedTenantForPayment}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
     </div>
   );
 }
+

@@ -5,7 +5,7 @@ import { AppContext } from '../context/AppContext';
 export default function Login() {
   const { login, t, language } = useContext(AppContext);
   const [isPinMode, setIsPinMode] = useState(true); // Default to PIN mode based on user preference
-  const [email, setEmail] = useState('manager@sotuvpro.uz');
+  const [email, setEmail] = useState('manager@getpos.uz');
   const [password, setPassword] = useState('12345678');
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -152,7 +152,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:bg-white transition-all text-sm font-semibold"
-                    placeholder="manager@sotuvpro.uz"
+                    placeholder="manager@getpos.uz"
                   />
                 </div>
               </div>
@@ -188,7 +188,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:bg-white transition-all text-sm font-semibold"
-                    placeholder="manager@sotuvpro.uz"
+                    placeholder="manager@getpos.uz"
                   />
                 </div>
               </div>
