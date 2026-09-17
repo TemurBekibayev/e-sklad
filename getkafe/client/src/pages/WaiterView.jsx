@@ -234,14 +234,7 @@ export default function WaiterView({
         totalAmount: grandTotal || (existingOrderTotal + Math.round((existingOrderTotal * 10) / 100)),
       };
 
-      // 1. Direct call to printer API to ensure thermal receipt is printed immediately
-      await fetch('/api/printers/print-precheck', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).then((r) => r.json()).catch(() => ({}));
-
-      // 2. Update order/table status in backend
+      // Update order/table status and print precheck via backend
       await onRequestBill(ordId || selectedTable.id, payload);
       setSelectedTable((prev) => ({ ...prev, status: 'bill_requested' }));
       if (onRefreshTables) onRefreshTables();

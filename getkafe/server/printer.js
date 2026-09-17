@@ -438,10 +438,29 @@ async function printKitchenCancellationTicket({ orderId, tableNumber, hallName, 
   return cancelRecord;
 }
 
+const recentPrecheckPrints = new Map(); // key -> timestamp
+
 /**
  * Pre-chek (Xaridor uchun oraliq hisob-kitob cheki) chiqarish
  */
 async function printPrecheckReceipt(precheckData) {
+  const rawItems = precheckData?.items || [];
+  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
+  const subtotal = precheckData?.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
+  const servicePercent = precheckData?.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
+  const serviceFee = precheckData?.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+  const totalAmount = precheckData?.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
+
+  // Anti-duplicate protection: 4 soniya ichida bir xil buyurtmani 2-3 marta chiqarishni bloklash
+  const dedupeKey = `${precheckData?.tableNumber || ''}_${precheckData?.orderId || ''}_${totalAmount}`;
+  const now = Date.now();
+  const lastTime = recentPrecheckPrints.get(dedupeKey);
+  if (lastTime && (now - lastTime < 4000)) {
+    console.log(`[Printer] Pre-chek dublikati bloklandi (4 soniya ichida qayta chaqirildi): ${dedupeKey}`);
+    return { success: true, message: 'Pre-chek allaqachon chop etildi' };
+  }
+  recentPrecheckPrints.set(dedupeKey, now);
+
   const settings = await getPrinterSettings();
   const helperPath = getPrintHelperPath();
 
@@ -457,13 +476,6 @@ async function printPrecheckReceipt(precheckData) {
       if (thermal) targetPrinter = thermal.name;
     } catch (e) {}
   }
-
-  const rawItems = precheckData.items || [];
-  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
-  const subtotal = precheckData.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
-  const servicePercent = precheckData.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
-  const serviceFee = precheckData.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
-  const totalAmount = precheckData.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
 
   const payload = {
     receiptSeq: 0,
