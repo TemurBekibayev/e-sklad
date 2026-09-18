@@ -111,9 +111,23 @@ export default function WaiterView({
     }
   }, [selectedTable?.id, tables]);
 
+  // Deduplicate categories by ID/Name to prevent duplicates on mobile and desktop
+  const uniqueCategories = React.useMemo(() => {
+    const seen = new Set();
+    return (categories || []).filter((c) => {
+      const key = String(c.id || c.rawId || c.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [categories]);
+
   // Filter products by selected category and search query
   const filteredProducts = products.filter((p) => {
-    const matchesCat = selectedCategory === 0 || p.category_id === selectedCategory;
+    const matchesCat =
+      selectedCategory === 0 ||
+      p.category_id === selectedCategory ||
+      Number(p.category_id) === Number(selectedCategory);
     const matchesSearch = !searchQuery || p.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesSearch;
   });
@@ -537,15 +551,17 @@ export default function WaiterView({
               />
             </div>
 
-            {/* Quick Add Dish Button */}
-            <button
-              onClick={() => setShowAddDishModal(true)}
-              title="Yangi taom qo'shish"
-              className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20 active:scale-95 transition whitespace-nowrap"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span className="hidden sm:inline">+ Taom</span>
-            </button>
+            {/* Quick Add Dish Button (Manager/Admin Only) */}
+            {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+              <button
+                onClick={() => setShowAddDishModal(true)}
+                title="Yangi taom qo'shish"
+                className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold shadow-md shadow-orange-500/20 active:scale-95 transition whitespace-nowrap"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span className="hidden sm:inline">+ Taom</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -562,12 +578,12 @@ export default function WaiterView({
             BARCHASI
           </button>
 
-          {categories.map((cat) => (
+          {uniqueCategories.map((cat) => (
             <button
-              key={cat.id}
+              key={cat.id || cat.name}
               onClick={() => setSelectedCategory(cat.id)}
               className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all uppercase ${
-                selectedCategory === cat.id
+                selectedCategory === cat.id || Number(selectedCategory) === Number(cat.id)
                   ? 'bg-orange-600 text-white shadow-md shadow-orange-500/30'
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}

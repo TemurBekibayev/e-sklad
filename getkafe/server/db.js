@@ -377,12 +377,19 @@ async function seedInitialData() {
     { name: 'Zal 2', order: 3 },
     { name: '2-Qavat Zal', order: 4 },
     { name: 'VIP Xona', order: 5 },
+    { name: 'SOBOY', order: 99 },
   ];
   for (const h of defaultHalls) {
     const exHall = await get(`SELECT id FROM halls WHERE name = ?`, [h.name]);
     if (!exHall) {
       await run(`INSERT OR IGNORE INTO halls (name, order_index) VALUES (?, ?)`, [h.name, h.order]);
     }
+  }
+
+  // Ensure SOBOY table exists
+  const exSoboyTable = await get(`SELECT id FROM tables WHERE id = 99 OR number = 99 OR name LIKE '%SOBOY%'`);
+  if (!exSoboyTable) {
+    await run(`INSERT OR IGNORE INTO tables (id, number, name, capacity, status, hall) VALUES (99, 99, 'SOBOY (Olib ketish)', 100, 'free', 'SOBOY')`);
   }
 
   // Check tables (1 to 20 matching UI photo)

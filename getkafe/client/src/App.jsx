@@ -17,6 +17,40 @@ import MxikSettings from './pages/MxikSettings';
 import InventoryView from './pages/InventoryView';
 import { useDialog } from './context/DialogContext';
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("React ErrorBoundary caught an error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center select-none z-50">
+          <div className="max-w-md bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-2xl">
+            <h1 className="text-xl font-black text-rose-500 mb-2">⚠️ Xatolik Yuz Berdi</h1>
+            <p className="text-xs text-slate-300 mb-4 font-mono bg-slate-950 p-3 rounded-xl border border-slate-800 text-left overflow-x-auto">
+              {this.state.error?.message || 'Kutilmagan xatolik yuz berdi.'}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl font-bold text-xs shadow-lg transition active:scale-95"
+            >
+              🔄 Dasturni qayta yuklash
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function isProductMatch(p, targetId) {
   if (!p || targetId === undefined || targetId === null) return false;
   const tStr = String(targetId).trim();
@@ -344,10 +378,20 @@ export default function App() {
                 prev.map((p) => (Number(p.category_id) === Number(delId) ? { ...p, category_id: null, category: 'Boshqa' } : p))
               );
             }
+          } else if (ev === 'MENU_UPDATED' || ev === 'PRODUCTS_UPDATED' || ev === 'CATEGORIES_UPDATED') {
+            fetch('/api/menu')
+              .then((r) => r.json())
+              .then((res) => {
+                if (res.success) {
+                  setCategories(res.categories || []);
+                  setProducts(res.products || []);
+                }
+              })
+              .catch(() => {});
           } else if (ev === 'CATEGORY_ADDED') {
             if (data && data.id) {
               setCategories((prev) => {
-                if (prev.some((c) => Number(c.id) === Number(data.id))) return prev;
+                if (prev.some((c) => Number(c.id) === Number(data.id) || c.name === data.name)) return prev;
                 return [...prev, data];
               });
             }
@@ -357,15 +401,6 @@ export default function App() {
                 prev.map((c) => (Number(c.id) === Number(data.id) ? { ...c, ...data } : c))
               );
             }
-          } else if (ev === 'CATEGORIES_UPDATED') {
-            fetch('/api/categories')
-              .then((r) => r.json())
-              .then((res) => {
-                if (res.success && Array.isArray(res.categories)) {
-                  setCategories(res.categories);
-                }
-              })
-              .catch(() => {});
           } else if (ev === 'INVENTORY_UPDATED') {
             if (data && data.product) {
               setProducts((prev) =>

@@ -64,12 +64,22 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
     return isNaN(num) ? 1 : num;
   };
 
+  const uniqueCategories = React.useMemo(() => {
+    const seen = new Set();
+    return (categories || []).filter((c) => {
+      const key = String(c.id || c.rawId || c.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [categories]);
+
   useEffect(() => {
     if (dish) {
       const catId = dish.category_id !== undefined 
         ? getNumericCatId(dish.category_id)
-        : (dish.category ? (categories.find(c => c.name === dish.category)?.rawId || categories.find(c => c.name === dish.category)?.id) : null)
-        || getNumericCatId(categories[0]?.id || 1);
+        : (dish.category ? (uniqueCategories.find(c => c.name === dish.category)?.rawId || uniqueCategories.find(c => c.name === dish.category)?.id) : null)
+        || getNumericCatId(uniqueCategories[0]?.id || 1);
 
       setForm({
         name: dish.name || '',
@@ -89,25 +99,15 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
         vat_percent: dish.vat_percent !== undefined ? dish.vat_percent : 12,
       });
     } else {
-      setForm({
-        name: '',
-        code: 0,
-        category_id: getNumericCatId(categories[0]?.id || 1),
-        in_package: 1,
-        cost_price: 0,
-        price: 0,
-        is_available: true,
-        product_type: 'Товар',
-        workshop: 'Кухня',
-        modifiers: '',
-        comment: '',
-        image: '',
-        mxik_code: '10701001001000000',
-        package_code: '796',
-        vat_percent: 12,
-      });
+      const firstCatId = uniqueCategories.length > 0 ? getNumericCatId(uniqueCategories[0]?.id || uniqueCategories[0]?.rawId) : 1;
+      setForm((prev) => ({
+        ...prev,
+        category_id: (prev.category_id && uniqueCategories.some(c => getNumericCatId(c.id || c.rawId) === prev.category_id))
+          ? prev.category_id
+          : firstCatId,
+      }));
     }
-  }, [dish, categories, isOpen]);
+  }, [dish, uniqueCategories, isOpen]);
 
   // Keyboard shortcut Ctrl+Enter to save
   useEffect(() => {
@@ -253,7 +253,7 @@ export default function JetCafeDishModal({ isOpen, onClose, dish = null, categor
                     onChange={(e) => setForm({ ...form, category_id: Number(e.target.value) })}
                     className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-[#b8c2d1] rounded font-bold text-slate-900 focus:border-blue-500 focus:outline-none shadow-inner"
                   >
-                    {categories.map((c) => {
+                    {uniqueCategories.map((c) => {
                       const cId = getNumericCatId(c.rawId || c.id);
                       return (
                         <option key={c.id || c.rawId} value={cId}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useDialog } from '../context/DialogContext';
 
 export default function JetCafeCategoryModal({
@@ -53,27 +53,39 @@ export default function JetCafeCategoryModal({
     }
   };
 
+  const uniqueCategories = useMemo(() => {
+    const seen = new Set();
+    return (categories || []).filter((c) => {
+      const key = String(c?.id || c?.rawId || c?.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [categories]);
+
   useEffect(() => {
     if (isOpen) {
       if (initialCategory) {
         setSelectedCat(initialCategory);
+        setForm({
+          name: initialCategory.name || '',
+          order_index: initialCategory.order_index !== undefined ? initialCategory.order_index : 0,
+          image: initialCategory.image || '',
+          icon: initialCategory.icon || '🍽️',
+        });
         setIsEditing(true);
-      } else if (categories.length > 0 && !selectedCat) {
-        setSelectedCat(categories[0]);
+      } else {
+        setSelectedCat(null);
+        setForm({
+          name: '',
+          order_index: (categories || []).length,
+          image: '',
+          icon: '🍽️',
+        });
+        setIsEditing(true);
       }
     }
   }, [isOpen, initialCategory]);
-
-  useEffect(() => {
-    if (selectedCat && isEditing) {
-      setForm({
-        name: selectedCat.name || '',
-        order_index: selectedCat.order_index !== undefined ? selectedCat.order_index : 0,
-        image: selectedCat.image || '',
-        icon: selectedCat.icon || '🍽️',
-      });
-    }
-  }, [selectedCat, isEditing]);
 
   if (!isOpen) return null;
 
@@ -81,7 +93,7 @@ export default function JetCafeCategoryModal({
     setSelectedCat(null);
     setForm({
       name: '',
-      order_index: categories.length,
+      order_index: (categories || []).length,
       image: '',
       icon: '🍽️',
     });
@@ -91,7 +103,7 @@ export default function JetCafeCategoryModal({
   const handleStartEdit = () => {
     if (!selectedCat) return;
     setForm({
-      name: selectedCat.name,
+      name: selectedCat.name || '',
       order_index: selectedCat.order_index || 0,
       image: selectedCat.image || '',
       icon: selectedCat.icon || '🍽️',
@@ -126,8 +138,13 @@ export default function JetCafeCategoryModal({
     }
     setIsSaving(true);
     try {
-      await onSaveCategory(form, selectedCat?.id || selectedCat?.rawId);
-      setIsEditing(false);
+      const res = await onSaveCategory(form, selectedCat?.id || selectedCat?.rawId);
+      if (res && res.success === false) {
+        dialog.alert({ title: "Xatolik", message: "Saqlashda xatolik: " + (res.message || res.error || 'Noma\'lum xatolik'), type: "error" });
+      } else {
+        setIsEditing(false);
+        setSelectedCat(null);
+      }
     } catch (err) {
       dialog.alert({ title: "Xatolik", message: "Saqlashda xatolik: " + err.message, type: "error" });
     } finally {
@@ -195,7 +212,7 @@ export default function JetCafeCategoryModal({
               <span className="col-span-2 text-center">Ўчириш</span>
             </div>
             <div className="flex-1 overflow-y-auto max-h-64 divide-y divide-slate-100 text-xs">
-              {categories.map((c, idx) => {
+              {uniqueCategories.map((c, idx) => {
                 const isSelected = selectedCat && (Number(selectedCat.id) === Number(c.id) || selectedCat.rawId === c.id);
                 return (
                   <div

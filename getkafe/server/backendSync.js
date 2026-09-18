@@ -697,7 +697,7 @@ async function syncFromBackend() {
 }
 
 // Push a completed Order & Payment to getpos.uz
-async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
+async function pushOrderSale({ order, items, paymentData, waiterUserCode, isRetry = false }) {
   const cfg = await getConfig();
   if (!cfg.is_external_active || !cfg.api_url) {
     return { skipped: true };
@@ -708,8 +708,7 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
   const token = await ensureAuthToken();
 
   if (!token) {
-    console.warn('[BackendSync] No auth token available, queueing for background retry');
-    await queueOrderForSync({ order, items, paymentData });
+    if (!isRetry) await queueOrderForSync({ order, items, paymentData });
     return { queued: true };
   }
 
@@ -812,8 +811,10 @@ async function pushOrderSale({ order, items, paymentData, waiterUserCode }) {
       throw new Error(`Tranzaksiya yaratishda xatolik: HTTP ${txRes.status}`);
     }
   } catch (err) {
-    console.warn('[BackendSync] pushOrderSale failed, queueing offline:', err.message);
-    await queueOrderForSync({ order, items, paymentData });
+    if (!isRetry) {
+      console.warn('[BackendSync] pushOrderSale failed, queueing offline:', err.message);
+      await queueOrderForSync({ order, items, paymentData });
+    }
     return { queued: true, error: err.message };
   }
 }
@@ -924,14 +925,18 @@ async function syncToBackend() {
         order: data.order,
         items: data.items,
         paymentData: data.paymentData,
+        isRetry: true,
       });
 
       if (res && (res.success || res.transactionId)) {
         await run(`UPDATE fiscal_queue SET status = 'synced' WHERE id = ?`, [row.id]);
         pushedCount++;
+      } else {
+        await run(`UPDATE fiscal_queue SET status = 'failed' WHERE id = ?`, [row.id]);
       }
     } catch (e) {
       console.warn('[BackendSync] Offline order flush error:', e.message);
+      await run(`UPDATE fiscal_queue SET status = 'failed' WHERE id = ?`, [row.id]).catch(() => {});
     }
   }
 

@@ -986,17 +986,41 @@ app.put('/api/products/:id/mxik', async (req, res) => {
 // Yangi taom qo'shish (Admin / Menejer uchun)
 app.post('/api/products', async (req, res) => {
   try {
-    const { category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
-    if (!name || !price) {
-      return res.status(400).json({ success: false, message: "Taom nomi va narxi majburiy" });
+    const {
+      name,
+      price,
+      category_id,
+      cost_price,
+      stock_quantity,
+      unit,
+      min_stock_alert,
+      workshop,
+      product_type,
+      image,
+      mxik_code,
+      package_code,
+      vat_percent,
+      is_available,
+    } = req.body || {};
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Taom nomi kiritilishi shart' });
     }
+
+    let targetCatId = category_id;
+    if (!targetCatId) {
+      const firstCat = await get(`SELECT id FROM categories ORDER BY order_index ASC, id ASC LIMIT 1`);
+      targetCatId = firstCat?.id || 1;
+    }
+
+    const cost = cost_price !== undefined && cost_price !== null ? Number(cost_price) : 0;
     const initialStock = stock_quantity !== undefined && stock_quantity !== null ? Number(stock_quantity) : 100;
-    const cost = Number(cost_price || 0);
+
     const result = await run(
       `INSERT INTO products (category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        category_id || 1,
+        targetCatId,
         name.trim(),
         Number(price),
         cost,
@@ -1033,7 +1057,8 @@ app.post('/api/products', async (req, res) => {
       newProduct.image = resolveImageUrl(req, newProduct.image);
     }
     broadcast('PRODUCT_ADDED', newProduct);
-    broadcast('PRODUCTS_UPDATED', {});
+    broadcast('PRODUCTS_UPDATED', newProduct);
+    broadcast('MENU_UPDATED', {});
 
     // Asynchronously push to Central Backend (getpos.uz)
     backendSync.pushProductToCloud(newProduct).catch((e) => console.warn('[Product] Backend push warning:', e.message));

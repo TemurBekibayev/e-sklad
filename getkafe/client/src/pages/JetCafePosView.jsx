@@ -71,16 +71,26 @@ export default function JetCafePosView({
   const [editingCategory, setEditingCategory] = useState(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
+  const uniqueCategories = useMemo(() => {
+    const seen = new Set();
+    return (categories || []).filter((c) => {
+      const key = String(c.id || c.rawId || c.name || '').trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [categories]);
+
   const selectedCategoryObj = useMemo(() => {
     if (selectedCategoryId === null) return null;
     return (
-      categories.find(
+      uniqueCategories.find(
         (c) =>
           (c.id || c.rawId) === selectedCategoryId ||
           Number(c.id || c.rawId) === Number(selectedCategoryId)
       ) || null
     );
-  }, [categories, selectedCategoryId]);
+  }, [uniqueCategories, selectedCategoryId]);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -575,8 +585,32 @@ export default function JetCafePosView({
                 currentTable.status === 'free' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
               }`}
             ></span>
-            <span>STOL - {currentTable.number}</span>
+            <span>{currentTable.id === 99 || currentTable.number === 99 ? 'SOBOY (Olib ketish)' : `STOL - ${currentTable.number}`}</span>
           </div>
+
+          {/* 🛍️ SOBOY (Olib ketish) quick button */}
+          <button
+            type="button"
+            onClick={() => {
+              const soboyTable = (tables || []).find((t) => t.id === 99 || t.number === 99 || String(t.name).toLowerCase().includes('soboy')) || {
+                id: 99,
+                number: 99,
+                name: 'SOBOY (Olib ketish)',
+                status: 'free',
+                hall: 'SOBOY',
+              };
+              onSelectTable(soboyTable);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1 font-extrabold text-xs rounded border transition shadow-sm active:scale-95 ${
+              currentTable?.id === 99 || currentTable?.number === 99
+                ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-md ring-2 ring-amber-400'
+                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+            }`}
+            title="O'tirmasdan olib ketadiganlar uchun tezkor buyurtma va to'lov"
+          >
+            <span className="text-sm">🛍️</span>
+            <span>SOBOY (Olib ketish)</span>
+          </button>
 
           <span className="text-xs font-bold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded border border-slate-300">
             Касса 1
@@ -1050,18 +1084,32 @@ export default function JetCafePosView({
               </div>
             </div>
 
-            {/* Giant Green To'lov Button */}
-            <button
-              type="button"
-              onClick={() => setIsPaymentModalOpen(true)}
-              className="h-13 py-2.5 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-700 hover:from-emerald-500 hover:to-green-600 text-white font-black text-base uppercase rounded-lg shadow-md active:scale-98 transition flex items-center justify-center gap-2 border border-emerald-700"
-            >
-              <span className="text-xl">💵</span>
-              <span>{t('pos_pay_cash', 'To\'lov (Hisobni yopish)')}</span>
-              <span className="text-sm font-mono bg-white/20 px-2 py-0.5 rounded ml-1">
-                {formatUZS(totalAmount)}
-              </span>
-            </button>
+            {/* Giant To'lov Button (SOBOY vs Standard Table) */}
+            {currentTable?.id === 99 || currentTable?.number === 99 ? (
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(true)}
+                className="h-13 py-2.5 bg-gradient-to-r from-amber-500 via-orange-600 to-amber-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-base uppercase rounded-lg shadow-md active:scale-98 transition flex items-center justify-center gap-2 border border-amber-600"
+              >
+                <span className="text-xl">🛍️</span>
+                <span>SOBOY — TEZKOR TO'LOV VA CHEK</span>
+                <span className="text-xs font-mono bg-black/20 px-2 py-0.5 rounded ml-1 text-slate-950 font-black">
+                  {formatUZS(totalAmount)}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsPaymentModalOpen(true)}
+                className="h-13 py-2.5 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-700 hover:from-emerald-500 hover:to-green-600 text-white font-black text-base uppercase rounded-lg shadow-md active:scale-98 transition flex items-center justify-center gap-2 border border-emerald-700"
+              >
+                <span className="text-xl">💵</span>
+                <span>{t('pos_pay_cash', 'To\'lov (Hisobni yopish)')}</span>
+                <span className="text-sm font-mono bg-white/20 px-2 py-0.5 rounded ml-1">
+                  {formatUZS(totalAmount)}
+                </span>
+              </button>
+            )}
 
           </div>
 
@@ -1185,7 +1233,7 @@ export default function JetCafePosView({
               </button>
 
               {/* If no categories yet */}
-              {categories.length === 0 && (currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+              {uniqueCategories.length === 0 && (currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1200,7 +1248,7 @@ export default function JetCafePosView({
               )}
 
               {/* Categorized Cards matching video jetcafe_frame_1.jpg */}
-              {categories.map((c) => {
+              {uniqueCategories.map((c) => {
                 const isSelected =
                   selectedCategoryId === (c.id || c.rawId) ||
                   Number(selectedCategoryId) === Number(c.id || c.rawId);
