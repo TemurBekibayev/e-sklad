@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/network/api_service.dart';
@@ -23,6 +24,7 @@ class TablesScreen extends StatefulWidget {
 
 class _TablesScreenState extends State<TablesScreen> {
   Timer? _refreshTimer;
+  final Set<String> _notifiedReadyOrders = {};
 
   @override
   void initState() {
@@ -32,9 +34,56 @@ class _TablesScreenState extends State<TablesScreen> {
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (mounted) {
-        context.read<TablesProvider>().refresh();
+        context.read<TablesProvider>().refresh().then((_) {
+          _checkForReadyOrdersAndVibrate();
+        });
       }
     });
+  }
+
+  void _triggerDoubleVibration() {
+    HapticFeedback.vibrate();
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      HapticFeedback.vibrate();
+      HapticFeedback.heavyImpact();
+    });
+  }
+
+  void _checkForReadyOrdersAndVibrate() {
+    final tablesProv = context.read<TablesProvider>();
+    for (var table in tablesProv.filteredTables) {
+      if (table.currentOrderId != null && table.currentOrderId!.isNotEmpty) {
+        // If table has status or active order ready
+        final orderKey = '${table.id}_${table.currentOrderId}';
+        if (table.status == TableStatus.ready && !_notifiedReadyOrders.contains(orderKey)) {
+          _notifiedReadyOrders.add(orderKey);
+          _triggerDoubleVibration();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.notifications_active, color: Colors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '🔔 ${table.name} (${table.number}-stol) buyurtmasi oshxonada TAYYOR bo\'ldi!',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.emerald-700,
+                duration: const Duration(seconds: 5),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
+      }
+    }
   }
 
   @override
