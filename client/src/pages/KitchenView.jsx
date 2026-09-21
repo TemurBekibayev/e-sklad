@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }) {
   const [activeOrders, setActiveOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'preparing', 'ready'
+  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'pending', 'preparing', 'ready'
   const [cancelModalItem, setCancelModalItem] = useState(null);
   const [cancelReason, setCancelReason] = useState("Oshxonada mavjud emas");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -42,6 +42,19 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
     const pollInterval = setInterval(loadKitchenOrders, 3000); // 3-second fallback sync
     return () => clearInterval(pollInterval);
   }, []);
+
+  // Accept Order (Qabul Qilish)
+  const handleAcceptOrder = async (orderId) => {
+    try {
+      const res = await fetch(`/api/kitchen/orders/${orderId}/accept`, { method: 'POST' }).then((r) => r.json());
+      if (res.success) {
+        if (typeof onPlayChime === 'function') onPlayChime();
+        loadKitchenOrders();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Mark single item ready
   const handleMarkItemReady = async (itemId) => {
@@ -109,7 +122,8 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
   };
 
   // Get status color based on minutes waited
-  const getCardTimerBg = (createdAtStr) => {
+  const getCardTimerBg = (createdAtStr, isPending) => {
+    if (isPending) return 'bg-amber-950/90 border-amber-400 ring-4 ring-amber-500/30 animate-pulse';
     if (!createdAtStr) return 'bg-emerald-950/80 border-emerald-500';
     const createdMs = new Date(createdAtStr).getTime();
     const diffMins = (nowTime - createdMs) / 60000;
@@ -118,19 +132,54 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
     return 'bg-emerald-950/80 border-emerald-500';
   };
 
+  // Filter orders
   const filteredOrders = activeOrders.filter((ord) => {
     const items = ord.items || [];
     const activeItems = items.filter((it) => !it.is_cancelled && it.quantity > 0);
     if (activeItems.length === 0) return false;
 
+    const isPending = ord.status === 'pending' || activeItems.some((it) => it.status === 'pending' || it.status === 'sent');
+    const allReady = activeItems.length > 0 && activeItems.every((it) => it.status === 'ready');
+
+    if (filterStatus === 'pending') {
+      return isPending;
+    }
     if (filterStatus === 'preparing') {
-      return activeItems.some((it) => it.status !== 'ready');
+      return !isPending && !allReady;
     }
     if (filterStatus === 'ready') {
-      return activeItems.every((it) => it.status === 'ready');
+      return allReady;
     }
     return true;
   });
+
+  // SORT ORDERS: Priority 1 = Pending (QABUL QILINISHI KERAK BO'LGANLAR ENG CHAPDA!), Priority 2 = Preparing, Priority 3 = Ready
+  const sortedOrders = [...filteredOrders].sort((a, b) => {
+    const getPriority = (ord) => {
+      const items = ord.items || [];
+      const activeItems = items.filter((it) => !it.is_cancelled && it.quantity > 0);
+      const allReady = activeItems.length > 0 && activeItems.every((it) => it.status === 'ready');
+      const isPending = ord.status === 'pending' || activeItems.some((it) => it.status === 'pending' || it.status === 'sent');
+
+      if (isPending) return 1; // Highest priority -> Far Left
+      if (!allReady) return 2; // Middle priority -> Preparing
+      return 3; // Lowest priority -> Far Right
+    };
+
+    const pA = getPriority(a);
+    const pB = getPriority(b);
+    if (pA !== pB) return pA - pB;
+
+    // Secondary sort: oldest created_at first so waiting orders stay in sequence
+    const tA = new Date(a.created_at || a.timestamp || 0).getTime();
+    const tB = new Date(b.created_at || b.timestamp || 0).getTime();
+    return tA - tB;
+  });
+
+  const pendingCount = activeOrders.filter(ord => {
+    const activeItems = (ord.items || []).filter(it => !it.is_cancelled && it.quantity > 0);
+    return ord.status === 'pending' || activeItems.some(it => it.status === 'pending' || it.status === 'sent');
+  }).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none p-4 md:p-6">
@@ -145,7 +194,12 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
               Oshxona TV (Smart Display)
             </h1>
             <p className="text-sm text-slate-400 font-medium">
-              Faol buyurtmalar: <span className="text-emerald-400 font-bold">{filteredOrders.length} ta</span>
+              Faol buyurtmalar: <span className="text-emerald-400 font-bold">{sortedOrders.length} ta</span>
+              {pendingCount > 0 && (
+                <span className="ml-3 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-slate-950 animate-bounce">
+                  ⚡ {pendingCount} ta qabul kutilmoqda
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -164,14 +218,24 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
               Barchasi ({activeOrders.length})
             </button>
             <button
+              onClick={() => setFilterStatus('pending')}
+              className={`px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${
+                filterStatus === 'pending'
+                  ? 'bg-amber-400 text-slate-950 shadow-lg font-black'
+                  : 'text-amber-400 hover:text-amber-300'
+              }`}
+            >
+              Kutilmoqda ({pendingCount})
+            </button>
+            <button
               onClick={() => setFilterStatus('preparing')}
               className={`px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${
                 filterStatus === 'preparing'
-                  ? 'bg-amber-500 text-slate-950 shadow-lg'
+                  ? 'bg-blue-500 text-slate-950 shadow-lg'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Tayyorlanmoqda
+              Jarayonda
             </button>
             <button
               onClick={() => setFilterStatus('ready')}
@@ -195,34 +259,39 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
         </div>
       </header>
 
-      {/* Grid of Active Kitchen Tickets */}
+      {/* Grid of Active Kitchen Tickets - Sorted with Pending / Qabul qilinadiganlar ENG CHAPDA */}
       {loading ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
           <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p className="text-xl font-semibold">Oshxona buyurtmalari yuklanmoqda...</p>
         </div>
-      ) : filteredOrders.length === 0 ? (
+      ) : sortedOrders.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500 border-2 border-dashed border-slate-800 rounded-3xl p-12 text-center bg-slate-900/40">
           <span className="text-6xl mb-4">🍳</span>
           <h2 className="text-2xl font-bold text-slate-300 mb-2">Hozircha yangi buyurtmalar yo'q</h2>
           <p className="text-slate-400 max-w-md">
-            Kassadan yoki mobil ilovadan yangi buyurtma yuborilishi bilan bu yerda avtomatik ovozli signal bilan ko'rinadi.
+            Kassadan yoki mobil ilovadan yangi buyurtma yuborilishi bilan bu yerda eng chap tomonda ovozli signal bilan paydo bo'ladi.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 flex-1 items-start">
-          {filteredOrders.map((ord) => {
+          {sortedOrders.map((ord) => {
             const items = ord.items || [];
             const activeItems = items.filter((it) => !it.is_cancelled && it.quantity > 0);
+            const isPending = ord.status === 'pending' || activeItems.some((it) => it.status === 'pending' || it.status === 'sent');
             const allReady = activeItems.length > 0 && activeItems.every((it) => it.status === 'ready');
             const elapsedTime = getElapsedTime(ord.created_at);
-            const timerBg = getCardTimerBg(ord.created_at);
+            const timerBg = getCardTimerBg(ord.created_at, isPending);
 
             return (
               <div
                 key={ord.id}
                 className={`flex flex-col rounded-3xl border-2 transition-all duration-300 shadow-2xl overflow-hidden bg-slate-900/90 ${
-                  allReady ? 'border-emerald-500/80 ring-4 ring-emerald-500/20' : timerBg
+                  allReady
+                    ? 'border-emerald-500/80 ring-4 ring-emerald-500/20'
+                    : isPending
+                    ? 'border-amber-400 ring-4 ring-amber-400/30'
+                    : timerBg
                 }`}
               >
                 {/* Header of Card */}
@@ -243,13 +312,19 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
                     </div>
                   </div>
 
-                  {/* Elapsed Timer Badge */}
+                  {/* Elapsed Timer & Status Badge */}
                   <div className="flex flex-col items-end">
                     <span className="text-2xl font-black tracking-wider text-amber-400 font-mono">
                       ⏱️ {elapsedTime}
                     </span>
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                      {allReady ? 'TAYYOR' : 'KUTILMOQDA'}
+                    <span className={`text-[11px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-md ${
+                      isPending
+                        ? 'bg-amber-400 text-slate-950 font-black animate-pulse'
+                        : allReady
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
+                    }`}>
+                      {isPending ? '⚡ KUTILMOQDA' : allReady ? 'TAYYOR' : 'JARAYONDA'}
                     </span>
                   </div>
                 </div>
@@ -322,8 +397,17 @@ export default function KitchenView({ tickets = [], onPrintTicket, onPlayChime }
                   })}
                 </div>
 
-                {/* Footer Action Button: Mark Entire Table Ready */}
-                <div className="p-4 bg-slate-950 border-t border-slate-800">
+                {/* Footer Action Buttons: Qabul qilish or Mark Entire Table Ready */}
+                <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-col gap-2">
+                  {isPending && (
+                    <button
+                      onClick={() => handleAcceptOrder(ord.id)}
+                      className="w-full py-3.5 rounded-2xl font-black text-base uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl transition-all flex items-center justify-center gap-2 active:scale-95 animate-pulse"
+                    >
+                      <span>📥</span> QABUL QILISH (TAYYORLANISHGA O'TISH)
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleMarkOrderReady(ord.id)}
                     className={`w-full py-3.5 rounded-2xl font-black text-base uppercase tracking-wider transition-all duration-200 shadow-xl flex items-center justify-center gap-2 active:scale-95 ${
