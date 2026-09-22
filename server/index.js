@@ -3321,6 +3321,233 @@ app.post('/api/kitchen/item-out-of-stock', async (req, res) => {
   }
 });
 
+// 9.1. Smart TV KDS - Faol oshxona buyurtmalari ro'yxatini olish
+app.get(['/api/kitchen/active-orders', '/api/kitchen/orders'], async (req, res) => {
+  try {
+    const orders = await all(`
+      SELECT o.*, t.number as table_number, t.name as table_name, t.hall
+      FROM orders o
+      LEFT JOIN tables t ON o.table_id = t.id
+      WHERE o.status IN ('open', 'busy', 'bill_requested')
+      ORDER BY o.created_at ASC
+    `);
+
+    const ordersWithItems = await Promise.all(
+      orders.map(async (o) => {
+        const items = await all(
+          `SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`,
+          [o.id]
+        );
+        return {
+          ...o,
+          tableNumber: o.table_number || o.table_id,
+          tableName: o.table_name || `${o.table_number || o.table_id}-stol`,
+          hallName: o.hall || 'Asosiy Zal',
+          waiterName: o.waiter_name || 'Ofitsiant',
+          items,
+          order_items: items,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      orders: ordersWithItems,
+      tickets: ordersWithItems,
+    });
+  } catch (err) {
+    console.error('[KDS API] active-orders error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.2. Smart TV KDS - Taomni "Tayyor" deb belgilash (POST /api/kitchen/items/:id/ready)
+app.post(['/api/kitchen/items/:id/ready', '/api/order-items/:id/ready'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const item = await get(`SELECT * FROM order_items WHERE id = ?`, [id]);
+    if (!item) return res.status(404).json({ success: false, message: 'Taom topilmadi' });
+
+    await run(`UPDATE order_items SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [item.id]);
+
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [item.order_id]);
+    const table = order ? await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]) : null;
+    const allItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [item.order_id]);
+
+    const activeItems = allItems.filter(it => !it.is_cancelled && it.quantity > 0);
+    const allReady = activeItems.length > 0 && activeItems.every(it => it.status === 'ready');
+
+    const eventPayload = {
+      orderId: item.order_id,
+      itemId: item.id,
+      itemName: item.product_name,
+      quantity: item.quantity,
+      tableId: order?.table_id,
+      tableNumber: table?.number || order?.table_id || 1,
+      tableName: table?.name || `${table?.number || 1}-stol`,
+      waiterName: item.waiter_name || order?.waiter_name || 'Ofitsiant',
+      allReady,
+      timestamp: Date.now(),
+    };
+
+    // WebSocket tarqatish: mobil va desktop ilovada avto-vibratsiya va bildirishnoma berish
+    broadcast('ORDER_READY', eventPayload);
+    broadcast('KITCHEN_ITEM_READY', eventPayload);
+    if (allReady) {
+      broadcast('KITCHEN_ORDER_COMPLETED', eventPayload);
+    }
+
+    res.json({
+      success: true,
+      message: `${item.product_name} tayyor deb belgilandi`,
+      item: { ...item, status: 'ready' },
+      allReady,
+      eventPayload,
+    });
+  } catch (err) {
+    console.error('[KDS API] item ready error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.3. Smart TV KDS - Butun buyurtmadagi barcha taomlarni "Tayyor" deb belgilash
+app.post(['/api/kitchen/orders/:orderId/ready', '/api/orders/:orderId/kitchen-ready'], async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    await run(
+      `UPDATE order_items SET status = 'ready', updated_at = CURRENT_TIMESTAMP WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL)`,
+      [orderId]
+    );
+
+    const table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+    const items = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [orderId]);
+
+    const eventPayload = {
+      orderId: order.id,
+      tableId: order.table_id,
+      tableNumber: table?.number || order.table_id || 1,
+      tableName: table?.name || `${table?.number || 1}-stol`,
+      waiterName: order.waiter_name || 'Ofitsiant',
+      items,
+      allReady: true,
+      timestamp: Date.now(),
+    };
+
+    broadcast('ORDER_READY', eventPayload);
+    broadcast('KITCHEN_ORDER_COMPLETED', eventPayload);
+
+    res.json({
+      success: true,
+      message: `${table?.name || 'Stol'} buyurtmasi to'liq tayyor deb belgilandi`,
+      orderId,
+      items,
+    });
+  } catch (err) {
+    console.error('[KDS API] order ready error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.4. Smart TV KDS - Taomni sichqoncha bilan "Bekor qilish" (Cancel / Out of stock in kitchen)
+app.post(['/api/kitchen/items/:id/cancel', '/api/order-items/:id/kitchen-cancel'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason = "Oshxonada mavjud emas (Bekor qilindi)" } = req.body || {};
+
+    const item = await get(`SELECT * FROM order_items WHERE id = ?`, [id]);
+    if (!item) return res.status(404).json({ success: false, message: 'Taom topilmadi' });
+
+    const orderId = item.order_id;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+    const table = order ? await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]) : null;
+
+    // Itemni bekor qilish
+    await run(
+      `UPDATE order_items SET is_cancelled = 1, status = 'cancelled', cancel_reason = ? WHERE id = ?`,
+      [reason, item.id]
+    );
+
+    // Buyurtma summasini qayta hisoblash
+    const sumResult = await get(
+      `SELECT SUM(price * quantity) as total FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0`,
+      [orderId]
+    );
+    const newTotal = sumResult ? (sumResult.total || 0) : 0;
+    await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [newTotal, orderId]);
+
+    // Ombordagi mahsulot qoldig'ini qaytarish (Stock replenishment)
+    if (item.product_id) {
+      try {
+        const prodRow = await get(`SELECT id, name, stock_quantity, price FROM products WHERE id = ?`, [item.product_id]);
+        if (prodRow) {
+          const prevSt = Number(prodRow.stock_quantity !== null && prodRow.stock_quantity !== undefined ? prodRow.stock_quantity : 0);
+          const newSt = prevSt + Math.abs(item.quantity);
+          await run(`UPDATE products SET stock_quantity = ? WHERE id = ?`, [newSt, prodRow.id]);
+          await run(
+            `INSERT INTO stock_movements (product_id, type, quantity, previous_stock, new_stock, unit_price, total_price, note, created_by)
+             VALUES (?, 'in', ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              prodRow.id,
+              Math.abs(item.quantity),
+              prevSt,
+              newSt,
+              prodRow.price,
+              prodRow.price * Math.abs(item.quantity),
+              `Oshxona TV bekor qildi: ${table?.name || (table?.number ? table.number + '-stol' : '')} - ${reason}`,
+              order?.waiter_name || 'Oshxona TV'
+            ]
+          );
+          const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
+          broadcast('INVENTORY_UPDATED', { product: updP });
+          broadcast('PRODUCT_UPDATED', updP);
+        }
+      } catch (stockErr) {
+        console.warn('[KDS Stock] Return error:', stockErr.message);
+      }
+    }
+
+    const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [orderId]);
+    const updatedTableRaw = table ? await get(`
+      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+      FROM tables t
+      LEFT JOIN orders o ON t.current_order_id = o.id
+      WHERE t.id = ?
+    `, [table.id]) : null;
+
+    const eventPayload = {
+      orderId,
+      itemId: item.id,
+      itemName: item.product_name,
+      reason,
+      tableId: order?.table_id,
+      tableNumber: table?.number || order?.table_id || 1,
+      tableName: table?.name || `${table?.number || 1}-stol`,
+      waiterName: item.waiter_name || order?.waiter_name || 'Ofitsiant',
+      totalAmount: newTotal,
+      items: updatedItems,
+    };
+
+    broadcast('KITCHEN_ITEM_CANCELLED', eventPayload);
+    broadcast('ORDER_UPDATED', { orderId, tableId: order?.table_id, totalAmount: newTotal, items: updatedItems });
+    if (updatedTableRaw) broadcast('TABLE_UPDATED', updatedTableRaw);
+
+    res.json({
+      success: true,
+      message: `${item.product_name} bekor qilindi`,
+      totalAmount: newTotal,
+      items: updatedItems,
+      eventPayload,
+    });
+  } catch (err) {
+    console.error('[KDS API] item cancel error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 // ==========================================
 // 10. JETBOT TELEGRAM INTEGRATSIYASI API
 // ==========================================
