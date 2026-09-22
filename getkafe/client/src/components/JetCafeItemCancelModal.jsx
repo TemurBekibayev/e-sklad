@@ -59,9 +59,9 @@ export default function JetCafeItemCancelModal({ isOpen, onClose, item, onConfir
         {/* Title Bar */}
         <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-3 py-1.5 flex items-center justify-between">
           <div className="flex items-center gap-2 font-semibold text-slate-700 tracking-wide text-xs">
-            <span className="text-emerald-600 font-bold">jetcafe</span>
+            <span className="text-slate-900 font-black">GetPOS Kafe</span>
             <span className="text-slate-400">|</span>
-            <span>Отмена блюда (Возврат)</span>
+            <span>Taomni bekor qilish (Qaytarish)</span>
           </div>
           <button
             onClick={onClose}

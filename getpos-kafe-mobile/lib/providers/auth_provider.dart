@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/waiter.dart';
 import '../core/network/api_service.dart';
 import '../core/storage/app_preferences.dart';
+import '../core/services/kitchen_signal_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final ApiService _apiService = ApiService();
@@ -40,6 +41,7 @@ class AuthProvider extends ChangeNotifier {
         tenantName: tenantName,
         isShiftOpen: isShiftOpen,
       );
+      KitchenSignalService().connect();
       notifyListeners();
     }
   }
@@ -69,6 +71,7 @@ class AuthProvider extends ChangeNotifier {
       if (result['success'] == true && result['waiter'] != null) {
         _currentWaiter = result['waiter'] as Waiter;
         _errorMessage = null;
+        KitchenSignalService().connect();
         notifyListeners();
         return true;
       } else {
@@ -85,6 +88,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    KitchenSignalService().disconnect();
     await AppPreferences.clearAuth();
     _currentWaiter = null;
     _errorMessage = null;

@@ -15,13 +15,15 @@ const {
   getPendingCount,
   syncPendingQueue,
   generateFiscalSign,
+  getOrGenerateReceiptForOrder,
   COMPANY_INFO,
 } = require('./soliq');
 const printerService = require('./printer');
-const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, recordFiscalReceipt } = printerService;
+const { printToKitchen, printKitchenCancellationTicket, getRecentKitchenTickets, updateKitchenTicketStatus, removeKitchenTicketItem, recordFiscalReceipt } = printerService;
 const telegram = require('./telegram');
 const backendSync = require('./backendSync');
 const imageHelper = require('./imageHelper');
+const eskizService = require('./eskiz');
 
 const app = express();
 app.use(cors());
@@ -146,6 +148,25 @@ function resolveImageUrl(req, img, id) {
   if (img.startsWith('http://') || img.startsWith('https://')) return img;
   const clean = img.startsWith('/') ? img : `/${img}`;
   return `${protocol}://${host}${clean}`;
+}
+
+// Ofitsiant ismini turli manbalardan (user object, ID, token yoki body) aniq topish
+async function resolveWaiterName(body, defaultName = 'Ofitsiant') {
+  if (!body) return defaultName;
+  let name = body.waiterName || body.waiter_name || body.userName || body.user_name || (typeof body.user === 'object' ? body.user.name : null) || (typeof body.waiter === 'object' ? body.waiter.name : null);
+  if (name && typeof name === 'string' && name.trim() && name.trim().toLowerCase() !== 'ofitsiant' && name.trim().toLowerCase() !== 'administrator') {
+    return name.trim();
+  }
+
+  const rawId = body.waiterId || body.waiter_id || body.userId || body.user_id || (typeof body.user === 'object' ? (body.user.id || body.user.user_code) : null) || (typeof body.waiter === 'object' ? (body.waiter.id || body.waiter.user_code) : null) || body.user_code || body.userCode;
+  if (rawId) {
+    const userRow = await get(`SELECT name FROM users WHERE id = ? OR user_code = ? OR login = ? OR phone = ? LIMIT 1`, [rawId, rawId, rawId, rawId]);
+    if (userRow && userRow.name) {
+      return userRow.name;
+    }
+  }
+
+  return (name && typeof name === 'string' && name.trim()) ? name.trim() : defaultName;
 }
 
 // ----------------------------------------------------
@@ -434,7 +455,13 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
 
     // 2. Local fallback login (offline mode or local users)
     let user = null;
-    if (loginVal) {
+    if (userId) {
+      user = await get(
+        `SELECT * FROM users WHERE (user_code = ? OR id = ?) AND (password = ? OR pin = ?)`,
+        [userId, userId, passVal, passVal]
+      );
+    }
+    if (!user && loginVal) {
       user = await get(
         `SELECT * FROM users 
          WHERE (LOWER(name) = LOWER(?) OR phone = ? OR LOWER(login) = LOWER(?) OR user_code = ?) 
@@ -442,15 +469,12 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
         [loginVal, loginVal, loginVal, loginVal, passVal, passVal]
       );
     }
-    if (!user && userId) {
+    if (!user && !loginVal && !userId) {
       user = await get(
-        `SELECT * FROM users WHERE (user_code = ? OR id = ?) AND (password = ? OR pin = ?)`,
-        [userId, userId, passVal, passVal]
-      );
-    }
-    if (!user && !loginVal) {
-      user = await get(
-        `SELECT * FROM users WHERE password = ? OR pin = ?`,
+        `SELECT * FROM users 
+         WHERE password = ? OR pin = ?
+         ORDER BY CASE WHEN role IN ('admin', 'manager', 'cashier') THEN 1 ELSE 2 END, id ASC 
+         LIMIT 1`,
         [passVal, passVal]
       );
     }
@@ -491,6 +515,21 @@ app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
 // 3. Stollar holati (GET /api/tables?tenantId={TENANT_ID})
 app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
   try {
+    // 1. Fetch directly from Cloud Backend (getpos.uz)
+    const cloudRes = await backendSync.fetchCloudTables();
+    if (cloudRes.success && Array.isArray(cloudRes.tables)) {
+      if (req.query.tenantId) {
+        return res.json(cloudRes.tables);
+      }
+      return res.json({
+        success: true,
+        tables: cloudRes.tables,
+        data: cloudRes.tables,
+        results: cloudRes.tables,
+      });
+    }
+
+    // 2. Fallback to local SQLite if cloud is unreachable
     const rows = await all(`
       SELECT t.*, 
              o.id as order_id, 
@@ -515,7 +554,6 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
         );
       }
       if (activeOrder && t.status === 'free') {
-        // If table is free, do not attach old active order
         activeOrder = null;
       }
       if (activeOrder) {
@@ -552,7 +590,6 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
       };
     }));
 
-    // Agar tenantId so'ralgan bo'lsa (Backend / Mobile spetsifikatsiyasi bo'yicha to'g'ridan-to'g'ri massiv qaytariladi)
     if (req.query.tenantId) {
       return res.json(formattedTables);
     }
@@ -572,6 +609,16 @@ app.get(['/api/tables', '/tables', '/api/tables/'], async (req, res) => {
 app.get(['/api/tables/:id', '/tables/:id'], async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Cloud lookup
+    const cloudRes = await backendSync.fetchCloudTables();
+    if (cloudRes.success && Array.isArray(cloudRes.tables)) {
+      const found = cloudRes.tables.find((t) => String(t.id) === String(id) || String(t.number) === String(id));
+      if (found) {
+        return res.json({ success: true, table: found, data: found });
+      }
+    }
+
     const table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [id, id]);
     if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
 
@@ -608,8 +655,23 @@ app.get(['/api/tables/:id', '/tables/:id'], async (req, res) => {
 // 3.1. Yangi stol qo'shish (POST /api/tables)
 app.post(['/api/tables', '/tables'], async (req, res) => {
   try {
-    let { number, name, hall, capacity } = req.body;
+    let { number, name, hall, capacity, hall_id } = req.body;
 
+    // Direct cloud creation
+    const cloudRes = await backendSync.createCloudTable({
+      number: Number(number) || 1,
+      name: (name && name.trim()) || `STOL - ${number}`,
+      hall: hall_id || undefined,
+      capacity: Number(capacity) || 4,
+    });
+
+    if (cloudRes.success) {
+      broadcast('TABLE_ADDED', cloudRes.data);
+      broadcast('TABLES_UPDATED', cloudRes.data);
+      return res.json({ success: true, table: cloudRes.data, message: "Stol muvaffaqiyatli qo'shildi!" });
+    }
+
+    // Local fallback
     if (!number) {
       const maxNumRow = await get(`SELECT MAX(number) as max_num FROM tables`);
       number = (maxNumRow?.max_num || 0) + 1;
@@ -655,17 +717,24 @@ app.post(['/api/tables', '/tables'], async (req, res) => {
 app.put(['/api/tables/:id', '/tables/:id'], async (req, res) => {
   try {
     const { id } = req.params;
-    const { number, name, hall, capacity } = req.body;
+    const { number, name, hall, capacity, hall_id } = req.body;
 
+    const cloudRes = await backendSync.updateCloudTable(id, {
+      number: number ? Number(number) : undefined,
+      name: name ? name.trim() : undefined,
+      hall: hall_id || undefined,
+      capacity: capacity !== undefined ? Number(capacity) : undefined,
+    });
+
+    if (cloudRes.success) {
+      broadcast('TABLE_UPDATED', cloudRes.data);
+      broadcast('TABLES_UPDATED', cloudRes.data);
+      return res.json({ success: true, table: cloudRes.data, message: "Stol ma'lumotlari yangilandi!" });
+    }
+
+    // Local fallback
     const table = await get(`SELECT * FROM tables WHERE id = ?`, [id]);
     if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
-
-    if (number && Number(number) !== table.number) {
-      const conflict = await get(`SELECT id FROM tables WHERE number = ? AND id != ?`, [Number(number), id]);
-      if (conflict) {
-        return res.status(400).json({ success: false, message: `${number}-raqamli stol allaqachon mavjud!` });
-      }
-    }
 
     const newNumber = number ? Number(number) : table.number;
     const newName = (name && name.trim()) || table.name;
@@ -677,13 +746,7 @@ app.put(['/api/tables/:id', '/tables/:id'], async (req, res) => {
       [newNumber, newName, newHall, newCapacity, id]
     );
 
-    const updated = await get(`
-      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
-      FROM tables t
-      LEFT JOIN orders o ON t.current_order_id = o.id
-      WHERE t.id = ?
-    `, [id]);
-
+    const updated = await get(`SELECT * FROM tables WHERE id = ?`, [id]);
     broadcast('TABLE_UPDATED', updated);
     broadcast('TABLES_UPDATED', updated);
 
@@ -697,15 +760,16 @@ app.put(['/api/tables/:id', '/tables/:id'], async (req, res) => {
 app.delete(['/api/tables/:id', '/tables/:id'], async (req, res) => {
   try {
     const { id } = req.params;
+
+    const cloudRes = await backendSync.deleteCloudTable(id);
+    if (cloudRes.success) {
+      broadcast('TABLE_DELETED', { id });
+      broadcast('TABLES_UPDATED', { id });
+      return res.json({ success: true, message: "Stol muvaffaqiyatli o'chirildi!" });
+    }
+
     const table = await get(`SELECT * FROM tables WHERE id = ?`, [id]);
     if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
-
-    if (table.status === 'busy' || table.current_order_id) {
-      return res.status(400).json({
-        success: false,
-        message: `Band (${table.name}) stolni o'chirib bo'lmaydi! Avval hisobni yoping yoki buyurtmani bekor qiling.`
-      });
-    }
 
     await run(`DELETE FROM tables WHERE id = ?`, [id]);
     broadcast('TABLE_DELETED', { id: Number(id) });
@@ -720,6 +784,11 @@ app.delete(['/api/tables/:id', '/tables/:id'], async (req, res) => {
 // 3.4. Xonalar / Zallar ro'yxati (GET /api/halls)
 app.get(['/api/halls', '/halls'], async (req, res) => {
   try {
+    const cloudRes = await backendSync.fetchCloudHalls();
+    if (cloudRes.success && Array.isArray(cloudRes.halls)) {
+      return res.json({ success: true, halls: cloudRes.halls, data: cloudRes.halls });
+    }
+
     const halls = await all(`
       SELECT h.*, COUNT(t.id) as table_count
       FROM halls h
@@ -736,12 +805,27 @@ app.get(['/api/halls', '/halls'], async (req, res) => {
 // 3.5. Yangi xona / zal qo'shish (POST /api/halls)
 app.post(['/api/halls', '/halls'], async (req, res) => {
   try {
-    const { name, order_index } = req.body;
+    const { name, order_index, service_percent } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ success: false, message: 'Zal nomi kiritilishi shart!' });
     }
 
     const hallName = name.trim();
+
+    // Cloud creation
+    const cloudRes = await backendSync.createCloudHall({
+      name: hallName,
+      service_percent: service_percent || '10.00',
+      sort_order: Number(order_index) || 1,
+    });
+
+    if (cloudRes.success) {
+      broadcast('HALL_ADDED', cloudRes.data);
+      broadcast('HALLS_UPDATED', cloudRes.data);
+      return res.json({ success: true, hall: cloudRes.data, message: `"${hallName}" zali muvaffaqiyatli yaratildi!` });
+    }
+
+    // Local fallback
     const existing = await get(`SELECT id FROM halls WHERE LOWER(name) = LOWER(?)`, [hallName]);
     if (existing) {
       return res.status(400).json({ success: false, message: `"${hallName}" nomli zal allaqachon mavjud!` });
@@ -812,17 +896,16 @@ app.put(['/api/halls/:id', '/halls/:id'], async (req, res) => {
 app.delete(['/api/halls/:id', '/halls/:id'], async (req, res) => {
   try {
     const { id } = req.params;
+
+    const cloudRes = await backendSync.deleteCloudHall(id);
+    if (cloudRes.success) {
+      broadcast('HALL_DELETED', { id });
+      broadcast('HALLS_UPDATED', { id });
+      return res.json({ success: true, message: "Zal muvaffaqiyatli o'chirildi!" });
+    }
+
     const hall = await get(`SELECT * FROM halls WHERE id = ?`, [id]);
     if (!hall) return res.status(404).json({ success: false, message: 'Zal topilmadi' });
-
-    // Check if any busy table in this hall
-    const busyTable = await get(`SELECT id, name FROM tables WHERE hall = ? AND (status = 'busy' OR current_order_id IS NOT NULL)`, [hall.name]);
-    if (busyTable) {
-      return res.status(400).json({
-        success: false,
-        message: `Ushbu zalda band stol (${busyTable.name}) mavjud! Avval buyurtmani yoping.`
-      });
-    }
 
     // Move any tables in this hall to default 'Asosiy Zal'
     await run(`UPDATE tables SET hall = 'Asosiy Zal' WHERE hall = ?`, [hall.name]);
@@ -832,7 +915,7 @@ app.delete(['/api/halls/:id', '/halls/:id'], async (req, res) => {
     broadcast('HALLS_UPDATED', { id: Number(id) });
     broadcast('TABLES_UPDATED', {});
 
-    res.json({ success: true, message: `"${hall.name}" zali o'chirildi. Undagi stollar "Asosiy Zal"ga o'tkazildi.` });
+    res.json({ success: true, message: `"${hall.name}" zali o'chirildi.` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -985,17 +1068,41 @@ app.put('/api/products/:id/mxik', async (req, res) => {
 // Yangi taom qo'shish (Admin / Menejer uchun)
 app.post('/api/products', async (req, res) => {
   try {
-    const { category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available } = req.body;
-    if (!name || !price) {
-      return res.status(400).json({ success: false, message: "Taom nomi va narxi majburiy" });
+    const {
+      name,
+      price,
+      category_id,
+      cost_price,
+      stock_quantity,
+      unit,
+      min_stock_alert,
+      workshop,
+      product_type,
+      image,
+      mxik_code,
+      package_code,
+      vat_percent,
+      is_available,
+    } = req.body || {};
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Taom nomi kiritilishi shart' });
     }
+
+    let targetCatId = category_id;
+    if (!targetCatId) {
+      const firstCat = await get(`SELECT id FROM categories ORDER BY order_index ASC, id ASC LIMIT 1`);
+      targetCatId = firstCat?.id || 1;
+    }
+
+    const cost = cost_price !== undefined && cost_price !== null ? Number(cost_price) : 0;
     const initialStock = stock_quantity !== undefined && stock_quantity !== null ? Number(stock_quantity) : 100;
-    const cost = Number(cost_price || 0);
+
     const result = await run(
       `INSERT INTO products (category_id, name, price, cost_price, stock_quantity, unit, min_stock_alert, workshop, product_type, image, mxik_code, package_code, vat_percent, is_available)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        category_id || 1,
+        targetCatId,
         name.trim(),
         Number(price),
         cost,
@@ -1032,7 +1139,8 @@ app.post('/api/products', async (req, res) => {
       newProduct.image = resolveImageUrl(req, newProduct.image);
     }
     broadcast('PRODUCT_ADDED', newProduct);
-    broadcast('PRODUCTS_UPDATED', {});
+    broadcast('PRODUCTS_UPDATED', newProduct);
+    broadcast('MENU_UPDATED', {});
 
     // Asynchronously push to Central Backend (getpos.uz)
     backendSync.pushProductToCloud(newProduct).catch((e) => console.warn('[Product] Backend push warning:', e.message));
@@ -1436,6 +1544,62 @@ app.get([
 ], async (req, res) => {
   try {
     const { tableId } = req.params;
+
+    // 1. Direct Cloud Lookup (getpos.uz)
+    try {
+      const cloudOrderRes = await backendSync.fetchCloudOrderForTable(tableId);
+      if (cloudOrderRes.success && cloudOrderRes.order) {
+        const co = cloudOrderRes.order;
+        const cloudItems = (co.items || []).map((it) => ({
+          id: it.id,
+          product_id: it.product || it.product_id,
+          product_name: it.product_name || it.name,
+          quantity: Number(it.quantity || 1),
+          price: Number(it.price || it.unit_price || 0),
+          comment: it.comment || '',
+          waiter_id: it.waiter_id,
+          waiter_name: it.waiter_name || co.waiter_name,
+          is_cancelled: Boolean(it.is_cancelled),
+          cancel_reason: it.cancel_reason || '',
+        }));
+
+        const totalAmount = Number(co.total_amount || 0);
+
+        return res.json({
+          success: true,
+          order: {
+            ...co,
+            order_id: co.id,
+            orderId: co.id,
+            table_id: tableId,
+            tableId: tableId,
+            total_amount: totalAmount,
+            totalAmount: totalAmount,
+            items: cloudItems,
+            order_items: cloudItems,
+            products: cloudItems,
+          },
+          items: cloudItems,
+          order_items: cloudItems,
+          products: cloudItems,
+          table: {
+            id: tableId,
+            order_id: co.id,
+            total_amount: totalAmount,
+            items: cloudItems,
+          },
+          data: {
+            ...co,
+            order_id: co.id,
+            items: cloudItems,
+          },
+          results: cloudItems,
+        });
+      }
+    } catch (cErr) {
+      console.warn('[Orders] Cloud table order lookup fallback:', cErr.message);
+    }
+
     const table = await get(`SELECT * FROM tables WHERE id = ? OR number = ?`, [tableId, tableId]);
     if (!table) {
       return res.status(404).json({ success: false, message: 'Stol topilmadi', order: null, items: [], data: null });
@@ -1554,9 +1718,10 @@ app.get(['/api/orders', '/orders', '/api/orders/active', '/orders/active'], asyn
 });
 
 // 5.2. ID bo'yicha bitta buyurtmani olish (GET /api/orders/:id)
-app.get(['/api/orders/:id', '/orders/:id'], async (req, res) => {
+app.get(['/api/orders/:id', '/orders/:id'], async (req, res, next) => {
   try {
     const { id } = req.params;
+    if (id === 'journal') return next();
     const order = await get(`SELECT * FROM orders WHERE id = ?`, [id]);
     if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
 
@@ -1626,21 +1791,36 @@ app.post([
       }
     }
 
-    if (!table) return res.status(404).json({ success: false, message: 'Stol topilmadi' });
+    if (!table && tableIdParam) {
+      const numVal = parseInt(tableIdParam, 10);
+      const tblNum = isNaN(numVal) ? 1 : numVal;
+      const tblName = typeof tableIdParam === 'string' && isNaN(numVal) ? tableIdParam : `STOL - ${tblNum}`;
+      const insRes = await run(
+        `INSERT INTO tables (number, name, capacity, status, hall) VALUES (?, ?, 4, 'free', 'Asosiy Zal')`,
+        [tblNum, tblName]
+      );
+      table = await get(`SELECT * FROM tables WHERE id = ?`, [insRes.lastID]);
+      if (table) broadcast('TABLE_ADDED', table);
+    }
+
+    if (!table) return res.status(400).json({ success: false, message: 'Stol topilmadi yoki yaratilmadi' });
 
     let isNewOrder = false;
+
+    const waiterId = body.waiterId || body.waiter_id || body.userId || body.user_id || 1;
+    const waiterName = await resolveWaiterName(body, 'Ofitsiant');
 
     // Agar stol bo'sh bo'lsa yoki order topilmasa, yangi buyurtma yaratiladi
     if (!targetOrderId) {
       targetOrderId = 'ord_' + uuidv4().substring(0, 8);
       isNewOrder = true;
-      const waiterId = body.waiterId || body.waiter_id || body.userId || body.user_id || 1;
-      const waiterName = (body.waiterName || body.waiter_name || body.userName || body.user_name || 'Ofitsiant').trim();
 
       await run(
         `INSERT INTO orders (id, table_id, waiter_id, waiter_name, status, total_amount) VALUES (?, ?, ?, ?, 'open', 0)`,
         [targetOrderId, table.id, waiterId, waiterName]
       );
+    } else if (waiterName && waiterName !== 'Ofitsiant') {
+      await run(`UPDATE orders SET waiter_name = ? WHERE id = ?`, [waiterName, targetOrderId]);
     }
 
     // Taomlarni qo'shish
@@ -1657,16 +1837,19 @@ app.post([
       const itemTotal = itemPrice * itemQty;
       addedTotal += itemTotal;
 
-      const itemWaiterId = item.waiter_id || item.waiterId || body.waiterId || body.waiter_id || body.userId || body.user_id || req.user?.id || 1;
-      const itemWaiterName = (item.waiter_name || item.waiterName || body.waiterName || body.waiter_name || body.userName || body.user_name || req.user?.name || 'Ofitsiant').trim();
+      const itemWaiterId = item.waiter_id || item.waiterId || waiterId || req.user?.id || 1;
+      const itemWaiterName = await resolveWaiterName(item, waiterName);
 
-      await run(
+      const itemRes = await run(
         `INSERT INTO order_items (order_id, product_id, product_name, quantity, price, comment, status, waiter_id, waiter_name) 
          VALUES (?, ?, ?, ?, ?, ?, 'sent', ?, ?)`,
         [targetOrderId, pId || 1, pName, itemQty, itemPrice, itemComment, itemWaiterId, itemWaiterName]
       );
 
       addedItemsForKitchen.push({
+        id: itemRes.lastID,
+        productId: pId,
+        product_id: pId,
         product_name: pName,
         quantity: itemQty,
         comment: itemComment,
@@ -1691,7 +1874,7 @@ app.post([
                 prodRow.price,
                 prodRow.price * itemQty,
                 `Savdo: ${table.name || table.number}-stol (Buyurtma ${targetOrderId})`,
-                body.waiterName || body.waiter_name || 'Ofitsiant'
+                waiterName
               ]
             );
             const updP = await get(`SELECT * FROM products WHERE id = ?`, [prodRow.id]);
@@ -1708,7 +1891,7 @@ app.post([
     const sumResult = await get(`SELECT SUM(price * quantity) as total FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL)`, [targetOrderId]);
     const totalAmount = sumResult ? (sumResult.total || 0) : 0;
 
-    await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [totalAmount, targetOrderId]);
+    await run(`UPDATE orders SET total_amount = ?, waiter_name = COALESCE(NULLIF(?, 'Ofitsiant'), waiter_name), updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [totalAmount, waiterName, targetOrderId]);
 
     // Stol holatini 'busy' (Qizil - band) ga o'tkazish
     await run(
@@ -1722,7 +1905,7 @@ app.post([
       ticket = await printToKitchen({
         orderId: targetOrderId,
         tableNumber: table.number,
-        waiterName: body.waiterName || body.waiter_name || 'Ofitsiant',
+        waiterName: waiterName,
         items: addedItemsForKitchen,
       });
     }
@@ -1781,90 +1964,162 @@ app.post([
   }
 });
 
-// 7. Ofitsiant "Hisob so'raldi" tugmasini bosishi (POST /api/orders/:id/bill-request)
-app.post(['/api/orders/:id/bill-request', '/api/orders/bill-request'], async (req, res) => {
+// 7. Ofitsiant "Hisob so'raldi" tugmasini bosishi (POST /api/orders/:id/bill-request, etc.)
+app.all([
+  '/api/orders/:id/bill-request', 
+  '/api/orders/bill-request',
+  '/api/tables/:id/bill-request',
+  '/api/tables/bill-request',
+  '/api/orders/:id/precheck',
+  '/api/orders/precheck',
+  '/api/orders/:id/print-precheck',
+  '/api/orders/print-precheck',
+  '/api/orders/:id/print',
+  '/api/orders/print',
+  '/api/tables/:id/precheck',
+  '/api/tables/precheck',
+  '/api/tables/:id/print-precheck',
+  '/api/tables/print-precheck',
+  '/api/tables/:id/print',
+  '/api/tables/print',
+  '/api/printers/print-precheck',
+  '/api/printers/receipt',
+  '/api/orders/:id/bill',
+  '/api/orders/bill',
+  '/api/tables/:id/bill',
+  '/api/tables/bill',
+  '/api/orders/:id/request-bill',
+  '/api/tables/:id/request-bill',
+  '/api/v1/orders/:id/bill-request',
+  '/api/v1/tables/:id/bill-request',
+  '/api/v1/orders/:id/bill',
+  '/api/v1/tables/:id/bill',
+  '/api/v1/orders/:id/precheck',
+  '/api/v1/tables/:id/precheck',
+  '/api/v1/baskets/:id/bill-request',
+  '/api/v1/baskets/:id/print',
+], async (req, res) => {
   try {
-    const { id } = req.params;
-    const bodyOrderId = req.body.orderId;
-    const searchId = id || bodyOrderId;
+    const rawId = req.params.id || req.body.orderId || req.body.order_id || req.body.tableId || req.body.table_id || req.body.tableNumber || req.body.table || req.body.basketId;
 
     let order = null;
-    if (searchId) {
-      order = await get(`SELECT * FROM orders WHERE id = ?`, [searchId]);
-      if (!order) {
-        order = await get(
-          `SELECT * FROM orders WHERE table_id = ? OR table_id = (SELECT id FROM tables WHERE number = ?) ORDER BY id DESC LIMIT 1`,
-          [searchId, searchId]
-        );
+    let table = null;
+
+    if (rawId) {
+      // 1. Order ID orqali qidirish
+      order = await get(`SELECT * FROM orders WHERE id = ?`, [rawId]);
+      if (order) {
+        table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+      } else {
+        // 2. Stol ID yoki Raqami orqali qidirish
+        table = await get(`SELECT * FROM tables WHERE id = ? OR number = ? OR name = ?`, [rawId, rawId, rawId]);
+        if (table) {
+          if (table.current_order_id) {
+            order = await get(`SELECT * FROM orders WHERE id = ?`, [table.current_order_id]);
+          }
+          if (!order) {
+            order = await get(
+              `SELECT * FROM orders WHERE table_id = ? AND status NOT IN ('paid', 'cancelled') ORDER BY id DESC LIMIT 1`,
+              [table.id]
+            );
+          }
+        }
       }
     }
 
-    const tableId = order ? order.table_id : (req.body.tableId || req.body.tableNumber || searchId);
-    let updatedTable = null;
+    if (!order && !table) {
+      // Oxirgi ochiq stol/buyurtmani qidirish
+      order = await get(`SELECT * FROM orders WHERE status IN ('open', 'busy', 'bill_requested') ORDER BY id DESC LIMIT 1`);
+      if (order) {
+        table = await get(`SELECT * FROM tables WHERE id = ?`, [order.table_id]);
+      }
+    }
 
     if (order) {
-      // Stolni 'bill_requested' (Sariq - hisob so'ralgan) holatiga o'tkazish
-      await run(`UPDATE orders SET status = 'bill_requested' WHERE id = ?`, [order.id]);
-      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ?`, [order.table_id]);
-      backendSync.pushBillRequestToCloud(order.id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
+      await run(`UPDATE orders SET status = 'bill_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [order.id]);
+    }
+    if (table) {
+      await run(`UPDATE tables SET status = 'bill_requested', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [table.id]);
+    }
 
-      updatedTable = await get(`
-        SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
-        FROM tables t
-        LEFT JOIN orders o ON t.current_order_id = o.id
-        WHERE t.id = ?
-      `, [order.table_id]);
-    } else if (tableId) {
-      await run(`UPDATE tables SET status = 'bill_requested' WHERE id = ? OR number = ?`, [tableId, tableId]);
-      updatedTable = await get(`SELECT * FROM tables WHERE id = ? OR number = ? LIMIT 1`, [tableId, tableId]);
+    const updatedTable = table ? await get(`
+      SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+      FROM tables t
+      LEFT JOIN orders o ON (t.current_order_id = o.id OR (t.id = o.table_id AND o.status IN ('open', 'busy', 'bill_requested')))
+      WHERE t.id = ?
+      LIMIT 1
+    `, [table.id]) : null;
+
+    let activeItems = [];
+    if (order) {
+      activeItems = await all(
+        `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
+        [order.id]
+      );
+    }
+    if ((!activeItems || activeItems.length === 0) && Array.isArray(req.body.items) && req.body.items.length > 0) {
+      activeItems = req.body.items;
+    }
+
+    const resolvedWaiter = await resolveWaiterName(
+      req.body, 
+      (activeItems.find(i => i.waiter_name && i.waiter_name !== 'Ofitsiant')?.waiter_name) || updatedTable?.waiter_name || order?.waiter_name || 'Ofitsiant'
+    );
+
+    if (order && resolvedWaiter && resolvedWaiter !== 'Ofitsiant' && order.waiter_name !== resolvedWaiter) {
+      await run(`UPDATE orders SET waiter_name = ? WHERE id = ?`, [resolvedWaiter, order.id]);
     }
 
     if (updatedTable) {
       broadcast('TABLE_UPDATED', updatedTable);
-      broadcast('BILL_REQUESTED', { tableId: updatedTable.id, tableNumber: updatedTable.number });
+      broadcast('BILL_REQUESTED', { tableId: updatedTable.id, tableNumber: updatedTable.number, orderId: order?.id });
       telegram.notifyBillRequested({
         tableTitle: updatedTable?.name || `${updatedTable?.number}-stol`,
-        waiterName: updatedTable?.waiter_name || req.body.waiterName || order?.waiter_name || 'Ofitsiant',
+        waiterName: resolvedWaiter,
         totalAmount: updatedTable?.total_amount || req.body.totalAmount || order?.total_amount || 0,
       }).catch(e => console.error('[JetBot] notifyBillRequested error:', e.message));
     }
 
-    // Pre-chekni avtomatik termal printerga chiqarish
-    try {
-      let activeItems = [];
-      if (order) {
-        activeItems = await all(
-          `SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0 ORDER BY id ASC`,
-          [order.id]
-        );
-      }
-      if ((!activeItems || activeItems.length === 0) && Array.isArray(req.body.items) && req.body.items.length > 0) {
-        activeItems = req.body.items;
-      }
+    const cleanItems = (activeItems || []).map(it => ({
+      product_name: String(it.product_name || it.name || it.productName || it.title || 'Taom'),
+      quantity: Number(it.quantity || it.qty || it.count || 1),
+      price: Number(it.price || it.unit_price || it.cost || 0),
+      comment: it.comment || '',
+    }));
 
-      const subtotal = req.body.subtotal !== undefined
-        ? Number(req.body.subtotal)
-        : activeItems.reduce((sum, item) => sum + (Number(item.price || item.unitPrice || 0) * Number(item.quantity || 1)), 0);
-      const servicePercent = 10;
-      const serviceFee = req.body.serviceFee !== undefined ? Number(req.body.serviceFee) : Math.round((subtotal * servicePercent) / 100);
-      const totalAmount = req.body.totalAmount !== undefined ? Number(req.body.totalAmount) : (subtotal + serviceFee);
+    const subtotal = req.body.subtotal !== undefined
+      ? Number(req.body.subtotal)
+      : cleanItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    
+    const printerSettings = await printerService.getPrinterSettings();
+    const servicePercent = printerSettings.service_fee_percent !== undefined ? Number(printerSettings.service_fee_percent) : 10;
+    const serviceFee = req.body.serviceFee !== undefined ? Number(req.body.serviceFee) : Math.round((subtotal * servicePercent) / 100);
+    const totalAmount = req.body.totalAmount !== undefined ? Number(req.body.totalAmount) : (subtotal + serviceFee);
 
-      const printRes = await printerService.printPrecheckReceipt({
-        orderId: (order && order.id) || searchId || 'ord_1',
-        tableNumber: updatedTable ? updatedTable.number : (req.body.tableNumber || tableId || '1'),
-        waiterName: req.body.waiterName || updatedTable?.waiter_name || order?.waiter_name || 'Ofitsiant',
-        items: activeItems,
-        subtotal,
-        serviceFeePercent: servicePercent,
-        serviceFee,
-        totalAmount,
-      });
-      console.log('[Bill-Request] Pre-chek chop etish natijasi:', printRes);
-    } catch (printErr) {
-      console.error('[Bill-Request] Pre-chek chop etishda xatolik:', printErr.message);
+    const printRes = await printerService.printPrecheckReceipt({
+      orderId: order?.id || String(rawId) || 'ord_1',
+      tableNumber: updatedTable ? String(updatedTable.number) : String(req.body.tableNumber || table?.number || '1'),
+      waiterName: resolvedWaiter,
+      items: cleanItems,
+      subtotal,
+      serviceFeePercent: servicePercent,
+      serviceFee,
+      totalAmount,
+    });
+    console.log('[Bill-Request] Pre-chek chop etish natijasi:', printRes);
+
+    if (order?.id) {
+      backendSync.pushBillRequestToCloud(order.id).catch(e => console.warn('[BackendSync] Bill request cloud push error:', e.message));
     }
 
-    res.json({ success: true, table: updatedTable });
+    res.json({
+      success: true,
+      message: 'Pre-chek printerga yuborildi',
+      table: updatedTable,
+      order,
+      waiterName: resolvedWaiter,
+      printResult: printRes,
+    });
   } catch (err) {
     console.error('[Bill-Request] Xatolik:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -2179,17 +2434,20 @@ app.get('/api/orders/journal', async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
     let sql = `
-      SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.created_at as paid_at
+      SELECT o.*, t.number as table_number, t.hall, p.payment_method, p.cash_amount, p.card_amount, p.debt_amount, p.created_at as paid_at,
+             p.fiscal_sign, p.fiscal_qr_url, p.receipt_seq, p.id as payment_id
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
       LEFT JOIN payments p ON o.id = p.order_id
     `;
     const params = [];
     if (dateFrom && dateTo) {
-      sql += ` WHERE o.created_at >= ? AND o.created_at <= ?`;
-      params.push(dateFrom.replace('T', ' '), dateTo.replace('T', ' '));
+      const fromStr = dateFrom.replace('T', ' ').slice(0, 16) + ':00';
+      const toStr = dateTo.replace('T', ' ').slice(0, 16) + ':59';
+      sql += ` WHERE (o.created_at >= ? AND o.created_at <= ?) OR (p.created_at >= ? AND p.created_at <= ?) OR (o.updated_at >= ? AND o.updated_at <= ?)`;
+      params.push(fromStr, toStr, fromStr, toStr, fromStr, toStr);
     }
-    sql += ` ORDER BY o.created_at DESC LIMIT 200`;
+    sql += ` ORDER BY o.created_at DESC LIMIT 500`;
 
     const orders = await all(sql, params);
 
@@ -2218,27 +2476,47 @@ app.get('/api/orders/journal', async (req, res) => {
       });
     }
 
-    const formatted = orders.map((o, idx) => ({
-      id: o.id,
-      shift_id: Math.floor(new Date(o.created_at).getTime() / 86400000) - 19000,
-      number: idx + 1,
-      table: `STOL ${o.table_number || 1}`,
-      hall: o.hall || 'Основной',
-      client: '—',
-      waiter: o.waiter_name || 'Системный Администратор',
-      opened_at: o.created_at,
-      closed_at: o.paid_at || (o.status === 'paid' ? o.updated_at : null),
-      status: o.status === 'paid' ? 'Закрыт' : o.status === 'open' ? 'Открыт' : o.status,
-      service_percent: 10,
-      total_amount: o.total_amount || 0,
-      to_pay: Math.round((o.total_amount || 0) * 1.1),
-      discount: 0,
-      cash: o.cash_amount || (o.payment_method === 'cash' ? Math.round((o.total_amount || 0) * 1.1) : 0),
-      card: o.card_amount || (o.payment_method === 'card' ? Math.round((o.total_amount || 0) * 1.1) : 0),
-      debt: 0,
-      comment: '',
-      items: itemsByOrder[o.id] || [],
-    }));
+    const formatted = orders.map((o, idx) => {
+      const isPaid = o.status === 'paid' || Boolean(o.paid_at) || Boolean(o.payment_method);
+      const isOpenOrd = !isPaid && o.status !== 'cancelled';
+      let displayStatus = 'Открыт';
+      if (isPaid) {
+        displayStatus = 'Закрыт';
+      } else if (o.status === 'bill_requested') {
+        displayStatus = 'Hisob so\'ralgan';
+      } else if (o.status === 'cancelled') {
+        displayStatus = 'Отменен';
+      }
+      const totalPay = Math.round((o.total_amount || 0) * 1.1);
+      return {
+        id: o.id,
+        shift_id: Math.floor(new Date(o.created_at).getTime() / 86400000) - 19000,
+        number: idx + 1,
+        table: `STOL ${o.table_number || 1}`,
+        hall: o.hall || 'Asosiy Zal',
+        client: '—',
+        waiter: o.waiter_name || 'Boshqaruvchi',
+        opened_at: o.created_at,
+        closed_at: o.paid_at || (isPaid ? o.updated_at : null),
+        status: displayStatus,
+        raw_status: o.status,
+        is_paid: isPaid,
+        is_open: isOpenOrd,
+        service_percent: 10,
+        total_amount: o.total_amount || 0,
+        to_pay: totalPay,
+        discount: 0,
+        cash: o.cash_amount !== null && o.cash_amount !== undefined ? o.cash_amount : (isPaid && o.payment_method === 'cash' ? totalPay : 0),
+        card: o.card_amount !== null && o.card_amount !== undefined ? o.card_amount : (isPaid && o.payment_method === 'card' ? totalPay : 0),
+        debt: o.debt_amount !== null && o.debt_amount !== undefined ? o.debt_amount : (isPaid && o.payment_method === 'debt' ? totalPay : 0),
+        fiscal_sign: o.fiscal_sign || null,
+        fiscal_qr_url: o.fiscal_qr_url || null,
+        receipt_seq: o.receipt_seq || null,
+        payment_id: o.payment_id || null,
+        comment: '',
+        items: itemsByOrder[o.id] || [],
+      };
+    });
 
     res.json({ success: true, orders: formatted });
   } catch (err) {
@@ -2246,10 +2524,44 @@ app.get('/api/orders/journal', async (req, res) => {
   }
 });
 
+// 7.3. Buyurtma chekini olish (Fiskal va Oddiy chek ma'lumotlari)
+app.get(['/api/orders/:id/receipt', '/api/orders/:id/receipts'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await getOrGenerateReceiptForOrder(id);
+    if (!data) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+    res.json({ success: true, ...data });
+  } catch (err) {
+    console.error('[Receipt API] getReceipt error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7.4. Buyurtma chekini printerga qayta chiqarish (Reprint)
+app.post(['/api/orders/:id/reprint', '/api/orders/:id/print'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type = 'fiscal' } = req.body;
+    const data = await getOrGenerateReceiptForOrder(id);
+    if (!data) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    let printResult = null;
+    if (type === 'standard' || type === 'precheck') {
+      printResult = await printerService.printPrecheckReceipt(data.standardReceipt);
+    } else {
+      printResult = await printerService.printThermalReceipt(data.fiscalReceipt);
+    }
+    res.json({ success: true, message: 'Chek chop etishga yuborildi', printResult });
+  } catch (err) {
+    console.error('[Receipt API] reprint error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // 8. To'lovni qabul qilish (Kassa) va REGOS Soliq Fiskal chek chiqarish (POST /api/payments)
 app.post('/api/payments', async (req, res) => {
   try {
-    const { orderId, tableId, paymentMethod, cashAmount, cardAmount } = req.body;
+    const { orderId, tableId, paymentMethod, cashAmount, cardAmount, debtAmount, clientName, clientPhone, comment } = req.body;
     if (!orderId || !tableId || !paymentMethod) {
       return res.status(400).json({ success: false, message: "To'lov ma'lumotlari yetarli emas" });
     }
@@ -2276,6 +2588,25 @@ app.post('/api/payments', async (req, res) => {
     });
 
     recordFiscalReceipt(receiptData);
+
+    // Kassa chekini termal printerga avtomatik chiqarish
+    try {
+      const printRes = await printerService.printThermalReceipt(receiptData);
+      console.log('[Payment] Fiskal/Kassa cheki chop etildi:', printRes);
+    } catch (printErr) {
+      console.warn('[Payment] Chek chop etishda xatolik:', printErr.message);
+    }
+
+    // Qarzga sotuv bo'lsa - Debts jadvaliga yozish
+    const calcDebt = paymentMethod === 'debt' ? (debtAmount || order.total_amount) : (debtAmount || 0);
+    if (calcDebt > 0 && (clientName || paymentMethod === 'debt')) {
+      const debtId = 'debt_' + Date.now();
+      const debtorName = clientName && clientName.trim() ? clientName.trim() : `Stol ${tableId} mijozi`;
+      await run(`
+        INSERT INTO debts (id, order_id, client_name, client_phone, total_amount, paid_amount, remaining_amount, status, comment, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [debtId, orderId, debtorName, clientPhone || '', calcDebt, calcDebt, comment || '']);
+    }
 
     // Buyurtmani yopish va stolni bo'shatish ('free' - Yashil)
     await run(`UPDATE orders SET status = 'paid' WHERE id = ?`, [orderId]);
@@ -2377,7 +2708,169 @@ app.post('/api/payments', async (req, res) => {
 });
 
 // ==========================================
-// 8.0. THERMAL RECEIPT PRINTER API
+// 8.0. DEBTS (QARZDORLIKLAR) API
+// ==========================================
+
+// 8.1. Debts List & Summary (GET /api/debts)
+app.get('/api/debts', async (req, res) => {
+  try {
+    const debts = await all(`
+      SELECT d.*, o.table_id, t.number as table_number, t.hall as table_hall, o.waiter_name
+      FROM debts d
+      LEFT JOIN orders o ON d.order_id = o.id
+      LEFT JOIN tables t ON o.table_id = t.id
+      ORDER BY d.created_at DESC
+    `);
+    const summary = await get(`
+      SELECT 
+        COALESCE(SUM(total_amount), 0) as total_debt,
+        COALESCE(SUM(paid_amount), 0) as total_paid,
+        COALESCE(SUM(remaining_amount), 0) as total_unpaid
+      FROM debts
+    `);
+    res.json({ success: true, debts, summary });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.2. Pay Debt (POST /api/debts/:id/pay)
+app.post('/api/debts/:id/pay', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, paymentMethod = 'cash' } = req.body;
+    const payAmt = Number(amount);
+    if (!payAmt || payAmt <= 0) {
+      return res.status(400).json({ success: false, message: "To'lov summasi noto'g'ri" });
+    }
+
+    const debt = await get(`SELECT * FROM debts WHERE id = ?`, [id]);
+    if (!debt) return res.status(404).json({ success: false, message: 'Qarzdorlik topilmadi' });
+
+    const newPaid = debt.paid_amount + payAmt;
+    const newRemaining = Math.max(0, debt.total_amount - newPaid);
+    const newStatus = newRemaining === 0 ? 'paid' : 'partially_paid';
+
+    await run(`
+      UPDATE debts 
+      SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `, [newPaid, newRemaining, newStatus, id]);
+
+    await run(`
+      INSERT INTO debt_payments (debt_id, amount, payment_method)
+      VALUES (?, ?, ?)
+    `, [id, payAmt, paymentMethod]);
+
+    broadcast('DEBTS_UPDATED', {});
+
+    res.json({ success: true, message: "Qarz to'lovi muvaffaqiyatli qabul qilindi", debtId: id, newRemaining, newStatus });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.3. Delete Debt (DELETE /api/debts/:id)
+app.delete('/api/debts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await run(`DELETE FROM debts WHERE id = ?`, [id]);
+    await run(`DELETE FROM debt_payments WHERE debt_id = ?`, [id]);
+    broadcast('DEBTS_UPDATED', {});
+    res.json({ success: true, message: "Qarz ma'lumoti o'chirildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.3.1. Send SMS to Debtor via Eskiz.uz (POST /api/debts/:id/send-sms)
+app.post('/api/debts/:id/send-sms', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body || {};
+    const debt = await get(`SELECT * FROM debts WHERE id = ?`, [id]);
+    if (!debt) return res.status(404).json({ success: false, message: 'Qarzdorlik topilmadi' });
+
+    if (!debt.client_phone) {
+      return res.status(400).json({ success: false, message: "Ushbu qarzdorning telefon raqami kiritilmagan!" });
+    }
+
+    const cfg = await backendSync.getConfig();
+    const storeName = cfg.tenant_name || 'GetPOS Kafe';
+    const remainingFmt = (debt.remaining_amount || debt.total_amount || 0).toLocaleString('ru-RU');
+
+    const defaultMsg = `Hurmatli ${debt.client_name || 'Mijoz'}, ${storeName} dan sizda ${remainingFmt} so'm to'lanmagan qarzdorlik mavjud. Iltimos, o'z vaqtida to'lovni amalga oshiring.`;
+    const finalMsg = (message && message.trim()) || defaultMsg;
+
+    const smsRes = await eskizService.sendSms({
+      phone: debt.client_phone,
+      message: finalMsg,
+    });
+
+    if (smsRes.success) {
+      res.json({
+        success: true,
+        message: `${debt.client_phone} raqamiga SMS muvaffaqiyatli jo'natildi!`,
+        data: smsRes.data || smsRes,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: smsRes.error || "SMS yuborishda xatolik yuz berdi",
+      });
+    }
+  } catch (err) {
+    console.error('[Debts SMS Error]:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.3.2. Universal SMS Sender (POST /api/send-sms)
+app.post('/api/send-sms', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    if (!phone || !message) {
+      return res.status(400).json({ success: false, message: "Telefon raqami va xabar matni majburiy" });
+    }
+
+    const smsRes = await eskizService.sendSms({ phone, message });
+    if (smsRes.success) {
+      res.json({ success: true, message: "SMS muvaffaqiyatli jo'natildi", data: smsRes.data });
+    } else {
+      res.status(400).json({ success: false, message: smsRes.error });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 8.4. Force Close Order and Free Table (POST /api/orders/:id/force-close)
+app.post('/api/orders/:id/force-close', async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+    if (!order) return res.status(404).json({ success: false, message: 'Buyurtma topilmadi' });
+
+    await run(`UPDATE orders SET status = 'closed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [orderId]);
+    await run(`UPDATE tables SET status = 'free', current_order_id = NULL WHERE id = ?`, [order.table_id]);
+
+    const updatedTable = await get(`SELECT *, NULL as order_id FROM tables WHERE id = ?`, [order.table_id]);
+    broadcast('TABLE_UPDATED', updatedTable);
+    broadcast('TABLES_UPDATED', {});
+
+    backendSync.pushCloseOrderToCloud({
+      orderId,
+      tableId: order.table_id,
+    }).catch(() => {});
+
+    res.json({ success: true, message: "Buyurtma yopildi va stol bo'shatildi" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 8.5. THERMAL RECEIPT PRINTER API
 // ==========================================
 
 // O'rnatilgan printerlar va joriy sozlamalarni olish
@@ -2465,8 +2958,8 @@ app.post(['/api/printers/print-precheck', '/api/orders/:id/print-precheck'], asy
 // Sinov chekini chiqarish
 app.post('/api/printers/test', async (req, res) => {
   try {
-    const { printerName, paperWidth } = req.body;
-    const result = await printerService.testPrint(printerName, paperWidth);
+    const { printerName, paperWidth, type, printerIp } = req.body;
+    const result = await printerService.testPrint(printerName, paperWidth, type || 'receipt', printerIp);
     res.json(result);
   } catch (err) {
     console.error('[Printer API] testPrint error:', err);
@@ -2590,9 +3083,242 @@ app.post('/api/sync/offline-orders', async (req, res) => {
   }
 });
 
-// 9. Oshxona chiptalari tarixi
-app.get('/api/kitchen/tickets', (req, res) => {
-  res.json({ success: true, tickets: getRecentKitchenTickets() });
+// 9. Oshxona chiptalari tarixi (KDS - Dynamic & Realtime)
+app.get(['/api/kitchen/tickets', '/api/kitchen/tickets/'], async (req, res) => {
+  try {
+    // 1. If backend sync is active, try fetching live tickets from cloud (https://getpos.uz)
+    try {
+      const cloudTickets = await backendSync.fetchCloudKitchenTickets();
+      if (cloudTickets && Array.isArray(cloudTickets)) {
+        return res.json({ success: true, tickets: cloudTickets });
+      }
+    } catch (e) {}
+
+    // 2. Offline Fallback to local SQLite
+    const memoryTickets = getRecentKitchenTickets() || [];
+    const openTables = await all(`
+      SELECT t.id as table_id, t.number, t.name, t.current_order_id, o.id as order_id, o.waiter_name, o.created_at, o.updated_at
+      FROM tables t
+      JOIN orders o ON (t.current_order_id = o.id OR (t.id = o.table_id AND o.status IN ('open', 'busy', 'bill_requested')))
+      WHERE (t.status IN ('busy', 'bill_requested') OR o.status IN ('open', 'busy', 'bill_requested'))
+      GROUP BY o.id
+    `).catch(() => []);
+
+    const activeTicketsMap = new Map();
+
+    for (const tbl of openTables) {
+      const ordId = tbl.order_id || tbl.current_order_id;
+      if (ordId) {
+        const items = await all(`
+          SELECT id, product_id, product_name, quantity, comment, status, is_cancelled 
+          FROM order_items 
+          WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND (status != 'cancelled' OR status IS NULL) AND quantity > 0
+          ORDER BY id ASC
+        `, [ordId]).catch(() => []);
+
+        if (items && items.length > 0) {
+          const tId = `ticket_${ordId}`;
+          const memT = memoryTickets.find(mt => String(mt.orderId) === String(ordId) || String(mt.id) === tId);
+          activeTicketsMap.set(tId, {
+            id: tId,
+            orderId: ordId,
+            tableNumber: tbl.number || tbl.name,
+            waiterName: tbl.waiter_name || memT?.waiterName || 'Ofitsiant',
+            timestamp: tbl.created_at || memT?.timestamp || new Date().toISOString(),
+            status: memT?.status || 'pending',
+            items: items.map(it => ({
+              id: it.id,
+              product_id: it.product_id,
+              product_name: it.product_name,
+              quantity: it.quantity,
+              comment: it.comment || '',
+              status: it.status || 'cooking',
+            }))
+          });
+        }
+      }
+    }
+
+    // Also include any memory tickets that might still be active and not yet mapped
+    for (const mt of memoryTickets) {
+      if (!activeTicketsMap.has(mt.id) && mt.status !== 'completed') {
+        activeTicketsMap.set(mt.id, mt);
+      }
+    }
+
+    const allTickets = Array.from(activeTicketsMap.values());
+    res.json({ success: true, tickets: allTickets });
+  } catch (err) {
+    console.error('Error in /api/kitchen/tickets:', err);
+    res.json({ success: true, tickets: getRecentKitchenTickets() || [] });
+  }
+});
+
+// 9.0. Oshxona chiptasini printerga qayta chiqarish (Thermal print begunok)
+app.post(['/api/kitchen/tickets/:id/print', '/api/kitchen/print', '/api/kitchen/print-ticket'], async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+    const targetId = id || body.ticketId || body.orderId || body.id;
+
+    let ticket = getRecentKitchenTickets()?.find(t => String(t.id) === String(targetId) || String(t.orderId) === String(targetId));
+    if (!ticket && targetId) {
+      const cleanOrdId = String(targetId).replace('ticket_', '');
+      const ordRow = await get(`SELECT * FROM orders WHERE id = ?`, [cleanOrdId]);
+      if (ordRow) {
+        const tbl = await get(`SELECT * FROM tables WHERE id = ?`, [ordRow.table_id]);
+        const items = await all(`SELECT * FROM order_items WHERE order_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) AND quantity > 0`, [cleanOrdId]);
+        ticket = {
+          orderId: cleanOrdId,
+          tableNumber: tbl ? tbl.number : '1',
+          waiterName: ordRow.waiter_name || 'Ofitsiant',
+          items: items.map(i => ({ product_name: i.product_name, quantity: i.quantity, comment: i.comment })),
+        };
+      }
+    }
+    if (!ticket && Array.isArray(body.items)) {
+      ticket = {
+        orderId: body.orderId || 'ord_1',
+        tableNumber: body.tableNumber || '1',
+        waiterName: body.waiterName || 'Ofitsiant',
+        items: body.items,
+      };
+    }
+
+    if (ticket) {
+      const printRes = await printerService.printToKitchen(ticket);
+      return res.json({ success: true, message: 'Oshxona cheki chop etildi', printResult: printRes });
+    }
+    res.status(404).json({ success: false, message: 'Oshxona cheki topilmadi' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.1. Oshxona chiptasi statusini yangilash (Qabul qilish / Tayyor)
+app.post('/api/kitchen/tickets/:id/status', async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const { status } = req.body; // 'in_progress', 'ready', 'completed'
+    const updated = updateKitchenTicketStatus(ticketId, status);
+    const cleanOrdId = String(ticketId).replace(/^ticket_/, '');
+
+    // Forward to Cloud KDS
+    backendSync.pushKitchenStatusToCloud(cleanOrdId, status).catch(() => {});
+
+    if (updated) {
+      if (status === 'ready') {
+        broadcast('KITCHEN_TICKET_READY', {
+          ticketId,
+          tableNumber: updated.tableNumber,
+          waiterName: updated.waiterName,
+          orderId: updated.orderId,
+          timestamp: Date.now(),
+        });
+      } else if (status === 'in_progress') {
+        broadcast('KITCHEN_TICKET_IN_PROGRESS', {
+          ticketId,
+          tableNumber: updated.tableNumber,
+          waiterName: updated.waiterName,
+          orderId: updated.orderId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    broadcast('KITCHEN_TICKETS_UPDATED', { tickets: getRecentKitchenTickets() });
+    res.json({ success: true, ticket: updated || { id: ticketId, status } });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 9.2. Oshxonada taom yo'qligini belgilash va buyurtmadan chiqarish (Stop-list / Yo'q)
+app.post('/api/kitchen/item-out-of-stock', async (req, res) => {
+  try {
+    const { ticketId, orderId, itemId, productId, productName, tableNumber, waiterName } = req.body;
+
+    if (orderId) {
+      let item = null;
+      if (itemId) {
+        item = await get(`SELECT * FROM order_items WHERE id = ?`, [itemId]);
+      } else if (productId) {
+        item = await get(
+          `SELECT * FROM order_items WHERE order_id = ? AND product_id = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) ORDER BY id DESC LIMIT 1`,
+          [orderId, productId]
+        );
+      } else if (productName) {
+        item = await get(
+          `SELECT * FROM order_items WHERE order_id = ? AND product_name = ? AND (is_cancelled = 0 OR is_cancelled IS NULL) ORDER BY id DESC LIMIT 1`,
+          [orderId, productName]
+        );
+      }
+
+      if (item) {
+        await run(
+          `UPDATE order_items SET is_cancelled = 1, status = 'cancelled', cancel_reason = ? WHERE id = ?`,
+          ["Oshxonada yo'q", item.id]
+        );
+
+        const allActive = await all(`SELECT price, quantity, is_cancelled FROM order_items WHERE order_id = ?`, [orderId]);
+        let newTotal = 0;
+        allActive.forEach((it) => {
+          if (!it.is_cancelled && it.quantity > 0) {
+            newTotal += it.price * it.quantity;
+          }
+        });
+        await run(`UPDATE orders SET total_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [newTotal, orderId]);
+
+        const order = await get(`SELECT * FROM orders WHERE id = ?`, [orderId]);
+        const updatedTableRaw = order ? await get(`
+          SELECT t.*, o.id as order_id, o.waiter_name, o.total_amount, o.created_at as order_created_at
+          FROM tables t
+          LEFT JOIN orders o ON t.current_order_id = o.id
+          WHERE t.id = ?
+        `, [order.table_id]) : null;
+
+        if (updatedTableRaw) {
+          const updatedItems = await all(`SELECT * FROM order_items WHERE order_id = ? ORDER BY id ASC`, [orderId]);
+          broadcast('TABLE_UPDATED', {
+            ...updatedTableRaw,
+            total_amount: newTotal,
+            totalAmount: newTotal,
+            items: updatedItems,
+            order_items: updatedItems,
+          });
+          broadcast('ORDER_UPDATED', { orderId, tableId: order.table_id, totalAmount: newTotal, items: updatedItems });
+        }
+      }
+    }
+
+    if (ticketId) {
+      removeKitchenTicketItem(ticketId, productId, productName);
+    }
+
+    // Forward to Cloud KDS
+    const cleanOrdId = orderId ? String(orderId).replace(/^ticket_/, '') : (ticketId ? String(ticketId).replace(/^ticket_/, '') : null);
+    if (cleanOrdId) {
+      backendSync.pushKitchenItemOutOfStockToCloud(cleanOrdId, itemId, productName).catch(() => {});
+    }
+
+    const outOfStockPayload = {
+      ticketId,
+      orderId,
+      tableNumber: tableNumber || 1,
+      waiterName: waiterName || 'Ofitsiant',
+      productName: productName || 'Taom',
+      message: `${tableNumber || 1}-stol uchun "${productName || 'Taom'}" oshxonada YO'Q! Buyurtmadan o'chirildi.`,
+      timestamp: Date.now(),
+    };
+
+    broadcast('DISH_OUT_OF_STOCK', outOfStockPayload);
+    broadcast('KITCHEN_TICKETS_UPDATED', { tickets: getRecentKitchenTickets() });
+
+    res.json({ success: true, message: 'Taom bekor qilindi va ofitsiantga xabar yuborildi', data: outOfStockPayload });
+  } catch (err) {
+    console.error('Error in item-out-of-stock:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // ==========================================
@@ -3021,6 +3747,7 @@ server.on('error', (err) => {
 initDB().then(async () => {
   // Real Backend Sync initialization (getpos.uz)
   try {
+    backendSync.setBroadcastCallback((ev, data) => broadcast(ev, data));
     const bCfg = await backendSync.getConfig();
     if (bCfg.is_external_active && bCfg.api_url) {
       backendSync.startPeriodicSync(bCfg.sync_interval || 30);

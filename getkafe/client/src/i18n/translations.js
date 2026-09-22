@@ -1,4 +1,4 @@
-// JetCafe POS Trilingual Dictionary
+// GetPOS Kafe POS Trilingual Dictionary
 // Supported modes:
 // 1. uz_lat - O'zbekcha (Lotin)
 // 2. uz_cyr - Ўзбекча (Кирилл)
@@ -13,7 +13,7 @@ export const translations = {
     cloud_live: 'GetPOS Cloud Jonli',
     local_network: 'Lokal tarmoqda',
     wifi_ip: 'Wi-Fi IP',
-    tab_cashier: 'JetCafe POS',
+    tab_cashier: 'GetPOS Kafe Kassa',
     tab_waiter: 'Ofitsiant (Planshet)',
     tab_kitchen: 'Oshxona (KDS)',
     tab_inventory: 'Sklad (Ombor)',
@@ -28,8 +28,50 @@ export const translations = {
     tax_send_now: 'Soliqqa darhol jo\'natish',
     pcs: 'ta',
     logout: 'Smenani yakunlash / Chiqish',
-    manager_default: 'Menejer',
+    manager_default: 'Boshqaruvchi',
     cashier_default: 'Kassir',
+
+    // Ribbon Tabs
+    tab_kassa: 'Kassa',
+    tab_shift: 'Smena',
+    tab_reports: 'Hisobot',
+    tab_settings: 'Sozlamalar',
+    tab_view: "Ko'rinish",
+
+    // Ribbon Action Buttons & Groups
+    pos_refresh: 'Yangilash',
+    pos_soboy: 'SOBOY',
+    pos_tables: 'Stollar',
+    pos_pay: "To'lov",
+    pos_precheck: 'Prechek',
+    pos_refund: 'Qaytarish',
+    pos_history: 'Tarix',
+    pos_pending: 'Kutilayotgan',
+    pos_search: 'Qidirish',
+    pos_dish: 'Taom',
+    pos_categories: 'Kategoriyalar',
+    pos_summary_total: 'Jami (UZS)',
+    pos_summary_items: 'Pozitsiyalar:',
+    pos_summary_qty: 'Soni:',
+    pos_shift_status: 'Smena',
+    pos_x_report: 'X-Hisobot',
+    pos_close_shift: 'Smenani yopish',
+    pos_lock_pin: 'Qulflash (PIN)',
+    pos_all_orders: 'Barcha buyurtmalar',
+    pos_payments: "To'lovlar",
+    pos_debts: 'Qarzlar (Nasiya)',
+    pos_printers: 'Printerlar',
+    pos_tables_halls: 'Stollar / Zallar',
+    pos_staff: 'Xodimlar',
+    pos_kitchen_screen: 'Oshxona ekrani',
+    pos_scheme: 'Sxema',
+    pos_fullscreen: 'Ekran (F11)',
+    pos_group_receipt: 'Chek',
+    pos_group_ops: 'Amallar',
+    pos_group_shift: 'Smena boshqaruvi',
+    pos_group_reports: 'Hisobot va Tahlil',
+    pos_group_config: 'Sozlamalar',
+    pos_group_view: "Ko'rinish",
 
     // Roles
     role_admin: 'Boshqaruvchi',
@@ -53,7 +95,6 @@ export const translations = {
     // POS Main View
     pos_halls: 'Zallar',
     pos_all_halls: 'Barcha zallar',
-    pos_categories: 'Kategoriyalar',
     pos_all_categories: 'Barchasi',
     pos_search_dish: 'Taom qidirish...',
     pos_no_dishes: 'Taomlar topilmadi',
@@ -151,7 +192,12 @@ export const translations = {
     btn_confirm: 'Tasdiqlash',
     btn_loading: 'Yuklanmoqda...',
     msg_success: 'Muvaffaqiyatli saqlandi!',
-    msg_error: 'Xatolik yuz berdi',
+    // Footer Status Bar
+    footer_user: 'Foydalanuvchi',
+    footer_branch: 'Filial',
+    footer_soliq_internet: 'Soliq / Internet',
+    online: 'Onlayn',
+    offline: 'Oflayn rejim',
 
     // Language names
     lang_name_uz_lat: "O'zbekcha (Lotin)",
@@ -167,7 +213,7 @@ export const translations = {
     cloud_live: 'GetPOS Cloud Жонли',
     local_network: 'Локал тармоқда',
     wifi_ip: 'Wi-Fi IP',
-    tab_cashier: 'JetCafe POS',
+    tab_cashier: 'GetPOS Кафе Касса',
     tab_waiter: 'Официант (Планшет)',
     tab_kitchen: 'Ошхона (KDS)',
     tab_inventory: 'Склад (Омбор)',
@@ -184,6 +230,48 @@ export const translations = {
     logout: 'Сменани якунлаш / Чиқиш',
     manager_default: 'Бошқарувчи',
     cashier_default: 'Кассир',
+
+    // Ribbon Tabs
+    tab_kassa: 'Касса',
+    tab_shift: 'Смена',
+    tab_reports: 'Ҳисобот',
+    tab_settings: 'Созламалар',
+    tab_view: 'Кўриниш',
+
+    // Ribbon Action Buttons & Groups
+    pos_refresh: 'Янгилаш',
+    pos_soboy: 'SOBOY',
+    pos_tables: 'Столлар',
+    pos_pay: 'Тўлов',
+    pos_precheck: 'Пречек',
+    pos_refund: 'Қайтариш',
+    pos_history: 'Тарих',
+    pos_pending: 'Кутилаётган',
+    pos_search: 'Қидириш',
+    pos_dish: 'Таом',
+    pos_categories: 'Категориялар',
+    pos_summary_total: 'Жами (UZS)',
+    pos_summary_items: 'Позициялар:',
+    pos_summary_qty: 'Сони:',
+    pos_shift_status: 'Смена',
+    pos_x_report: 'Х-Ҳисобот',
+    pos_close_shift: 'Сменани ёпиш',
+    pos_lock_pin: 'Қулфлаш (PIN)',
+    pos_all_orders: 'Барча буюртмалар',
+    pos_payments: 'Тўловлар',
+    pos_debts: 'Қарзлар (Насия)',
+    pos_printers: 'Принтерлар',
+    pos_tables_halls: 'Столлар / Заллар',
+    pos_staff: 'Ходимлар',
+    pos_kitchen_screen: 'Ошхона экрани',
+    pos_scheme: 'Схема',
+    pos_fullscreen: 'Экран (F11)',
+    pos_group_receipt: 'Чек',
+    pos_group_ops: 'Амаллар',
+    pos_group_shift: 'Смена бошқаруви',
+    pos_group_reports: 'Ҳисобот ва Таҳлил',
+    pos_group_config: 'Созламалар',
+    pos_group_view: 'Кўриниш',
 
     // Roles
     role_admin: 'Бошқарувчи',
@@ -207,7 +295,6 @@ export const translations = {
     // POS Main View
     pos_halls: 'Заллар',
     pos_all_halls: 'Барча заллар',
-    pos_categories: 'Категориялар',
     pos_all_categories: 'Барчаси',
     pos_search_dish: 'Таом қидириш...',
     pos_no_dishes: 'Таомлар топилмади',
@@ -305,7 +392,12 @@ export const translations = {
     btn_confirm: 'Тасдиқлаш',
     btn_loading: 'Юкланмоқда...',
     msg_success: 'Муваффақиятли сақланди!',
-    msg_error: 'Хатолик юз берди',
+    // Footer Status Bar
+    footer_user: 'Фойдаланувчи',
+    footer_branch: 'Филиал',
+    footer_soliq_internet: 'Солиқ / Интернет',
+    online: 'Онлайн',
+    offline: 'Офлайн режим',
 
     // Language names
     lang_name_uz_lat: "O'zbekcha (Lotin)",
@@ -315,13 +407,19 @@ export const translations = {
 
   // 3. РУССКИЙ
   ru: {
+    // Footer Status Bar
+    footer_user: 'Пользователь',
+    footer_branch: 'Филиал',
+    footer_soliq_internet: 'Налог / Интернет',
+    online: 'Онлайн',
+    offline: 'Офлайн режим',
     // App & Header
     app_name: 'GetPOS Кафе',
     tagline_offline: 'v1.0 Офлайн-первый',
     cloud_live: 'GetPOS Cloud Онлайн',
     local_network: 'В локальной сети',
     wifi_ip: 'Wi-Fi IP',
-    tab_cashier: 'JetCafe POS',
+    tab_cashier: 'GetPOS Кафе Касса',
     tab_waiter: 'Официант (Планшет)',
     tab_kitchen: 'Кухня (KDS)',
     tab_inventory: 'Склад',
@@ -338,6 +436,48 @@ export const translations = {
     logout: 'Завершить смену / Выход',
     manager_default: 'Управляющий',
     cashier_default: 'Кассир',
+
+    // Ribbon Tabs
+    tab_kassa: 'Касса',
+    tab_shift: 'Смена',
+    tab_reports: 'Отчет',
+    tab_settings: 'Настройка',
+    tab_view: 'Вид',
+
+    // Ribbon Action Buttons & Groups
+    pos_refresh: 'Обновить',
+    pos_soboy: 'SOBOY',
+    pos_tables: 'Столы',
+    pos_pay: 'Оплатить',
+    pos_precheck: 'Пречек',
+    pos_refund: 'Возврат',
+    pos_history: 'История',
+    pos_pending: 'Отложенные',
+    pos_search: 'Поиск',
+    pos_dish: 'Блюдо',
+    pos_categories: 'Категории',
+    pos_summary_total: 'Итого (UZS)',
+    pos_summary_items: 'Позиции:',
+    pos_summary_qty: 'Кол-во:',
+    pos_shift_status: 'Смена',
+    pos_x_report: 'Х-Отчет',
+    pos_close_shift: 'Закрыть смену',
+    pos_lock_pin: 'Блок (PIN)',
+    pos_all_orders: 'Все заказы',
+    pos_payments: 'Оплаты',
+    pos_debts: 'Долги (Насия)',
+    pos_printers: 'Принтеры',
+    pos_tables_halls: 'Столы / Залы',
+    pos_staff: 'Персонал',
+    pos_kitchen_screen: 'Экран кухни (KDS)',
+    pos_scheme: 'Схема залов',
+    pos_fullscreen: 'Экран (F11)',
+    pos_group_receipt: 'Чек',
+    pos_group_ops: 'Операции',
+    pos_group_shift: 'Управление сменой',
+    pos_group_reports: 'Отчеты и Аналитика',
+    pos_group_config: 'Конфигурация',
+    pos_group_view: 'Отображение',
 
     // Roles
     role_admin: 'Управляющий',
@@ -361,7 +501,6 @@ export const translations = {
     // POS Main View
     pos_halls: 'Залы',
     pos_all_halls: 'Все залы',
-    pos_categories: 'Категории',
     pos_all_categories: 'Все',
     pos_search_dish: 'Поиск блюда...',
     pos_no_dishes: 'Блюда не найдены',

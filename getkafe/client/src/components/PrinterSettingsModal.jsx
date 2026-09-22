@@ -11,6 +11,10 @@ import {
   Sliders,
   DollarSign,
   Zap,
+  Flame,
+  Coffee,
+  Utensils,
+  Wifi,
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -19,14 +23,20 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
   const [printers, setPrinters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
+  const [testingType, setTestingType] = useState(null);
   const [testResult, setTestResult] = useState(null);
 
   const [form, setForm] = useState({
     receipt_printer: '',
     kitchen_printer: '',
+    bar_printer: '',
+    mangal_printer: '',
+    kitchen_printer_ip: '',
+    bar_printer_ip: '',
+    mangal_printer_ip: '',
     paper_width: '80mm',
     auto_print: 1,
+    cash_drawer: 1,
     service_fee_percent: 10,
     header_title: 'KAFE "MILLIY TAOMLAR" MCHJ',
     header_address: 'Toshkent sh., Chilonzor tumani, 9-mavze',
@@ -53,9 +63,14 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
           setForm({
             receipt_printer: data.settings.receipt_printer || '',
             kitchen_printer: data.settings.kitchen_printer || '',
+            bar_printer: data.settings.bar_printer || '',
+            mangal_printer: data.settings.mangal_printer || '',
+            kitchen_printer_ip: data.settings.kitchen_printer_ip || '',
+            bar_printer_ip: data.settings.bar_printer_ip || '',
+            mangal_printer_ip: data.settings.mangal_printer_ip || '',
             paper_width: data.settings.paper_width || '80mm',
-            auto_print: data.settings.auto_print !== undefined ? data.settings.auto_print : 1,
-            cash_drawer: data.settings.cash_drawer !== undefined ? data.settings.cash_drawer : 1,
+            auto_print: data.settings.auto_print !== undefined ? Number(data.settings.auto_print) : 1,
+            cash_drawer: data.settings.cash_drawer !== undefined ? Number(data.settings.cash_drawer) : 1,
             service_fee_percent: data.settings.service_fee_percent !== undefined ? Number(data.settings.service_fee_percent) : 10,
             header_title: data.settings.header_title || 'KAFE "MILLIY TAOMLAR" MCHJ',
             header_address: data.settings.header_address || 'Toshkent sh., Chilonzor tumani, 9-mavze',
@@ -82,7 +97,7 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
       });
       const data = await res.json();
       if (data.success) {
-        setTestResult({ success: true, message: 'Sozlamalar saqlandi!' });
+        setTestResult({ success: true, message: 'Barcha printer sozlamalari muvaffaqiyatli saqlandi!' });
         setTimeout(() => {
           onClose();
         }, 1200);
@@ -96,28 +111,31 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
     }
   };
 
-  const handleTestPrint = async () => {
-    setTesting(true);
+  const handleTestPrint = async (type = 'receipt', targetPrinter = '', printerIp = '') => {
+    setTestingType(type);
     setTestResult(null);
     try {
       const res = await fetch('/api/printers/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          printerName: form.receipt_printer,
+          printerName: targetPrinter || (type === 'kitchen' ? form.kitchen_printer : type === 'bar' ? form.bar_printer : type === 'mangal' ? form.mangal_printer : form.receipt_printer),
           paperWidth: form.paper_width,
+          type,
+          printerIp: printerIp || (type === 'kitchen' ? form.kitchen_printer_ip : type === 'bar' ? form.bar_printer_ip : form.mangal_printer_ip),
         }),
       });
       const data = await res.json();
+      const typeLabel = type === 'kitchen' ? 'Oshxona' : type === 'bar' ? 'Bar' : type === 'mangal' ? 'Mangal/Sex' : 'Kassa';
       if (data.success) {
-        setTestResult({ success: true, message: "Sinov cheki printerga muvaffaqiyatli yuborildi!" });
+        setTestResult({ success: true, message: `${typeLabel} printeriga sinov cheki muvaffaqiyatli yuborildi!` });
       } else {
-        setTestResult({ success: false, message: data.error || 'Printerda xatolik yuz berdi' });
+        setTestResult({ success: false, message: `${typeLabel} printerida xatolik: ` + (data.error || 'Ulanish mavjud emas') });
       }
     } catch (err) {
       setTestResult({ success: false, message: err.message });
     } finally {
-      setTesting(false);
+      setTestingType(null);
     }
   };
 
@@ -125,7 +143,7 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden my-6">
+      <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-3xl w-full shadow-2xl overflow-hidden my-6">
         {/* Header */}
         <div className="bg-slate-800/90 px-6 py-4 flex items-center justify-between border-b border-slate-700">
           <div className="flex items-center space-x-3">
@@ -133,9 +151,9 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
               <Printer className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="font-bold text-lg text-white">Chek va Printer Sozlamalari</h2>
+              <h2 className="font-bold text-lg text-white">Printerlar va Chek Sozlamalari</h2>
               <p className="text-xs text-slate-400">
-                Termal kassa printeri (80mm / 58mm) va oshxona begunoklari
+                Kassa cheki, Oshxona begunoklari, Bar va Sex printerlari konfiguratsiyasi
               </p>
             </div>
           </div>
@@ -152,66 +170,248 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-3">
               <RefreshCw className="w-8 h-8 animate-spin text-amber-400" />
-              <span>Printerlar ro'yxati tekshirilmoqda...</span>
+              <span>Printerlar va sozlamalar yuklanmoqda...</span>
             </div>
           ) : (
             <>
-              {/* Printer selection section */}
-              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-4">
+              {/* Top Refresh Bar & Info */}
+              <div className="flex items-center justify-between bg-slate-800/40 px-4 py-2.5 rounded-xl border border-slate-700/60">
+                <div className="text-xs text-slate-300">
+                  Kompyuteringizda <span className="font-bold text-amber-400">{printers.length} ta</span> printer aniqlandi.
+                </div>
+                <button
+                  onClick={loadPrinters}
+                  className="flex items-center space-x-1.5 text-xs text-amber-400 hover:text-amber-300 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Printerlarni yangilash</span>
+                </button>
+              </div>
+
+              {/* 1. KASSA PRINTERI */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-2">
-                    <Sliders className="w-4 h-4" />
-                    <span>Uskunalar va Format</span>
-                  </h3>
+                  <div className="flex items-center space-x-2">
+                    <span className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+                      <Printer className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      1. Kassa Chek Printeri (Fiskal & Xaridor cheki)
+                    </h3>
+                  </div>
                   <button
-                    onClick={loadPrinters}
-                    className="flex items-center space-x-1 text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition"
+                    type="button"
+                    disabled={testingType !== null}
+                    onClick={() => handleTestPrint('receipt', form.receipt_printer)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow transition disabled:opacity-50"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Qayta yangilash</span>
+                    {testingType === 'receipt' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                    <span>Kassa Chekini Sinash</span>
                   </button>
                 </div>
 
-                {/* Cashier Receipt Printer */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Kassir Chek Printeri (Fiskal & Xaridor cheki):
+                    Windows Printerini tanlang:
                   </label>
                   <select
                     value={form.receipt_printer}
                     onChange={(e) => setForm({ ...form, receipt_printer: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
                   >
-                    <option value="">-- Standart Windows Printeri --</option>
+                    <option value="">-- Standart Windows Printeri (Avtomatik) --</option>
                     {printers.map((p, idx) => (
                       <option key={idx} value={p.name}>
-                        {p.name} {p.isDefault ? '(Asosiy tizim printeri)' : ''}
+                        {p.name} {p.isDefault ? '(Asosiy Windows printeri)' : ''}
                       </option>
                     ))}
                   </select>
                   <p className="text-[11px] text-slate-400 mt-1">
-                    Xprinter, Rongta, Epson TM, POS-80 yoki tizimga ulangan istalgan termal printer.
+                    To'lov amalga oshirilganda yoki xaridor hisob so'raganda ushbu printerdan chek chiqadi.
                   </p>
                 </div>
+              </div>
 
-                {/* Kitchen Printer */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Oshxona / Bar Printeri (Begunok chiqarish uchun):
-                  </label>
-                  <select
-                    value={form.kitchen_printer}
-                    onChange={(e) => setForm({ ...form, kitchen_printer: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+              {/* 2. OSHXONA PRINTERI */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="p-1.5 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                      <Utensils className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      2. Oshxona Printeri (Oshpaz Begunoklari)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={testingType !== null}
+                    onClick={() => handleTestPrint('kitchen', form.kitchen_printer, form.kitchen_printer_ip)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs shadow transition disabled:opacity-50"
                   >
-                    <option value="">-- Oshxona printeri ulanmagan (Virtual) --</option>
-                    {printers.map((p, idx) => (
-                      <option key={idx} value={p.name}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    {testingType === 'kitchen' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                    <span>Oshxona Chekini Sinash</span>
+                  </button>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Windows Oshxona Printeri (USB):
+                    </label>
+                    <select
+                      value={form.kitchen_printer}
+                      onChange={(e) => setForm({ ...form, kitchen_printer: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">-- Kassa printeri orqali (Yoki alohida tanlang) --</option>
+                      {printers.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center space-x-1">
+                      <Wifi className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Yoki Tarmoq (LAN/IP) Printeri:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.kitchen_printer_ip || ''}
+                      onChange={(e) => setForm({ ...form, kitchen_printer_ip: e.target.value })}
+                      placeholder="Masalan: 192.168.1.200:9100"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Ofitsiant yoki kassir buyurtmani oshxonaga yuborganida taomlar ro'yxati ushbu printerga chiqadi.
+                </p>
+              </div>
+
+              {/* 3. BAR PRINTERI */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg border border-blue-500/20">
+                      <Coffee className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      3. Bar Printeri (Ichimliklar & Kofe)
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={testingType !== null}
+                    onClick={() => handleTestPrint('bar', form.bar_printer, form.bar_printer_ip)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow transition disabled:opacity-50"
+                  >
+                    {testingType === 'bar' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                    <span>Bar Chekini Sinash</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Windows Bar Printeri (USB):
+                    </label>
+                    <select
+                      value={form.bar_printer || ''}
+                      onChange={(e) => setForm({ ...form, bar_printer: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="">-- Tanlanmagan (Oshxona/Kassa bilan birga) --</option>
+                      {printers.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center space-x-1">
+                      <Wifi className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Yoki Tarmoq (LAN/IP) Bar Printeri:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.bar_printer_ip || ''}
+                      onChange={(e) => setForm({ ...form, bar_printer_ip: e.target.value })}
+                      placeholder="Masalan: 192.168.1.201:9100"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. MANGAL / SALAT / QO'SHIMCHA SEX PRINTERI */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span className="p-1.5 bg-rose-500/10 text-rose-400 rounded-lg border border-rose-500/20">
+                      <Flame className="w-4 h-4" />
+                    </span>
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      4. Mangal / Qo'shimcha Sex Printeri
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={testingType !== null}
+                    onClick={() => handleTestPrint('mangal', form.mangal_printer, form.mangal_printer_ip)}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs shadow transition disabled:opacity-50"
+                  >
+                    {testingType === 'mangal' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                    <span>Mangal Chekini Sinash</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                      Windows Mangal Printeri (USB):
+                    </label>
+                    <select
+                      value={form.mangal_printer || ''}
+                      onChange={(e) => setForm({ ...form, mangal_printer: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                    >
+                      <option value="">-- Tanlanmagan --</option>
+                      {printers.map((p, idx) => (
+                        <option key={idx} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center space-x-1">
+                      <Wifi className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Yoki Tarmoq (LAN/IP) Mangal Printeri:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.mangal_printer_ip || ''}
+                      onChange={(e) => setForm({ ...form, mangal_printer_ip: e.target.value })}
+                      placeholder="Masalan: 192.168.1.202:9100"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Format & Options */}
+              <div className="bg-slate-800/50 p-5 rounded-2xl border border-slate-700 space-y-4">
+                <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center space-x-2">
+                  <Sliders className="w-4 h-4" />
+                  <span>Format va Avtomatlashtirish</span>
+                </h3>
 
                 {/* Paper width */}
                 <div>
@@ -416,40 +616,24 @@ export default function PrinterSettingsModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 bg-slate-800/80 border-t border-slate-700 flex items-center justify-between gap-3">
+        <div className="p-4 bg-slate-800/80 border-t border-slate-700 flex items-center justify-end gap-3">
           <button
             type="button"
-            disabled={testing || loading}
-            onClick={handleTestPrint}
-            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-medium text-xs border border-slate-600 transition disabled:opacity-50"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition"
           >
-            {testing ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Printer className="w-3.5 h-3.5 text-amber-400" />
-            )}
-            <span>{testing ? 'Chop etilmoqda...' : 'Sinov Chekini Chiqarish (Test)'}</span>
+            Bekor qilish
           </button>
 
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition"
-            >
-              Bekor qilish
-            </button>
-
-            <button
-              type="button"
-              disabled={saving || loading}
-              onClick={handleSave}
-              className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition disabled:opacity-50"
-            >
-              {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-              <span>{saving ? 'Saqlanmoqda...' : 'Sozlamalarni Saqlash'}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={saving || loading}
+            onClick={handleSave}
+            className="flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition disabled:opacity-50"
+          >
+            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+            <span>{saving ? 'Saqlanmoqda...' : 'Barcha Sozlamalarni Saqlash'}</span>
+          </button>
         </div>
       </div>
     </div>

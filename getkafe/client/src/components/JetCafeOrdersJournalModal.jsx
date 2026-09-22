@@ -40,7 +40,8 @@ export default function JetCafeOrdersJournalModal({ isOpen, onClose, initialTab 
   // Sync initial tab when modal opens or initialTab prop changes
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab || 'all');
+      const target = initialTab === 'active' ? 'open' : (initialTab || 'all');
+      setActiveTab(target);
     }
   }, [isOpen, initialTab]);
 

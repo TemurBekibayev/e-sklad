@@ -13,6 +13,7 @@ import '../order/order_screen.dart';
 import '../settings/settings_screen.dart';
 import 'widgets/hall_tab_bar.dart';
 import 'widgets/table_card.dart';
+import '../../core/services/kitchen_signal_service.dart';
 
 class TablesScreen extends StatefulWidget {
   const TablesScreen({super.key});
@@ -20,7 +21,6 @@ class TablesScreen extends StatefulWidget {
   @override
   State<TablesScreen> createState() => _TablesScreenState();
 }
-
 class _TablesScreenState extends State<TablesScreen> {
   Timer? _refreshTimer;
 
@@ -29,7 +29,15 @@ class _TablesScreenState extends State<TablesScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TablesProvider>().init();
+      KitchenSignalService().connect();
     });
+
+    KitchenSignalService().onTableUpdated = () {
+      if (mounted) {
+        context.read<TablesProvider>().refresh();
+      }
+    };
+
     _refreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (mounted) {
         context.read<TablesProvider>().refresh();
@@ -40,6 +48,7 @@ class _TablesScreenState extends State<TablesScreen> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    KitchenSignalService().onTableUpdated = null;
     super.dispose();
   }
 

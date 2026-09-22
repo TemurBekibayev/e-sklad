@@ -12,11 +12,9 @@ import sotuvpro.routing
 
 application = ProtocolTypeRouter({
     "http": django_asgi_app,
-    "websocket": AllowedHostsOriginValidator(
-        JWTAuthMiddlewareStack(
-            URLRouter(
-                sotuvpro.routing.websocket_urlpatterns
-            )
+    "websocket": JWTAuthMiddlewareStack(
+        URLRouter(
+            sotuvpro.routing.websocket_urlpatterns
         )
     ),
 })

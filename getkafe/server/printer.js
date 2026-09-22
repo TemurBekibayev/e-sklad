@@ -82,6 +82,12 @@ async function getPrinterSettings() {
     return {
       receipt_printer: '',
       kitchen_printer: '',
+      bar_printer: '',
+      mangal_printer: '',
+      kitchen_printer_ip: '',
+      bar_printer_ip: '',
+      mangal_printer_ip: '',
+      workshop_printers: '{}',
       paper_width: '80mm',
       auto_print: 1,
       cash_drawer: 1,
@@ -106,6 +112,12 @@ async function updatePrinterSettings(settings) {
     `UPDATE printer_settings SET
       receipt_printer = ?,
       kitchen_printer = ?,
+      bar_printer = ?,
+      mangal_printer = ?,
+      kitchen_printer_ip = ?,
+      bar_printer_ip = ?,
+      mangal_printer_ip = ?,
+      workshop_printers = ?,
       paper_width = ?,
       auto_print = ?,
       cash_drawer = ?,
@@ -120,6 +132,12 @@ async function updatePrinterSettings(settings) {
     [
       updated.receipt_printer || '',
       updated.kitchen_printer || '',
+      updated.bar_printer || '',
+      updated.mangal_printer || '',
+      updated.kitchen_printer_ip || '',
+      updated.bar_printer_ip || '',
+      updated.mangal_printer_ip || '',
+      typeof updated.workshop_printers === 'object' ? JSON.stringify(updated.workshop_printers) : (updated.workshop_printers || '{}'),
       updated.paper_width || '80mm',
       updated.auto_print !== undefined ? Number(updated.auto_print) : 1,
       updated.cash_drawer !== undefined ? Number(updated.cash_drawer) : 1,
@@ -230,7 +248,22 @@ async function printThermalReceipt(receiptData) {
 /**
  * Sinov chekini chiqarish
  */
-async function testPrint(printerName, paperWidth) {
+async function testPrint(printerName, paperWidth, type = 'receipt', printerIp = null) {
+  if (type === 'kitchen' || type === 'bar' || type === 'mangal') {
+    return printToKitchen({
+      orderId: 'TEST-01',
+      tableNumber: 'TEST',
+      waiterName: 'Administrator',
+      targetPrinter: printerName,
+      printerIp: printerIp,
+      items: [
+        { product_name: `TEST ${type.toUpperCase()} TAOM`, quantity: 2, comment: 'Sinov begunoki' },
+        { product_name: 'TEST ICHIMLIK', quantity: 1, comment: 'Sovuq holatda' },
+      ],
+      timestamp: Date.now(),
+    });
+  }
+
   const helperPath = getPrintHelperPath();
   if (!helperPath) {
     return { success: false, error: 'PrintHelper.exe topilmadi' };
@@ -299,15 +332,25 @@ function formatKitchenTicket({ orderId, tableNumber, waiterName, items, timestam
 /**
  * Oshxona printeriga buyruq yuborish (Windows printeri yoki LAN TCP soket)
  */
-async function printToKitchen({ orderId, tableNumber, waiterName, items, printerIp = null, printerPort = 9100 }) {
-  const ticketText = formatKitchenTicket({ orderId, tableNumber, waiterName, items });
+async function printToKitchen({ orderId, tableNumber, waiterName, items, targetPrinter = null, printerIp = null, printerPort = 9100 }) {
+  const cleanItems = (items || []).map(it => ({
+    id: it.id,
+    product_id: it.product_id || it.productId || it.id,
+    product_name: String(it.product_name || it.name || it.productName || it.title || 'Taom'),
+    quantity: Number(it.quantity || it.qty || it.count || 1),
+    price: Number(it.price || it.unit_price || 0),
+    comment: it.comment || '',
+    workshop: it.workshop || '',
+  }));
+
+  const ticketText = formatKitchenTicket({ orderId, tableNumber, waiterName, items: cleanItems });
   
   const ticketRecord = {
     id: 'kt_' + Date.now(),
     orderId,
     tableNumber,
     waiterName,
-    items,
+    items: cleanItems,
     ticketText,
     timestamp: new Date().toISOString(),
     status: 'pending', // 'pending', 'in_progress', 'ready', 'completed'
@@ -320,7 +363,7 @@ async function printToKitchen({ orderId, tableNumber, waiterName, items, printer
   try {
     await run(
       `INSERT INTO kitchen_tickets (order_id, table_number, waiter_name, items_json, printed) VALUES (?, ?, ?, ?, 1)`,
-      [orderId, tableNumber, waiterName, JSON.stringify(items)]
+      [orderId, tableNumber, waiterName, JSON.stringify(cleanItems)]
     );
   } catch (e) {
     console.error('Error saving kitchen ticket to DB:', e);
@@ -329,48 +372,54 @@ async function printToKitchen({ orderId, tableNumber, waiterName, items, printer
   // 1. Agar Windows oshxona printeri sozlangan bo'lsa yoki asosiy printer orqali chop etish
   const settings = await getPrinterSettings();
   const helperPath = getPrintHelperPath();
-  let targetPrinter = settings.kitchen_printer || settings.receipt_printer || '';
-  if (!targetPrinter) {
+  let selectedPrinter = targetPrinter || settings.kitchen_printer || settings.receipt_printer || '';
+  if (!selectedPrinter) {
     try {
       const installed = await getInstalledPrinters();
-      const thermal = installed.find(p => /xprinter|pos|thermal|xp-|receipt|kitchen|80|58/i.test(p.name)) || installed.find(p => p.isDefault) || installed[0];
-      if (thermal) targetPrinter = thermal.name;
+      const thermal = installed.find(p => /xprinter|pos|thermal|xp-|receipt|kitchen|kassa|80|58/i.test(p.name)) || installed.find(p => p.isDefault) || installed[0];
+      if (thermal) selectedPrinter = thermal.name;
     } catch (e) {}
   }
 
-  if (targetPrinter && helperPath) {
+  if (selectedPrinter && helperPath) {
     const kitchenPayload = {
       orderId,
       tableNumber: String(tableNumber),
       waiterName,
       type: 'order',
-      items,
-      printerName: targetPrinter,
+      items: cleanItems,
+      printerName: selectedPrinter,
       paperWidth: settings.paper_width || '80mm',
     };
-    const tempFile = path.join(os.tmpdir(), `kitchen_${Date.now()}.json`);
+    const tempFile = path.join(os.tmpdir(), `kitchen_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.json`);
     try {
       fs.writeFileSync(tempFile, JSON.stringify(kitchenPayload), 'utf8');
       execFile(helperPath, ['print-kitchen', tempFile], { windowsHide: true }, (err) => {
         try { fs.unlinkSync(tempFile); } catch (e) {}
         if (err) console.warn('[Printer] Oshxona chop etish xatosi:', err.message);
-        else console.log(`[Printer] Oshxona cheki ${targetPrinter} printeriga yuborildi!`);
+        else console.log(`[Printer] Oshxona cheki ${selectedPrinter} printeriga yuborildi!`);
       });
     } catch (e) {}
   }
 
-  // 2. Agar tarmoq printeri IP si ko'rsatilgan bo'lsa, TCP orqali ESC/POS yuboramiz
-  if (printerIp) {
+  // 2. Agar tarmoq printeri IP si ko'rsatilgan bo'lsa (yoki settings.kitchen_printer_ip), TCP orqali ESC/POS yuboramiz
+  const lanIp = printerIp || settings.kitchen_printer_ip;
+  if (lanIp) {
     try {
+      const ipParts = lanIp.split(':');
+      const ipHost = ipParts[0].trim();
+      const ipPort = ipParts[1] ? parseInt(ipParts[1], 10) : printerPort;
+
       const client = new net.Socket();
-      client.connect(printerPort, printerIp, () => {
+      client.setTimeout(3000);
+      client.connect(ipPort, ipHost, () => {
         const init = Buffer.from([0x1B, 0x40]);
         const cut = Buffer.from([0x1D, 0x56, 0x41, 0x10]);
         client.write(Buffer.concat([init, Buffer.from(ticketText, 'utf-8'), cut]));
         client.end();
       });
       client.on('error', (err) => {
-        console.warn(`[Printer] LAN printerga ulanib bo'lmadi (${printerIp}):`, err.message);
+        console.warn(`[Printer] LAN printerga ulanib bo'lmadi (${ipHost}:${ipPort}):`, err.message);
       });
     } catch (err) {
       console.warn('[Printer] Tarmoq xatosi:', err.message);
@@ -479,18 +528,20 @@ const recentPrecheckPrints = new Map(); // key -> timestamp
  */
 async function printPrecheckReceipt(precheckData) {
   const rawItems = precheckData?.items || [];
-  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity) > 0);
-  const subtotal = precheckData?.subtotal !== undefined ? Number(precheckData.subtotal) : items.reduce((acc, it) => acc + (Number(it.price) * Number(it.quantity)), 0);
+  const items = rawItems.filter(it => !it.is_cancelled && Number(it.quantity || it.qty || 1) > 0);
+  const subtotal = precheckData?.subtotal !== undefined 
+    ? Number(precheckData.subtotal) 
+    : items.reduce((acc, it) => acc + (Number(it.price || it.unit_price || 0) * Number(it.quantity || it.qty || 1)), 0);
   const servicePercent = precheckData?.serviceFeePercent !== undefined ? Number(precheckData.serviceFeePercent) : 10;
   const serviceFee = precheckData?.serviceFee !== undefined ? Number(precheckData.serviceFee) : Math.round((subtotal * servicePercent) / 100);
   const totalAmount = precheckData?.totalAmount !== undefined ? Number(precheckData.totalAmount) : (subtotal + serviceFee);
 
-  // Anti-duplicate protection: 4 soniya ichida bir xil buyurtmani 2-3 marta chiqarishni bloklash
+  // Anti-duplicate protection: 2 soniya ichida bir xil buyurtmani qayta chiqarishni himoyalash
   const dedupeKey = `${precheckData?.tableNumber || ''}_${precheckData?.orderId || ''}_${totalAmount}`;
   const now = Date.now();
   const lastTime = recentPrecheckPrints.get(dedupeKey);
-  if (lastTime && (now - lastTime < 4000)) {
-    console.log(`[Printer] Pre-chek dublikati bloklandi (4 soniya ichida qayta chaqirildi): ${dedupeKey}`);
+  if (lastTime && (now - lastTime < 2000)) {
+    console.log(`[Printer] Pre-chek dublikati bloklandi (2 soniya ichida qayta chaqirildi): ${dedupeKey}`);
     return { success: true, message: 'Pre-chek allaqachon chop etildi' };
   }
   recentPrecheckPrints.set(dedupeKey, now);
@@ -526,9 +577,10 @@ async function printPrecheckReceipt(precheckData) {
     footerText: "DIQQAT: Ushbu hisob to'lov cheki emas! (Pre-chek)",
     items: [
       ...items.map(it => ({
-        product_name: it.product_name,
-        quantity: Number(it.quantity),
-        price: Number(it.price),
+        product_name: String(it.product_name || it.name || it.productName || it.title || 'Taom'),
+        quantity: Number(it.quantity || it.qty || it.count || 1),
+        price: Number(it.price || it.unit_price || it.cost || 0),
+        comment: it.comment || '',
       })),
       ...(serviceFee > 0 ? [{
         product_name: `Xizmat haqi (${servicePercent}%)`,

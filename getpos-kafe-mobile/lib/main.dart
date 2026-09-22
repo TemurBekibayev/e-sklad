@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/constants/app_theme.dart';
+import 'core/services/kitchen_signal_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/tables_provider.dart';
 import 'providers/menu_provider.dart';
@@ -17,11 +18,17 @@ void main() async {
   final authProvider = AuthProvider();
   await authProvider.checkAuthStatus();
 
+  final kitchenSignalService = KitchenSignalService();
+  if (authProvider.isAuthenticated) {
+    kitchenSignalService.connect();
+  }
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: settingsProvider),
         ChangeNotifierProvider.value(value: authProvider),
+        ChangeNotifierProvider.value(value: kitchenSignalService),
         ChangeNotifierProvider(create: (_) => TablesProvider()),
         ChangeNotifierProvider(create: (_) => MenuProvider()),
         ChangeNotifierProvider(create: (_) => OrderProvider()),
@@ -39,6 +46,7 @@ class WaiterPosApp extends StatelessWidget {
     return MaterialApp(
       title: 'Ofitsiyant POS',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: KitchenSignalService().messengerKey,
       theme: AppTheme.lightTheme,
       home: const LoginScreen(),
     );

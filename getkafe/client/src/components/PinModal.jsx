@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Lock, Delete, Building2 } from 'lucide-react';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 
-export default function PinModal({ onLogin, roleHint = 'kassir' }) {
+export default function PinModal({ onLogin, currentUser = null, onSwitchToLogin, roleHint = 'kassir' }) {
   const { t } = useLanguage();
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -67,9 +67,11 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          userId: currentUser?.id || currentUser?.user_code,
+          login: currentUser?.login || currentUser?.email || currentUser?.name || undefined,
           pin: enteredPin,
           password: enteredPin,
-          tenantId: currentStore?.id || undefined,
+          tenantId: currentUser?.tenantId || currentStore?.id || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -105,7 +107,9 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
   }, [pin]);
 
   const handleFullLogoutClick = () => {
-    if (roleHint && typeof roleHint === 'function') {
+    if (onSwitchToLogin && typeof onSwitchToLogin === 'function') {
+      onSwitchToLogin();
+    } else if (roleHint && typeof roleHint === 'function') {
       roleHint();
     } else if (onLogin && typeof onLogin === 'function') {
       localStorage.removeItem('getpos_user');
@@ -132,13 +136,14 @@ export default function PinModal({ onLogin, roleHint = 'kassir' }) {
           }}
         />
 
-        <h2 className="text-2xl font-black text-white tracking-tight mb-1">
-          {currentStore.name && currentStore.name !== 'GetPOS Kafe' ? currentStore.name : 'GetPOS Kafe'}
+        <h2 className="text-xl font-black text-white tracking-tight mb-1">
+          {currentUser ? `${currentUser.name} (${(currentUser.role === 'admin' || currentUser.role === 'manager') ? 'Boshqaruvchi' : 'Kassir'})` : (currentStore.name || 'GetPOS Kafe')}
         </h2>
 
         {/* User Prompt / Hint */}
-        <p className="text-xs text-slate-400 mb-4">
-          {t('pin_hint_default', 'Kassani faollashtirish uchun PIN-kodni tering')}
+        <p className="text-xs text-amber-400/90 font-medium mb-4 flex items-center justify-center gap-1.5">
+          <span>🔒</span>
+          <span>{t('pin_hint_default', 'Kassani qulfdan chiqarish uchun PIN-kodni tering')}</span>
         </p>
 
         {/* PIN display dots */}

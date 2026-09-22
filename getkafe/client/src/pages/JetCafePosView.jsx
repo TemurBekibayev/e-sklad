@@ -6,6 +6,8 @@ import JetCafeItemCancelModal from '../components/JetCafeItemCancelModal';
 import JetCafeOrdersJournalModal from '../components/JetCafeOrdersJournalModal';
 import JetCafeBackendModal from '../components/JetCafeBackendModal';
 import JetCafeOrderItemEditModal from '../components/JetCafeOrderItemEditModal';
+import JetCafeTelegramModal from '../components/JetCafeTelegramModal';
+import JetCafeDebtsModal from '../components/JetCafeDebtsModal';
 import { useLanguage, LanguageSwitcher } from '../i18n/LanguageContext';
 import { useDialog } from '../context/DialogContext';
 import { Maximize2, Minimize2 } from 'lucide-react';
@@ -37,6 +39,9 @@ export default function JetCafePosView({
 }) {
   const { t, tr, lang } = useLanguage();
   const dialog = useDialog();
+
+  // Active Ribbon Tab state ('kassa', 'smena', 'otchet', 'settings', 'view')
+  const [activeRibbonTab, setActiveRibbonTab] = useState('kassa');
 
   // Active table state
   const currentTable = selectedTable || (tables && tables.length > 0 ? tables[0] : { id: null, number: '-', name: "Stollar yo'q (Stol qo'shing)", status: 'free' });
@@ -70,6 +75,8 @@ export default function JetCafePosView({
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [isDebtsModalOpen, setIsDebtsModalOpen] = useState(false);
 
   const uniqueCategories = useMemo(() => {
     const seen = new Set();
@@ -287,6 +294,7 @@ export default function JetCafePosView({
 
   const serviceFee = Math.round((subtotal * serviceFeePercent) / 100);
   const totalAmount = subtotal + serviceFee;
+  const totalQty = useMemo(() => orderItems.reduce((acc, it) => acc + (it.is_cancelled ? 0 : Number(it.quantity || 1)), 0), [orderItems]);
 
   // Filtered dishes
   const filteredProducts = useMemo(() => {
@@ -495,311 +503,491 @@ export default function JetCafePosView({
   return (
     <div className="flex flex-col h-screen w-screen bg-[#dce1e8] text-slate-800 select-none overflow-hidden font-sans text-xs">
       
-      {/* 1. TOP TITLEBAR - Clean, compact single bar without clutter */}
-      <header className="h-11 bg-[#e4e8ef] border-b border-[#b0b9c7] flex items-center justify-between px-3 shadow-sm shrink-0 select-none z-20">
-        {/* Left top controls */}
+      {/* 1. TOP WINDOW TITLEBAR (Dark GetPOS Style) */}
+      <div className="h-7 bg-[#252526] text-slate-300 flex items-center justify-between px-3 text-xs select-none border-b border-[#333] shrink-0 z-30">
         <div className="flex items-center gap-2">
-          {/* GetPOS Kafe Brand */}
-          <div className="flex items-center gap-1.5 pr-2 border-r border-[#b0b9c7]">
-            <img 
-              src="/getpos-kafe-logo.png" 
-              alt="GetPOS Kafe" 
-              className="w-7 h-7 rounded-md object-contain bg-slate-900 p-0.5 shadow-xs border border-slate-700" 
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
-            <span className="font-black text-slate-800 text-sm tracking-tight hidden sm:inline">GetPOS</span>
-            <span className="text-amber-600 font-black text-sm hidden sm:inline">Kafe</span>
-          </div>
-
-          {/* [🔒] Qulflash (Tezkor PIN) button */}
-          <button
-            type="button"
-            onClick={onLockScreen}
-            className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
-            title="Kassani vaqtincha PIN bilan qulflash (Fast Lock)"
-          >
-            <span className="text-xs">🔒</span>
-            <span className="text-xs">{t('lock_screen', 'Qulf')}</span>
-          </button>
-
-          {/* [X] Chiqish button */}
-          <button
-            type="button"
-            onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
-            title="Tizimdan to'liq chiqish (Login & Parol)"
-          >
-            <span className="w-4 h-4 bg-rose-600 text-white rounded flex items-center justify-center text-[10px] font-black">
-              ✕
-            </span>
-            <span className="text-xs">{t('logout', 'Chiqish')}</span>
-          </button>
-
-          {/* (←) Stollar button */}
-          <button
-            type="button"
-            onClick={() => setIsTableModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
-            title="Stollar xaritasini ochish"
-          >
-            <span className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center text-[11px] font-bold">
-              ←
-            </span>
-            <span className="text-xs">{t('pos_tables', 'Stollar')}</span>
-          </button>
-
-          {/* 📋 Buyurtmalar button */}
-          <button
-            type="button"
-            onClick={() => {
-              setJournalInitialTab('all');
-              setIsOrdersJournalOpen(true);
+          <img 
+            src="/getpos-kafe-logo.png" 
+            alt="GetPOS Kafe" 
+            className="w-5 h-5 rounded object-contain bg-amber-500/20 p-0.5 border border-amber-500/40 shrink-0 shadow-xs" 
+            onError={(e) => {
+              e.target.style.display = 'none';
             }}
-            className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded shadow-sm text-slate-800 font-bold active:scale-95 transition"
-            title="Barcha buyurtmalar jurnali"
-          >
-            <span className="text-xs">📋</span>
-            <span className="text-xs">Buyurtmalar</span>
-          </button>
-
-          {/* 💳 To'lovlar tarixi button */}
-          <button
-            type="button"
-            onClick={() => {
-              setJournalInitialTab('paid');
-              setIsOrdersJournalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded shadow transition active:scale-95"
-            title="To'langan buyurtmalar va to'lovlar tarixi"
-          >
-            <span className="text-xs">💳</span>
-            <span className="text-xs">To'lovlar tarixi</span>
-          </button>
-
-          {/* Table Indicator badge */}
-          <div className="bg-white border border-[#b8c2d1] px-3 py-1 rounded text-xs font-bold text-slate-700 shadow-inner flex items-center gap-2">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                currentTable.status === 'free' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
-              }`}
-            ></span>
-            <span>{currentTable.id === 99 || currentTable.number === 99 ? 'SOBOY (Olib ketish)' : `STOL - ${currentTable.number}`}</span>
-          </div>
-
-          {/* 🛍️ SOBOY (Olib ketish) quick button */}
-          <button
-            type="button"
-            onClick={() => {
-              const soboyTable = (tables || []).find((t) => t.id === 99 || t.number === 99 || String(t.name).toLowerCase().includes('soboy')) || {
-                id: 99,
-                number: 99,
-                name: 'SOBOY (Olib ketish)',
-                status: 'free',
-                hall: 'SOBOY',
-              };
-              onSelectTable(soboyTable);
-            }}
-            className={`flex items-center gap-1.5 px-3 py-1 font-extrabold text-xs rounded border transition shadow-sm active:scale-95 ${
-              currentTable?.id === 99 || currentTable?.number === 99
-                ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-md ring-2 ring-amber-400'
-                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
-            }`}
-            title="O'tirmasdan olib ketadiganlar uchun tezkor buyurtma va to'lov"
-          >
-            <span className="text-sm">🛍️</span>
-            <span>SOBOY (Olib ketish)</span>
-          </button>
-
-          <span className="text-xs font-bold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded border border-slate-300">
-            Касса 1
+          />
+          <span className="font-bold text-white tracking-wide">{t('pos_cashier_1', 'Kassa 1')} - GetPOS Kafe</span>
+          <span className="text-slate-400 text-[11px] ml-2 hidden sm:inline">
+            ({currentUser?.name || 'Kafe'} • {currentTable?.name || `STOL - ${currentTable?.number || 1}`})
           </span>
         </div>
-
-        {/* Right top controls */}
-        <div className="flex items-center gap-2">
-          {/* Language Switcher */}
-          <div className="scale-90 origin-right">
-            <LanguageSwitcher />
-          </div>
-
-          {/* Fullscreen F11 */}
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="p-1.5 bg-white hover:bg-slate-100 border border-[#a2afc2] rounded text-slate-700 shadow-sm transition active:scale-95"
-            title="To'liq ekran (Fullscreen / F11)"
+            className="px-2 py-0.5 hover:bg-[#3e3e42] text-slate-300 hover:text-white rounded text-xs transition"
+            title={t('pos_fullscreen', "To'liq ekran (F11)")}
           >
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            {isFullscreen ? '❐' : '🗖'}
           </button>
+          <button
+            type="button"
+            onClick={onLockScreen}
+            className="px-2 py-0.5 hover:bg-[#3e3e42] text-amber-400 hover:text-amber-300 rounded text-xs transition"
+            title={t('pos_lock_pin', 'Kassani qulflash (Fast Lock)')}
+          >
+            🔒
+          </button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="px-2 py-0.5 hover:bg-rose-700 text-slate-300 hover:text-white rounded text-xs transition"
+            title={t('logout', 'Tizimdan chiqish')}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
 
-          {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
-            <>
-              {/* Quick Add Dish button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingDish(null);
-                  setIsDishModalOpen(true);
-                }}
-                className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-blue-700 shadow-sm transition active:scale-95"
-              >
-                <span>➕</span>
-                <span>{t('pos_dish', 'Taom')}</span>
-              </button>
-
-              {/* Quick Categories button */}
-              <button
-                type="button"
-                onClick={() => setIsCategoryModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-slate-50 border border-[#a2afc2] rounded text-xs font-bold text-slate-700 shadow-sm transition active:scale-95"
-              >
-                <span>📂</span>
-                <span>{t('pos_categories', 'Toifalar')}</span>
-              </button>
-
-              {/* Quick Printer Button */}
-              <button
-                type="button"
-                onClick={onOpenPrinterSettings}
-                title="Chek va Printer Sozlamalari (80mm / 58mm)"
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold text-amber-900 shadow-sm transition active:scale-95"
-              >
-                <span>🖨️</span>
-                <span>{t('printer', 'Printer')}</span>
-              </button>
-            </>
-          )}
-
-          {/* Settings Menu Dropdown */}
-          <div className="relative">
+      {/* 2. RIBBON MENU TABS (Kassa | Smena | Hisobot | Sozlamalar | Ko'rinish) */}
+      <div className="bg-[#2d2d30] border-b border-[#3e3e42] flex items-center justify-between px-2 pt-1 select-none shrink-0 z-20">
+        <div className="flex items-center gap-0.5">
+          {[
+            { id: 'kassa', label: t('tab_kassa', 'Kassa') },
+            { id: 'smena', label: t('tab_shift', 'Smena') },
+            { id: 'otchet', label: t('tab_reports', 'Hisobot') },
+            { id: 'settings', label: t('tab_settings', 'Sozlamalar') },
+            { id: 'view', label: t('tab_view', "Ko'rinish") },
+          ].map((tab) => (
             <button
+              key={tab.id}
               type="button"
-              onClick={() => setIsSettingsMenuOpen(!isSettingsMenuOpen)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-b from-[#f5f6f8] to-[#d8dfe8] hover:from-white hover:to-[#cad4e0] border border-[#a2afc2] rounded text-xs font-bold text-slate-800 shadow-sm transition active:scale-95"
+              onClick={() => setActiveRibbonTab(tab.id)}
+              className={`px-4 py-1.5 text-xs font-bold rounded-t transition-all ${
+                activeRibbonTab === tab.id
+                  ? 'bg-[#e4e8ef] text-slate-900 border-t-2 border-amber-500 font-extrabold shadow-sm'
+                  : 'text-slate-300 hover:bg-[#3e3e42] hover:text-white'
+              }`}
             >
-              <span className="text-blue-600 text-sm">⚙</span>
-              <span>{t('settings', 'Sozlamalar')}</span>
+              {tab.label}
             </button>
+          ))}
+        </div>
 
-            {isSettingsMenuOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-64 bg-white border border-[#a8b4c5] rounded-md shadow-2xl py-1 z-50 text-xs text-slate-800 divide-y divide-slate-100"
-                onClick={() => setIsSettingsMenuOpen(false)}
-              >
-                <div className="py-1">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsSettingsMenuOpen(false);
-                      setIsOrdersJournalOpen(true);
-                    }}
-                    className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between font-bold text-blue-900"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span>📋</span>
-                      <span>{t('pos_orders_journal', 'Buyurtmalar jurnali')}</span>
-                    </div>
-                    <span className="text-[10px] text-blue-600">▶</span>
-                  </button>
-
-                  {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsSettingsMenuOpen(false);
-                          if (onOpenManageTables) onOpenManageTables();
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-bold text-amber-900"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span>🏛️</span>
-                          <span>Stollar va Zallar sozlamalari</span>
-                        </div>
-                        <span className="text-[10px] text-amber-600">▶</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsSettingsMenuOpen(false);
-                          if (onOpenStaffModal) onOpenStaffModal();
-                          else if (onNavigateTab) onNavigateTab('staff');
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
-                      >
-                        <span>👥</span>
-                        <span>{t('staff_management', 'Xodimlar va PIN-kodlar')}</span>
-                      </button>
-                    </>
-                  )}
-                </div>
-
-                {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
-                  <div className="py-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSettingsMenuOpen(false);
-                        if (onOpenPrinterSettings) onOpenPrinterSettings();
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-amber-50 flex items-center justify-between font-medium text-amber-950"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>🖨️</span>
-                        <span>Chek & Printer Sozlamalari</span>
-                      </div>
-                      <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">
-                        {serviceFeePercent}% xizmat
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSettingsMenuOpen(false);
-                        if (onOpenSettings) onOpenSettings();
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center gap-2 font-medium"
-                    >
-                      <span>⚙️</span>
-                      <span>Soliq MXIK & Kassa Sozlamalari</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setIsSettingsMenuOpen(false);
-                        setIsBackendModalOpen(true);
-                      }}
-                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between font-medium text-slate-700"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>🌐</span>
-                        <span>Server & Backend API</span>
-                      </div>
-                      <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-bold">API</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+        <div className="flex items-center gap-3 pb-1">
+          <div className="scale-90 origin-right">
+            <LanguageSwitcher />
           </div>
-
-          {/* User profile */}
-          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-300 font-bold text-slate-700">
-            <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs shadow-inner">
-              👤
-            </span>
-            <span className="text-xs">{currentUser?.name || 'Kafe'}</span>
+          <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-xs pr-2 border-l border-slate-600 pl-2">
+            <span>👤</span>
+            <span>{currentUser?.name || 'Kafe'}</span>
           </div>
         </div>
-      </header>
+      </div>
+
+      {/* 3. RIBBON ACTION TOOLBAR */}
+      <div className="bg-[#e4e8ef] border-b border-[#b0b9c7] px-3 py-1 flex items-center justify-between shadow-xs select-none min-h-[66px] shrink-0 z-20">
+        
+        {/* === TAB 1: KASSA === */}
+        {activeRibbonTab === 'kassa' && (
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              
+              {/* GROUP 1: Chek */}
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1">
+                  
+                  {/* Yangilash */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onRefreshTables) onRefreshTables();
+                      else window.location.reload();
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_refresh', "Ma'lumotlarni yangilash")}
+                  >
+                    <span className="text-base text-emerald-600 group-hover:scale-110 transition">🔄</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_refresh', 'Yangilash')}</span>
+                  </button>
+
+                  {/* SOBOY */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const soboyTable = (tables || []).find((t) => t.id === 99 || t.number === 99 || String(t.name).toLowerCase().includes('soboy')) || {
+                        id: 99,
+                        number: 99,
+                        name: 'SOBOY (Olib ketish)',
+                        status: 'free',
+                        hall: 'SOBOY',
+                      };
+                      onSelectTable(soboyTable);
+                    }}
+                    className={`flex flex-col items-center justify-center w-14 h-12 rounded border transition shadow-2xs group ${
+                      currentTable?.id === 99 || currentTable?.number === 99
+                        ? 'bg-amber-100 border-amber-500 ring-1 ring-amber-400 font-extrabold'
+                        : 'bg-white hover:bg-slate-50 border-[#b8c2d1]'
+                    }`}
+                    title="Olib ketish (SOBOY)"
+                  >
+                    <span className="text-base text-amber-600 group-hover:scale-110 transition">🛍️</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_soboy', 'SOBOY')}</span>
+                  </button>
+
+                  {/* Stollar */}
+                  <button
+                    type="button"
+                    onClick={() => setIsTableModalOpen(true)}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_tables', 'Stollar xaritasini ochish')}
+                  >
+                    <span className="text-base text-blue-600 group-hover:scale-110 transition">🏛️</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_tables', 'Stollar')}</span>
+                  </button>
+
+                  {/* To'lov */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (orderItems.length === 0) {
+                        alert("To'lov qilish uchun buyurtmada taomlar bo'lishi kerak!");
+                        return;
+                      }
+                      setIsPaymentModalOpen(true);
+                    }}
+                    className="flex flex-col items-center justify-center w-16 h-12 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 rounded text-white transition shadow-sm group"
+                    title={t('pos_pay', "To'lovni qabul qilish")}
+                  >
+                    <span className="text-base group-hover:scale-110 transition">✓</span>
+                    <span className="text-[10px] font-black mt-0.5">{t('pos_pay', "To'lov")}</span>
+                  </button>
+
+                  {/* Prechek */}
+                  <button
+                    type="button"
+                    onClick={handlePrintPrecheck}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-amber-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_precheck', 'Mijozga hisob pre-cheki chiqarish')}
+                  >
+                    <span className="text-base text-amber-600 group-hover:scale-110 transition">🧾</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_precheck', 'Prechek')}</span>
+                  </button>
+
+                  {/* Qaytarish / Возврат */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (orderItems.length > 0) {
+                        const targetItem = selectedItemIndex !== null ? orderItems[selectedItemIndex] : orderItems[orderItems.length - 1];
+                        handleOpenCancelItemModal(targetItem);
+                      } else {
+                        alert("Bekor qilish uchun taom tanlanmagan!");
+                      }
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-rose-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_refund', 'Taomni bekor qilish yoki qaytarish')}
+                  >
+                    <span className="text-base text-rose-600 group-hover:scale-110 transition">✕</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_refund', 'Qaytarish')}</span>
+                  </button>
+
+                  {/* Tarix (История) -> Paid / Archived Orders */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJournalInitialTab('paid');
+                      setIsOrdersJournalOpen(true);
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_history', "To'langan buyurtmalar tarixi")}
+                  >
+                    <span className="text-base text-blue-600 group-hover:scale-110 transition">📁</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_history', 'Tarix')}</span>
+                  </button>
+
+                  {/* Kutilayotgan (Отложенные) -> Active / Open Orders */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJournalInitialTab('active');
+                      setIsOrdersJournalOpen(true);
+                    }}
+                    className="flex flex-col items-center justify-center w-18 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-slate-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_pending', 'Hozirgi ochiq buyurtmalar')}
+                  >
+                    <span className="text-base text-slate-600 group-hover:scale-110 transition">🕒</span>
+                    <span className="text-[9px] font-bold mt-0.5 text-center leading-tight">{t('pos_pending', 'Kutilayotgan')}</span>
+                  </button>
+                </div>
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{t('pos_group_receipt', 'Chek')}</span>
+              </div>
+
+              {/* Separator */}
+              <div className="h-10 w-[1px] bg-[#b0b9c7] mx-1"></div>
+
+              {/* GROUP 2: Amallar */}
+              <div className="flex flex-col items-center">
+                <div className="flex items-center gap-1">
+                  {/* Qidiruv */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const inp = document.querySelector('input[placeholder*="qidirish"], input[placeholder*="Поиск"]');
+                      if (inp) inp.focus();
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_search', 'Taomni qidirish')}
+                  >
+                    <span className="text-base text-indigo-600 group-hover:scale-110 transition">🔍</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_search', 'Qidirish')}</span>
+                  </button>
+
+                  {/* Yangi taom */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingDish(null);
+                      setIsDishModalOpen(true);
+                    }}
+                    className="flex flex-col items-center justify-center w-14 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_dish', "Yangi taom qo'shish")}
+                  >
+                    <span className="text-base text-blue-600 group-hover:scale-110 transition">➕</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_dish', 'Taom')}</span>
+                  </button>
+
+                  {/* Kategoriyalar */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryModalOpen(true)}
+                    className="flex flex-col items-center justify-center w-16 h-12 bg-white hover:bg-slate-50 active:bg-slate-100 border border-[#b8c2d1] hover:border-blue-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_categories', 'Kategoriyalarni sozlash')}
+                  >
+                    <span className="text-base text-amber-600 group-hover:scale-110 transition">📂</span>
+                    <span className="text-[10px] font-bold mt-0.5">{t('pos_categories', 'Kategoriyalar')}</span>
+                  </button>
+
+                  {/* Oshxona ekrani (KDS) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onNavigateTab) onNavigateTab('kitchen');
+                    }}
+                    className="flex flex-col items-center justify-center w-16 h-12 bg-white hover:bg-orange-50 active:bg-orange-100 border border-[#b8c2d1] hover:border-orange-400 rounded text-slate-800 transition shadow-2xs group"
+                    title={t('pos_kitchen_screen', 'Oshxona ekrani (KDS) ni ochish')}
+                  >
+                    <span className="text-base text-orange-600 group-hover:scale-110 transition">🍳</span>
+                    <span className="text-[10px] font-bold mt-0.5 text-orange-950">{t('pos_kitchen_screen', 'Oshxona')}</span>
+                  </button>
+                </div>
+                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{t('pos_group_ops', 'Amallar')}</span>
+              </div>
+
+              {/* Separator */}
+              <div className="h-10 w-[1px] bg-[#b0b9c7] mx-1"></div>
+            </div>
+
+            {/* GROUP 3: Jami / Итого */}
+            <div className="flex items-center gap-4 bg-white border border-[#b8c2d1] rounded px-4 py-1.5 shadow-inner">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-slate-700">Σ</span>
+                <div className="flex flex-col">
+                  <span className="text-xl font-black text-slate-900 tracking-tight leading-none">
+                    {formatUZS(totalAmount)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{t('pos_summary_total', 'Jami (UZS)')}</span>
+                </div>
+              </div>
+
+              <div className="h-9 w-[1px] bg-slate-300"></div>
+
+              <div className="flex flex-col text-[11px] font-semibold text-slate-600 gap-0.5">
+                <div className="flex items-center gap-2 justify-between">
+                  <span>{t('pos_summary_items', 'Pozitsiyalar:')}</span>
+                  <span className="font-bold text-slate-900">{orderItems.length}</span>
+                </div>
+                <div className="flex items-center gap-2 justify-between">
+                  <span>{t('pos_summary_qty', 'Soni:')}</span>
+                  <span className="font-bold text-slate-900">{totalQty}</span>
+                </div>
+              </div>
+
+              <div className="h-9 w-[1px] bg-slate-300"></div>
+
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded">
+                <span className={`w-2.5 h-2.5 rounded-full ${currentTable.status === 'free' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                <span className="font-extrabold text-amber-950 text-xs">
+                  {currentTable?.name || `STOL - ${currentTable?.number || 1}`}
+                </span>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* === TAB 2: SMENA === */}
+        {activeRibbonTab === 'smena' && (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => alert(`Smena ochiq. Kassir: ${currentUser?.name || 'Kafe'}`)}
+                  className="flex flex-col items-center justify-center w-16 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-blue-600">🕒</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_shift_status', 'Smena')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenPrinterSettings) onOpenPrinterSettings();
+                  }}
+                  className="flex flex-col items-center justify-center w-18 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-indigo-600">📊</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_x_report', 'X-Hisobot')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="flex flex-col items-center justify-center w-28 h-12 bg-rose-600 hover:bg-rose-700 text-white rounded shadow-sm"
+                >
+                  <span className="text-base">🛑</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_close_shift', 'Smenani yopish')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onLockScreen}
+                  className="flex flex-col items-center justify-center w-20 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-amber-600">🔒</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_lock_pin', 'Qulflash (PIN)')}</span>
+                </button>
+              </div>
+              <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">{t('pos_group_shift', 'Smena boshqaruvi')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* === TAB 3: HISOBOT === */}
+        {activeRibbonTab === 'otchet' && (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJournalInitialTab('all');
+                    setIsOrdersJournalOpen(true);
+                  }}
+                  className="flex flex-col items-center justify-center w-28 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-blue-600">📋</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_all_orders', 'Barcha buyurtmalar')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJournalInitialTab('paid');
+                    setIsOrdersJournalOpen(true);
+                  }}
+                  className="flex flex-col items-center justify-center w-20 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-emerald-600">💳</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_payments', "To'lovlar")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsDebtsModalOpen(true)}
+                  className="flex flex-col items-center justify-center w-24 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-amber-600">💰</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_debts', 'Qarzlar')}</span>
+                </button>
+              </div>
+              <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">{t('pos_group_reports', 'Hisobot va Tahlil')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* === TAB 4: SOZLAMALAR (Settings - removed Server & Telegram) === */}
+        {activeRibbonTab === 'settings' && (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={onOpenPrinterSettings}
+                  className="flex flex-col items-center justify-center w-20 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-slate-700">🖨️</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_printers', 'Printerlar')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenManageTables) onOpenManageTables();
+                  }}
+                  className="flex flex-col items-center justify-center w-24 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-amber-700">🏛️</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_tables_halls', 'Stollar/Zallar')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenStaffModal) onOpenStaffModal();
+                    else if (onNavigateTab) onNavigateTab('staff');
+                  }}
+                  className="flex flex-col items-center justify-center w-20 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-blue-700">👥</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_staff', 'Xodimlar')}</span>
+                </button>
+              </div>
+              <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">{t('pos_group_config', 'Sozlamalar')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* === TAB 5: KO'RINISH (View) === */}
+        {activeRibbonTab === 'view' && (
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setIsTableModalOpen(true)}
+                  className="flex flex-col items-center justify-center w-18 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-blue-600">🗺️</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_scheme', 'Sxema')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNavigateTab) onNavigateTab('kitchen');
+                  }}
+                  className="flex flex-col items-center justify-center w-28 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-orange-600">🍳</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_kitchen_screen', 'Oshxona ekrani')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  className="flex flex-col items-center justify-center w-22 h-12 bg-white hover:bg-slate-50 border border-[#b8c2d1] rounded text-slate-800 shadow-2xs"
+                >
+                  <span className="text-base text-slate-700">{isFullscreen ? '❐' : '⛶'}</span>
+                  <span className="text-[10px] font-bold mt-0.5">{t('pos_fullscreen', 'Ekran (F11)')}</span>
+                </button>
+              </div>
+              <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">{t('pos_group_view', "Ko'rinish")}</span>
+            </div>
+          </div>
+        )}
+
+      </div>
 
       {/* 2. MAIN 2-COLUMN POS LAYOUT (Fit 100% viewport without window scrollbar) */}
       <div className="flex-1 flex overflow-hidden p-1.5 gap-1.5 min-h-0">
@@ -1428,24 +1616,24 @@ export default function JetCafePosView({
 
       </div>
 
-      {/* 3. BOTTOM STATUS BAR matching video */}
+      {/* 3. BOTTOM STATUS BAR */}
       <footer className="h-6 bg-[#d2d9e4] border-t border-[#aeb8c7] px-3 flex items-center justify-between text-[11px] text-slate-700 select-none shrink-0">
         <div className="flex items-center gap-3">
-          <span>Пользователь: <strong>{currentUser?.name || 'Системный Администратор'}</strong></span>
+          <span>{t('footer_user', 'Foydalanuvchi')}: <strong>{currentUser?.name || 'Kafe'}</strong></span>
           <span className="text-slate-400">|</span>
-          <span>Точка: <strong>GetPOS Kafe Chilonzor</strong></span>
+          <span>{t('footer_branch', 'Filial')}: <strong>{currentUser?.tenantName || syncState?.company?.name || 'GetPOS Kafe'}</strong></span>
           <span className="text-slate-400">|</span>
           <span>
-            Soliq / Internet:{' '}
-            <strong className={syncState?.isOnline ? 'text-emerald-700' : 'text-amber-600'}>
-              {syncState?.isOnline ? '● Онлайн' : '○ Офлайн режим'}
+            {t('footer_soliq_internet', 'Soliq / Internet')}:{' '}
+            <strong className={syncState?.isOnline ? 'text-emerald-700 font-bold' : 'text-amber-600 font-bold'}>
+              {syncState?.isOnline ? `● ${t('online', 'Onlayn')}` : `○ ${t('offline', 'Oflayn rejim')}`}
             </strong>
           </span>
         </div>
 
         <div className="flex items-center gap-3 font-mono font-bold text-slate-800">
-          <span>{currentTime.toLocaleDateString('ru-RU')}</span>
-          <span>{currentTime.toLocaleTimeString('ru-RU')}</span>
+          <span>{currentTime.toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'uz-UZ')}</span>
+          <span>{currentTime.toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'uz-UZ')}</span>
         </div>
       </footer>
 
@@ -1738,21 +1926,19 @@ export default function JetCafePosView({
         initialTab={journalInitialTab}
       />
 
-      {/* 8. Table Selection & Hall Floorplan Modal */}
-      <JetCafeTableModal
-        isOpen={isTableModalOpen}
-        onClose={() => setIsTableModalOpen(false)}
-        tables={tables}
-        halls={halls}
-        currentTableId={currentTable?.id}
-        onSelectTable={(tbl) => {
-          if (onSelectTable) onSelectTable(tbl);
-          setIsTableModalOpen(false);
-        }}
-        onOpenManageTables={onOpenManageTables}
+      {/* 8. JetBot Telegram Management Modal */}
+      <JetCafeTelegramModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
       />
 
-      {/* 9. Backend Developer API & Server Modal */}
+      {/* 9. Debts / Qarzdorlar Modal */}
+      <JetCafeDebtsModal
+        isOpen={isDebtsModalOpen}
+        onClose={() => setIsDebtsModalOpen(false)}
+      />
+
+      {/* 10. Backend Developer API & Server Modal */}
       <JetCafeBackendModal
         isOpen={isBackendModalOpen}
         onClose={() => setIsBackendModalOpen(false)}

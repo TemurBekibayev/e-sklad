@@ -86,7 +86,7 @@ export default function JetCafeOrderItemEditModal({
         {/* Title Bar */}
         <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-800 text-xs tracking-wide">
-            <span className="text-blue-600 font-extrabold">jetcafe</span>
+            <span className="text-slate-900 font-black">GetPOS Kafe</span>
             <span className="text-slate-400">|</span>
             <span>Buyurtma taomini tahrirlash (Soni / Narxi / Izoh)</span>
           </div>

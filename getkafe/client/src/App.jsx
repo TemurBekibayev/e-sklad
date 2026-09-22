@@ -71,13 +71,33 @@ function isProductMatch(p, targetId) {
 
 export default function App() {
   const dialog = useDialog();
-  const [currentTab, setCurrentTab] = useState('cashier'); // 'cashier', 'waiter', 'kitchen', 'inventory', 'menu', 'mxik'
+  const [currentTab, setCurrentTab] = useState(() => {
+    try {
+      const path = window.location.pathname.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      if (path.includes('/kitchen') || search.includes('kitchen') || search.includes('tab=kitchen') || search.includes('view=kitchen')) {
+        return 'kitchen';
+      }
+      if (path.includes('/waiter') || search.includes('waiter') || search.includes('tab=waiter') || search.includes('view=waiter')) {
+        return 'waiter';
+      }
+      return 'cashier';
+    } catch (e) {
+      return 'cashier';
+    }
+  });
   
-  // Initial session from localStorage
+  // Initial session from localStorage or auto-create cook session for kitchen monitor
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('getpos_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) return JSON.parse(saved);
+      const path = window.location.pathname.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      if (path.includes('/kitchen') || search.includes('kitchen')) {
+        return { id: 'cook_kds', name: 'Oshxona (KDS)', role: 'cook', username: 'cook' };
+      }
+      return null;
     } catch (e) {
       return null;
     }
@@ -89,10 +109,14 @@ export default function App() {
   const [isPrinterModalOpen, setIsPrinterModalOpen] = useState(false);
   const [isDebtsModalOpen, setIsDebtsModalOpen] = useState(false);
 
-  // 15-minute Inactivity Auto-Lock timer
+  // 15-minute Inactivity Auto-Lock timer (Faqat Kassa / Boshqaruvchi uchun, Ofitsiant va Oshxona ekranlarida lock ishlamaydi)
   const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
   useEffect(() => {
     if (!currentUser || isScreenLocked) return;
+    const role = (currentUser.role || '').toLowerCase();
+    // Ofitsiant va Oshxona ekranlarida lock ishlamasin:
+    if (role === 'waiter' || role === 'worker' || role === 'cook') return;
+
     let idleTimer = null;
     const resetTimer = () => {
       if (idleTimer) clearTimeout(idleTimer);
@@ -436,14 +460,17 @@ export default function App() {
 
   // Fetch active order whenever selectedTable changes
   useEffect(() => {
-    if (selectedTable && selectedTable.current_order_id) {
+    if (selectedTable && selectedTable.id) {
       fetch(`/api/orders/table/${selectedTable.id}`)
         .then((r) => r.json())
         .then((data) => {
-          if (data.success) {
-            setActiveOrder(data);
+          if (data && data.success && (data.order || (data.items && data.items.length > 0))) {
+            setActiveOrder(data.order || data);
+          } else {
+            setActiveOrder(null);
           }
-        });
+        })
+        .catch(() => setActiveOrder(null));
     } else {
       setActiveOrder(null);
     }
@@ -500,6 +527,38 @@ export default function App() {
       body: JSON.stringify(payload),
     });
     return await res.json();
+  };
+
+  // Load Kitchen Tickets from Server (Dynamic KDS)
+  const loadKitchenTickets = async () => {
+    try {
+      const res = await fetch('/api/kitchen/tickets');
+      const data = await res.json();
+      if (data && data.success && Array.isArray(data.tickets)) {
+        setKitchenTickets(data.tickets);
+      } else if (Array.isArray(data)) {
+        setKitchenTickets(data);
+      }
+    } catch (e) {
+      console.warn('Error loading kitchen tickets:', e);
+    }
+  };
+
+  // Thermal print kitchen ticket (Begunok)
+  const handlePrintKitchenTicket = async (ticket) => {
+    try {
+      const res = await fetch(`/api/kitchen/tickets/${ticket.id}/print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticket),
+      });
+      const data = await res.json();
+      if (data.success) {
+        playSoundAlert('success');
+      }
+    } catch (e) {
+      console.error('Print kitchen ticket error:', e);
+    }
   };
 
   // Kitchen ticket status update (Qabul qilish / Tayyor)
@@ -693,12 +752,17 @@ export default function App() {
       setCurrentTab('kitchen');
     } else if (isWaiter && currentTab !== 'waiter') {
       setCurrentTab('waiter');
-    } else if (isCashier && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik' || currentTab === 'kitchen')) {
-      setCurrentTab('cashier');
-    } else if (!isManager && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
+    } else if (isCashier && (currentTab === 'inventory' || currentTab === 'menu' || currentTab === 'mxik')) {
       setCurrentTab('cashier');
     }
   }, [currentUser, currentTab]);
+
+  // Real-time sync: reload kitchen tickets when switching to kitchen tab
+  useEffect(() => {
+    if (currentTab === 'kitchen') {
+      loadKitchenTickets();
+    }
+  }, [currentTab]);
 
   // Auth login handler (Full Login via Login + Parol)
   const handleFullLogin = (user) => {
@@ -748,8 +812,8 @@ export default function App() {
     <div className={`min-h-screen w-full flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950 ${
       currentTab === 'kitchen' || currentTab === 'mxik' ? 'bg-slate-950 text-slate-100' : 'bg-[#f1f5f9] text-slate-900'
     }`}>
-      {/* Top Header - Rendered on manager/waiter/kitchen/inventory/mxik tabs */}
-      {currentTab !== 'cashier' && (
+      {/* Top Header - Rendered on manager/waiter/inventory/mxik tabs */}
+      {currentTab !== 'cashier' && currentTab !== 'kitchen' && (
         <Header
           currentTab={currentTab}
           setCurrentTab={setCurrentTab}
@@ -817,10 +881,12 @@ export default function App() {
         {currentTab === 'kitchen' && (
           <KitchenView
             tickets={kitchenTickets}
-            onPrintTicket={(t) => window.print()}
+            onPrintTicket={handlePrintKitchenTicket}
+            onRefreshTickets={loadKitchenTickets}
             onPlayChime={() => playSoundAlert('kitchen')}
             onUpdateStatus={handleUpdateKitchenTicketStatus}
             onItemOutOfStock={handleKitchenItemOutOfStock}
+            onBackToPos={() => setCurrentTab('cashier')}
           />
         )}
 
@@ -890,7 +956,15 @@ export default function App() {
       {/* 2. Fast PIN Lock Screen (15-min Inactivity or Quick Lock) */}
       {currentUser && isScreenLocked && (
         <PinModal
+          currentUser={currentUser}
           onLogin={handlePinUnlock}
+          onSwitchToLogin={() => {
+            setIsScreenLocked(false);
+            setCurrentUser(null);
+            try {
+              localStorage.removeItem('getpos_user');
+            } catch (_) {}
+          }}
           roleHint={handleFullLogout}
         />
       )}

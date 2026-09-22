@@ -316,9 +316,27 @@ async function seedInitialData() {
     await run(`ALTER TABLE payments ADD COLUMN debt_amount INTEGER DEFAULT 0`);
   } catch (e) {}
 
-  // Check printer settings service fee
+  // Check printer settings service fee & multi-printer support
   try {
     await run(`ALTER TABLE printer_settings ADD COLUMN service_fee_percent REAL DEFAULT 10`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN bar_printer TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN mangal_printer TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN kitchen_printer_ip TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN bar_printer_ip TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN mangal_printer_ip TEXT DEFAULT ''`);
+  } catch (e) {}
+  try {
+    await run(`ALTER TABLE printer_settings ADD COLUMN workshop_printers TEXT DEFAULT '{}'`);
   } catch (e) {}
 
   // Check products columns for inventory

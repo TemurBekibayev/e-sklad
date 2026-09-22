@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 from django.utils import timezone
-from django.db import transaction
+from django.db import models, transaction
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -166,6 +166,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             order.recalculate_totals()
 
+        broadcast_cafe_event(str(tenant.id), "KITCHEN_NEW_TICKET", {
+            "orderId": str(order.id),
+            "tableNumber": order.table.number if order.table else "",
+            "waiterName": order.waiter_name,
+        })
         broadcast_cafe_event(str(tenant.id), "ORDER_UPDATED", OrderSerializer(order).data)
         broadcast_cafe_event(str(tenant.id), "TABLE_UPDATED", TableSerializer(table).data)
 
@@ -212,6 +217,11 @@ class OrderViewSet(viewsets.ModelViewSet):
 
             order.recalculate_totals()
 
+        broadcast_cafe_event(str(tenant.id), "KITCHEN_NEW_TICKET", {
+            "orderId": str(order.id),
+            "tableNumber": order.table.number if order.table else "",
+            "waiterName": order.waiter_name,
+        })
         broadcast_cafe_event(str(tenant.id), "ORDER_ITEMS_ADDED", OrderSerializer(order).data)
         return Response(OrderSerializer(order).data)
 
@@ -295,6 +305,108 @@ class OrderViewSet(viewsets.ModelViewSet):
             "order": OrderSerializer(order).data,
             "table": TableSerializer(table).data
         })
+
+    @action(detail=False, methods=['get'], url_path='kitchen-tickets')
+    def kitchen_tickets(self, request):
+        tenant = request.user.tenant
+        cutoff_time = timezone.now() - timezone.timedelta(hours=24)
+        orders = (
+            Order.objects.for_tenant(tenant)
+            .filter(
+                models.Q(status__in=[OrderStatus.OPEN, OrderStatus.BILL_REQUESTED])
+                | models.Q(
+                    status=OrderStatus.PAID,
+                    created_at__gte=cutoff_time,
+                )
+            )
+            .distinct()
+            .select_related('table', 'waiter')
+            .prefetch_related('items')
+            .order_by('created_at')
+        )
+
+        tickets = []
+        for ord in orders:
+            active_items = ord.items.exclude(status='cancelled')
+            if active_items.exists():
+                all_ready = all(it.status == 'ready' for it in active_items)
+                if ord.status == OrderStatus.PAID and all_ready and ord.created_at < (timezone.now() - timezone.timedelta(minutes=30)):
+                    continue
+
+                any_cooking = any(it.status in ['cooking', 'in_progress'] for it in active_items)
+                calc_status = "ready" if all_ready else ("in_progress" if any_cooking else "pending")
+
+                tickets.append({
+                    "id": f"ticket_{ord.id}",
+                    "orderId": str(ord.id),
+                    "tableNumber": ord.table.number if ord.table else ord.table_name or "Stol",
+                    "tableName": ord.table.name if ord.table else ord.table_name or "Stol",
+                    "waiterName": ord.waiter_name or (ord.waiter.name if ord.waiter else "Ofitsiant"),
+                    "timestamp": ord.created_at.isoformat(),
+                    "status": calc_status,
+                    "order_status": ord.status,
+                    "items": [
+                        {
+                            "id": str(it.id),
+                            "productId": str(it.product.id) if it.product else None,
+                            "product_name": it.product_name,
+                            "quantity": it.quantity,
+                            "comment": it.comment,
+                            "workshop": it.workshop,
+                            "status": it.status,
+                        }
+                        for it in active_items
+                    ]
+                })
+
+        return Response({"success": True, "tickets": tickets})
+
+    @action(detail=True, methods=['post'], url_path='kitchen-status')
+    def kitchen_status(self, request, pk=None):
+        order = self.get_object()
+        tenant = request.user.tenant
+        new_status = request.data.get('status', 'in_progress')
+
+        if new_status == 'ready':
+            order.items.exclude(status='cancelled').update(status='ready')
+            broadcast_cafe_event(str(tenant.id), "KITCHEN_TICKET_READY", {
+                "orderId": str(order.id),
+                "tableNumber": order.table.number if order.table else "",
+                "waiterName": order.waiter_name,
+            })
+        elif new_status == 'in_progress':
+            order.items.exclude(status='cancelled').filter(status='new').update(status='cooking')
+            broadcast_cafe_event(str(tenant.id), "KITCHEN_TICKET_IN_PROGRESS", {
+                "orderId": str(order.id),
+                "tableNumber": order.table.number if order.table else "",
+            })
+
+        return Response({"success": True, "status": new_status})
+
+    @action(detail=True, methods=['post'], url_path='item-out-of-stock')
+    def item_out_of_stock(self, request, pk=None):
+        order = self.get_object()
+        tenant = request.user.tenant
+        item_id = request.data.get('itemId')
+        product_name = request.data.get('productName', '')
+
+        with transaction.atomic():
+            if item_id:
+                order.items.filter(id=item_id).update(status='cancelled')
+            elif product_name:
+                order.items.filter(product_name=product_name).update(status='cancelled')
+            order.recalculate_totals()
+
+        broadcast_cafe_event(str(tenant.id), "DISH_OUT_OF_STOCK", {
+            "orderId": str(order.id),
+            "tableNumber": order.table.number if order.table else "",
+            "waiterName": order.waiter_name,
+            "productName": product_name,
+            "message": f"{order.table.name if order.table else 'Stol'} uchun '{product_name}' oshxonada yo'q deb belgilandi!",
+        })
+        broadcast_cafe_event(str(tenant.id), "ORDER_UPDATED", OrderSerializer(order).data)
+
+        return Response({"success": True, "order": OrderSerializer(order).data})
 
 
 class ShiftViewSet(viewsets.ModelViewSet):

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, DollarSign, CheckCircle2, AlertCircle, Clock, Trash2, X } from 'lucide-react';
+import { Search, Download, DollarSign, CheckCircle2, AlertCircle, Clock, Trash2, X, MessageSquare, Send } from 'lucide-react';
 
 export default function JetCafeDebtsModal({ isOpen, onClose }) {
   const [debts, setDebts] = useState([]);
@@ -13,6 +13,12 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('cash'); // 'cash', 'card'
   const [isSubmittingPay, setIsSubmittingPay] = useState(false);
+
+  // SMS modal state (Eskiz.uz)
+  const [smsModalDebt, setSmsModalDebt] = useState(null);
+  const [smsMessage, setSmsMessage] = useState('');
+  const [isSendingSms, setIsSendingSms] = useState(false);
+  const [smsResultMsg, setSmsResultMsg] = useState('');
 
   const loadDebts = async () => {
     setIsLoading(true);
@@ -83,12 +89,49 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
         setPayModalDebt(null);
         await loadDebts();
       } else {
-        alert('Хатолик: ' + (data.message || 'Qarz to\'lovini amalga oshirib bo\'lmadi'));
+        alert('Xatolik: ' + (data.message || 'Qarz to\'lovini amalga oshirib bo\'lmadi'));
       }
     } catch (err) {
       alert('Tizim xatoligi: ' + err.message);
     } finally {
       setIsSubmittingPay(false);
+    }
+  };
+
+  const handleOpenSmsModal = (debt) => {
+    setSmsModalDebt(debt);
+    const remaining = formatUZS(debt.remaining_amount || debt.total_amount || 0);
+    setSmsMessage(
+      `Hurmatli ${debt.client_name || 'Mijoz'}, GetPOS Kafe dan sizda ${remaining} so'm to'lanmagan qarzdorlik mavjud. Iltimos, o'z vaqtida to'lovni amalga oshiring.`
+    );
+    setSmsResultMsg('');
+  };
+
+  const handleSendSms = async (e) => {
+    e.preventDefault();
+    if (!smsModalDebt || !smsMessage) return;
+    setIsSendingSms(true);
+    setSmsResultMsg('');
+    try {
+      const res = await fetch(`/api/debts/${smsModalDebt.id}/send-sms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: smsMessage }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSmsResultMsg(`✓ ${data.message || 'SMS muvaffaqiyatli jo\'natildi!'}`);
+        setTimeout(() => {
+          setSmsModalDebt(null);
+          setSmsResultMsg('');
+        }, 1800);
+      } else {
+        alert('SMS xatoligi: ' + (data.message || 'Yuborib bo\'lmadi'));
+      }
+    } catch (err) {
+      alert('Tizim xatoligi: ' + err.message);
+    } finally {
+      setIsSendingSms(false);
     }
   };
 
@@ -100,7 +143,7 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
       if (data.success) {
         await loadDebts();
       } else {
-        alert('Хатолик: ' + data.message);
+        alert('Xatolik: ' + data.message);
       }
     } catch (err) {
       alert('Tizim xatoligi: ' + err.message);
@@ -147,106 +190,101 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
         {/* Title Bar */}
         <div className="bg-gradient-to-r from-[#d9dfe8] to-[#c7d0de] border-b border-[#a8b3c4] px-3 py-1.5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 font-semibold text-slate-700 tracking-wide text-xs">
-            <span className="font-black text-slate-800">GetPOS</span>
-            <span className="text-amber-600 font-black">Kafe</span>
+            <span className="font-black text-slate-800">GetPOS Kafe</span>
             <span className="text-slate-400">|</span>
-            <span className="font-bold text-slate-800 flex items-center gap-1">
-              <span>📕</span> Qarzdorlik Bo'limi va Mijozlar Hisobi
-            </span>
+            <span className="text-slate-900 font-bold">Qarzdorliklar va Nasiyalar Boshqaruvi</span>
           </div>
           <button
             onClick={onClose}
-            className="w-5 h-5 flex items-center justify-center text-xs font-bold text-slate-600 hover:bg-rose-500 hover:text-white rounded transition"
+            className="text-xs font-bold text-slate-500 hover:text-rose-600 px-1.5 py-0.5 rounded hover:bg-slate-200 transition"
           >
             ✕
           </button>
         </div>
 
-        {/* Header Stats */}
-        <div className="bg-[#e4e8ef] p-3 border-b border-[#c2cbd8] grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0">
-          <div className="bg-white p-2.5 rounded border border-[#c2cbd8] flex items-center justify-between shadow-sm">
+        {/* 3 Summary Badges */}
+        <div className="bg-[#dfe5ee] p-3 border-b border-[#b0b9c7] grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+          <div className="bg-white border border-[#b8c2d1] rounded p-2.5 flex items-center justify-between shadow-sm">
             <div>
-              <div className="text-[10px] uppercase font-bold text-slate-500">Jami Qarzlar</div>
-              <div className="text-base font-black text-slate-800 font-mono">{formatUZS(summary.total_debt)} so'm</div>
+              <div className="text-[10px] uppercase font-bold text-slate-500">Jami Nasiya (Qarz)</div>
+              <div className="text-lg font-black text-slate-900 font-mono mt-0.5">
+                {formatUZS(summary.total_debt)} <span className="text-xs font-normal">so'm</span>
+              </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600">
-              <DollarSign className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-bold">
+              💰
             </div>
           </div>
 
-          <div className="bg-white p-2.5 rounded border border-rose-200 bg-rose-50/30 flex items-center justify-between shadow-sm">
+          <div className="bg-white border border-emerald-300 rounded p-2.5 flex items-center justify-between shadow-sm">
             <div>
-              <div className="text-[10px] uppercase font-bold text-rose-600">Qolgan Qarz (To'lanmagan)</div>
-              <div className="text-base font-black text-rose-700 font-mono">{formatUZS(summary.total_unpaid)} so'm</div>
+              <div className="text-[10px] uppercase font-bold text-emerald-700">Qaytarilgan (To'langan)</div>
+              <div className="text-lg font-black text-emerald-700 font-mono mt-0.5">
+                {formatUZS(summary.total_paid)} <span className="text-xs font-normal">so'm</span>
+              </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
-              <AlertCircle className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center font-bold">
+              ✓
             </div>
           </div>
 
-          <div className="bg-white p-2.5 rounded border border-emerald-200 bg-emerald-50/30 flex items-center justify-between shadow-sm">
+          <div className="bg-white border border-rose-300 rounded p-2.5 flex items-center justify-between shadow-sm">
             <div>
-              <div className="text-[10px] uppercase font-bold text-emerald-600">So'ndirilgan (To'langan)</div>
-              <div className="text-base font-black text-emerald-700 font-mono">{formatUZS(summary.total_paid)} so'm</div>
+              <div className="text-[10px] uppercase font-bold text-rose-700">Qolgan Haqiqiy Qarz</div>
+              <div className="text-lg font-black text-rose-700 font-mono mt-0.5">
+                {formatUZS(summary.total_unpaid)} <span className="text-xs font-normal">so'm</span>
+              </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-bold">
+              !
             </div>
           </div>
         </div>
 
-        {/* Toolbar: Search, Filters & Export */}
-        <div className="bg-[#e9edf3] px-3 py-2 border-b border-[#c2cbd8] flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+        {/* Toolbar & Filters */}
+        <div className="p-2.5 bg-[#eef1f6] border-b border-[#b0b9c7] flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-1 max-w-md">
+            <div className="relative flex-1">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Mijoz ismi, telefoni yoki stol..."
-                className="w-full pl-8 pr-3 py-1 bg-white border border-[#b8c2d1] rounded text-xs focus:outline-none focus:border-blue-500"
+                placeholder="Qarzdor ismi, telefoni yoki stol bo'yicha qidirish..."
+                className="w-full pl-8 pr-3 py-1.5 bg-white border border-[#b8c2d1] rounded text-xs focus:outline-none focus:border-blue-500 shadow-inner"
               />
+              <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2" />
             </div>
-            <div className="flex items-center gap-1 bg-white p-0.5 rounded border border-[#b8c2d1]">
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {[
+              { id: 'all', label: 'Barchasi' },
+              { id: 'unpaid', label: 'To\'lanmagan' },
+              { id: 'partially_paid', label: 'Qisman' },
+              { id: 'paid', label: 'To\'langan' },
+            ].map((f) => (
               <button
+                key={f.id}
                 type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${statusFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                onClick={() => setStatusFilter(f.id)}
+                className={`px-3 py-1.5 rounded border text-xs font-bold transition ${
+                  statusFilter === f.id
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
               >
-                Barchasi ({debts.length})
+                {f.label}
               </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('unpaid')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${statusFilter === 'unpaid' ? 'bg-rose-600 text-white' : 'text-rose-700 hover:bg-rose-50'}`}
-              >
-                To'lanmagan ({debts.filter(d => d.status === 'unpaid').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('partially_paid')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${statusFilter === 'partially_paid' ? 'bg-amber-600 text-white' : 'text-amber-700 hover:bg-amber-50'}`}
-              >
-                Qisman ({debts.filter(d => d.status === 'partially_paid').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('paid')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${statusFilter === 'paid' ? 'bg-emerald-600 text-white' : 'text-emerald-700 hover:bg-emerald-50'}`}
-              >
-                Yopilgan ({debts.filter(d => d.status === 'paid').length})
-              </button>
-            </div>
+            ))}
           </div>
 
           <button
             type="button"
             onClick={exportToExcel}
-            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded shadow-sm flex items-center gap-1.5 transition text-xs"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Excel'ga yuklash (.csv)</span>
+            <span>Excel (.CSV)</span>
           </button>
         </div>
 
@@ -265,7 +303,7 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
                 <th className="py-2 px-3 text-right">To'langan</th>
                 <th className="py-2 px-3 text-right font-black">Qolgan Qarz</th>
                 <th className="py-2 px-3 text-center">Status</th>
-                <th className="py-2 px-3 text-center w-28">Amallar</th>
+                <th className="py-2 px-3 text-center w-36">Amallar</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -314,6 +352,17 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
                             To'lash
                           </button>
                         )}
+                        {debt.client_phone && debt.remaining_amount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSmsModal(debt)}
+                            className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] font-black rounded shadow-sm transition flex items-center gap-0.5"
+                            title="Eskiz SMS eslatma jo'natish"
+                          >
+                            <span>📱</span>
+                            <span>SMS</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDeleteDebt(debt.id)}
@@ -334,7 +383,7 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
         {/* Bottom Footer */}
         <div className="bg-[#e4e8ef] px-3 py-1.5 border-t border-[#c2cbd8] flex items-center justify-between text-[11px] text-slate-600 shrink-0">
           <div>Ro'yxatdagi qarzdorliklar soni: <b>{filteredDebts.length}</b> ta</div>
-          <div>GetPOS Kafe — Qarzdorlik Tizimi</div>
+          <div>GetPOS Kafe — Qarzdorlik Tizimi (Eskiz.uz SMS integratsiyasi bilan)</div>
         </div>
       </div>
 
@@ -348,30 +397,40 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
               </h3>
               <button
                 onClick={() => setPayModalDebt(null)}
-                className="text-slate-400 hover:text-slate-700 font-bold"
+                className="text-slate-400 hover:text-slate-600 font-bold"
               >
-                <X className="w-4 h-4" />
+                ✕
               </button>
             </div>
 
             <form onSubmit={handleConfirmPay} className="space-y-4">
-              <div className="bg-slate-50 p-3 rounded border border-slate-200 text-xs space-y-1">
-                <div>Qarzdor: <b className="text-slate-900">{payModalDebt.client_name}</b></div>
-                {payModalDebt.client_phone && <div>Telefon: <span className="font-mono text-slate-700">{payModalDebt.client_phone}</span></div>}
-                <div>Jami qarz: <span className="font-mono">{formatUZS(payModalDebt.total_amount)} so'm</span></div>
-                <div>Qolgan qarz: <b className="font-mono text-rose-600">{formatUZS(payModalDebt.remaining_amount)} so'm</b></div>
+              <div className="p-3 bg-slate-50 border rounded-lg space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Mijoz:</span>
+                  <span className="font-bold text-slate-800">{payModalDebt.client_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Telefon:</span>
+                  <span className="font-mono text-slate-700">{payModalDebt.client_phone || '—'}</span>
+                </div>
+                <div className="flex justify-between border-t pt-1">
+                  <span className="text-slate-500">Qolgan qarz:</span>
+                  <span className="font-black text-rose-600 font-mono">
+                    {formatUZS(payModalDebt.remaining_amount)} so'm
+                  </span>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  To'lanayotgan summa (so'm):
+                  To'lanayotgan summa (so'm)*:
                 </label>
                 <input
                   type="number"
                   value={payAmount}
-                  onChange={(e) => setPayAmount(e.target.value)}
                   max={payModalDebt.remaining_amount}
-                  className="w-full px-3 py-2 border-2 border-blue-400 rounded text-sm font-bold font-mono focus:outline-none focus:border-blue-600"
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-base font-bold text-slate-900 focus:outline-none focus:border-blue-500"
                   required
                 />
               </div>
@@ -384,8 +443,8 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
                   <button
                     type="button"
                     onClick={() => setPayMethod('cash')}
-                    className={`py-2 px-3 border rounded text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                      payMethod === 'cash' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-slate-100 text-slate-700 border-slate-300'
+                    className={`py-2 rounded-lg border font-bold text-xs ${
+                      payMethod === 'cash' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-slate-50 border-slate-300'
                     }`}
                   >
                     💵 Naqd pul
@@ -393,35 +452,115 @@ export default function JetCafeDebtsModal({ isOpen, onClose }) {
                   <button
                     type="button"
                     onClick={() => setPayMethod('card')}
-                    className={`py-2 px-3 border rounded text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                      payMethod === 'card' ? 'bg-blue-600 text-white border-blue-700' : 'bg-slate-100 text-slate-700 border-slate-300'
+                    className={`py-2 rounded-lg border font-bold text-xs ${
+                      payMethod === 'card' ? 'bg-blue-600 text-white border-blue-700' : 'bg-slate-50 border-slate-300'
                     }`}
                   >
-                    💳 Bank kartasi
+                    💳 Plastik karta
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+              <div className="flex justify-end gap-2 pt-2 border-t">
                 <button
                   type="button"
                   onClick={() => setPayModalDebt(null)}
-                  className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded text-xs transition"
+                  className="px-4 py-2 border rounded-lg text-slate-600 font-bold hover:bg-slate-50"
                 >
                   Bekor qilish
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingPay}
-                  className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs shadow transition disabled:opacity-50"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow transition"
                 >
-                  {isSubmittingPay ? "Qabul qilinmoqda..." : "To'lovni tasdiqlash"}
+                  {isSubmittingPay ? 'Qabul qilinmoqda...' : 'To\'lovni qabul qilish'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Eskiz.uz SMS Modal */}
+      {smsModalDebt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white border-2 border-amber-300 rounded-xl shadow-2xl w-full max-w-md p-5 font-sans">
+            <div className="flex items-center justify-between border-b pb-3 mb-4">
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                <span>📱</span> Eskiz.uz SMS Eslatma Jo'natish
+              </h3>
+              <button
+                onClick={() => setSmsModalDebt(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSendSms} className="space-y-4">
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Qarzdor:</span>
+                  <span className="font-bold text-slate-900">{smsModalDebt.client_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Telefon:</span>
+                  <span className="font-mono font-bold text-blue-700">{smsModalDebt.client_phone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Qarz qoldig'i:</span>
+                  <span className="font-black text-rose-600 font-mono">
+                    {formatUZS(smsModalDebt.remaining_amount)} so'm
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  SMS Xabar Matni:
+                </label>
+                <textarea
+                  rows={4}
+                  value={smsMessage}
+                  onChange={(e) => setSmsMessage(e.target.value)}
+                  className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-amber-500 shadow-inner"
+                  required
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>Eskiz.uz Gateway API</span>
+                  <span>{smsMessage.length} belgi</span>
+                </div>
+              </div>
+
+              {smsResultMsg && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg font-bold text-xs text-center">
+                  {smsResultMsg}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setSmsModalDebt(null)}
+                  className="px-4 py-2 border rounded-lg text-slate-600 font-bold hover:bg-slate-50 text-xs"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingSms}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg shadow transition flex items-center gap-1.5 text-xs"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingSms ? 'Yuborilmoqda...' : 'SMS Jo\'natish'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
